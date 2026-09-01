@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<theme id="light" name="浅色" brightness="light" author="内置">
+  <colors>
+    <color name="primary">#9B1B30</color>
+    <color name="onPrimary">#FFFFFF</color>
+    <color name="background">#F4F2EE</color>
+    <color name="onBackground">#1C1917</color>
+    <color name="muted">#6F6A64</color>
+    <color name="line">#E6E1DA</color>
+    <color name="card">#FFFFFF</color>
+    <color name="onCard">#1C1917</color>
+  </colors>
+  <layout>
+    <item name="cardRadius">12</item>
+    <item name="buttonRadius">10</item>
+    <item name="navStyle">underline</item>
+    <item name="homeHeader">plain</item>
+    <item name="homeGrid">3</item>
+    <item name="appBarCenter">false</item>
+  </layout>
+  <!-- 图标：outlined/filled 可以是 Material 名，也可以是包内图片路径，例如 icons/home.png -->
+  <icons>
+    <icon name="nav.home" outlined="home_outlined" filled="home_rounded"/>
+    <icon name="nav.schedule" outlined="calendar_view_week_outlined" filled="calendar_view_week"/>
+    <icon name="nav.grades" outlined="menu_book_outlined" filled="menu_book"/>
+    <icon name="nav.mine" outlined="person_outline" filled="person"/>
+    <icon name="svc.ykt" outlined="qr_code_2"/>
+    <icon name="svc.credits" outlined="pie_chart_outline"/>
+    <icon name="svc.exams" outlined="edit_calendar_outlined"/>
+    <icon name="svc.rooms" outlined="meeting_room_outlined"/>
+    <icon name="svc.ktkq" outlined="fingerprint"/>
+    <icon name="svc.clock" outlined="location_on_outlined"/>
+    <icon name="svc.venue" outlined="sports_outlined"/>
+    <icon name="action.settings" outlined="settings_outlined"/>
+  </icons>
+</theme>
