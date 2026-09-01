@@ -1,6 +1,8 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/profile.dart';
 import '../state/session.dart';
@@ -40,6 +42,13 @@ class SettingsPage extends StatelessWidget {
                   icon: Icons.palette_rounded,
                   title: '主题外观',
                   page: const ThemeSettingsPage(),
+                ),
+                Divider(height: 1, indent: 52, color: context.line),
+                _row(
+                  context,
+                  icon: Icons.info_outline_rounded,
+                  title: '关于',
+                  page: const AboutSettingsPage(),
                 ),
               ],
             ),
@@ -311,5 +320,117 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
         ),
       ),
     );
+  }
+}
+
+class AboutSettingsPage extends StatelessWidget {
+  const AboutSettingsPage({super.key});
+
+  static const _author = 'Britney';
+  static const _github = 'BritneyOvO';
+  static const _repo = 'BritneyOvO/swun_ehall';
+  static const _profileUrl = 'https://github.com/BritneyOvO';
+  static const _repoUrl = 'https://github.com/BritneyOvO/swun_ehall';
+  static const _version = '1.0.0';
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('关于')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+        children: [
+          const SizedBox(height: 12),
+          Center(
+            child: Image.asset('assets/icon/splash.png', width: 72, height: 72, filterQuality: FilterQuality.medium),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            '民大助手',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: context.ink),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _version,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: context.muted),
+          ),
+          const SizedBox(height: 20),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: context.panel,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.line),
+            ),
+            child: Column(
+              children: [
+                _info(context, '制作者', _author),
+                Divider(height: 1, indent: 16, endIndent: 16, color: context.line),
+                _link(context, 'GitHub', _github, _profileUrl),
+                Divider(height: 1, indent: 16, endIndent: 16, color: context.line),
+                _link(context, '开源仓库', _repo, _repoUrl),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '非官方学生客户端，与学校信息化部门无关。',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: context.muted, fontSize: 12, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _info(BuildContext context, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      child: Row(
+        children: [
+          SizedBox(width: 72, child: Text(label, style: TextStyle(color: context.muted, fontSize: 13))),
+          Expanded(child: Text(value, textAlign: TextAlign.right, style: const TextStyle(fontSize: 15))),
+        ],
+      ),
+    );
+  }
+
+  Widget _link(BuildContext context, String label, String value, String url) {
+    return Pressable(
+      radius: 0,
+      onTap: () => _open(context, url),
+      onLongPress: () => _copy(context, url),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          children: [
+            SizedBox(width: 72, child: Text(label, style: TextStyle(color: context.muted, fontSize: 13))),
+            Expanded(
+              child: Text(
+                value,
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 15, color: context.primary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _open(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (ok || !context.mounted) return;
+    } catch (_) {}
+    if (context.mounted) await _copy(context, url);
+  }
+
+  Future<void> _copy(BuildContext context, String url) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制链接')));
   }
 }
