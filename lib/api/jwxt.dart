@@ -23,34 +23,48 @@ class JwxtClient {
   final CookieJar jar;
   final Dio dio;
   bool portalClosed = false;
+  CasClient? _cas;
+  Future<void>? _ensuring;
 
-  bool _looksClosed(int? status, Object? data) {
-    if (status == 403) return true;
-    final t = data?.toString() ?? '';
-    return t.contains('系统已关闭') ||
-        t.contains('不在服务时间') ||
-        t.contains('不在访问时间') ||
-        t.contains('非服务时间') ||
-        t.contains('服务已关闭');
+  void attachCas(CasClient cas) => _cas = cas;
+
+  static const _referer = '$kJwxt/jwglxt/xtgl/index_initMenu.html?jsdm=xs';
+
+  bool _looksClosed(int? status, Object? data) => looksNightClosed(status: status, data: data);
+
+  bool _looksLoggedOut(Response r) {
+    final t = r.data?.toString() ?? '';
+    if (t.contains('login_slogin') || t.contains('统一身份认证')) return true;
+    if (!isRedirect(r)) return false;
+    final u = absUrl(kJwxt, loc(r)).toLowerCase();
+    return u.contains('login_slogin') ||
+        u.contains('/sso/login') ||
+        u.contains('authserver') ||
+        u.contains('/cas/');
   }
 
   Future<Response> _home() {
     return dio.get(
       '$kJwxt/jwglxt/xtgl/index_initMenu.html',
       queryParameters: {'jsdm': 'xs'},
+      options: Options(headers: {'Referer': _referer}),
     );
   }
 
   Future<void> loginWithCas(CasClient cas) async {
+    _cas = cas;
     portalClosed = false;
     var url = await cas.ticketFor(kJwxtService);
     for (var i = 0; i < 15; i++) {
-      final r = await dio.get(url);
-      if (r.statusCode == 200) break;
+      final r = await dio.get(
+        url,
+        options: Options(receiveTimeout: const Duration(seconds: 12)),
+      );
       if (_looksClosed(r.statusCode, r.data)) {
         portalClosed = true;
         return;
       }
+      if (r.statusCode == 200 && !_looksLoggedOut(r)) break;
       var next = loc(r);
       if (next.isEmpty) break;
       url = absUrl(kJwxt, next);
@@ -60,7 +74,7 @@ class JwxtClient {
     }
     final home = await _home();
     final body = home.data.toString();
-    if (home.statusCode == 200 && !body.contains('login_slogin') && !_looksClosed(home.statusCode, body)) {
+    if (home.statusCode == 200 && !_looksLoggedOut(home) && !_looksClosed(home.statusCode, body)) {
       portalClosed = false;
       return;
     }
@@ -68,23 +82,20 @@ class JwxtClient {
       portalClosed = true;
       return;
     }
-    if (body.contains('login_slogin')) {
-      throw Exception('教务登录失败');
-    }
-    throw Exception('教务首页 HTTP ${home.statusCode}');
+    throw Exception('教务登录失败');
   }
 
   Future<bool> sessionAlive() async {
     try {
       final r = await _home();
       final body = r.data.toString();
-      if (r.statusCode == 200 && !body.contains('login_slogin') && !_looksClosed(r.statusCode, body)) {
-        portalClosed = false;
-        return true;
-      }
       if (_looksClosed(r.statusCode, body)) {
         portalClosed = true;
         return false;
+      }
+      if (r.statusCode == 200 && !_looksLoggedOut(r)) {
+        portalClosed = false;
+        return true;
       }
       return false;
     } catch (_) {
@@ -92,23 +103,62 @@ class JwxtClient {
     }
   }
 
+  Future<void> ensureSession({bool force = false}) async {
+    if (!force && await sessionAlive()) return;
+    while (_ensuring != null) {
+      await _ensuring!.timeout(const Duration(seconds: 20));
+      if (!force && await sessionAlive()) return;
+      if (!force) return;
+    }
+    final done = _relogin();
+    _ensuring = done;
+    try {
+      await done;
+    } finally {
+      if (identical(_ensuring, done)) _ensuring = null;
+    }
+  }
+
+  Future<void> _relogin() async {
+    final cas = _cas;
+    if (cas == null) throw Exception('教务登录已过期，请重新登录');
+    if (!await cas.tgtAlive()) throw Exception('统一身份已过期，请重新登录');
+    await loginWithCas(cas).timeout(const Duration(seconds: 20));
+    if (portalClosed) return;
+    if (!await sessionAlive()) throw Exception('教务登录失败，请重新登录');
+  }
+
+  Options get _form => Options(
+        contentType: Headers.formUrlEncodedContentType,
+        headers: {'Referer': _referer, 'X-Requested-With': 'XMLHttpRequest'},
+      );
+
   Future<Map<String, dynamic>> _post(
     String path,
     Map<String, dynamic> data, {
     Map<String, dynamic>? params,
   }) async {
-    late Object? last;
-    for (var i = 0; i < 2; i++) {
+    Object? last;
+    var relogged = false;
+    for (var i = 0; i < 3; i++) {
       try {
         final r = await dio.post(
           '$kJwxt$path',
           data: data,
           queryParameters: params,
-          options: Options(contentType: Headers.formUrlEncodedContentType),
+          options: _form,
         );
         if (r.statusCode == 403 || _looksClosed(r.statusCode, r.data)) {
           portalClosed = true;
-          throw Exception('教务门户当前关闭（夜间）');
+          throw Exception(nightClosedMessage('教务'));
+        }
+        if (_looksLoggedOut(r) || isRedirect(r)) {
+          if (!relogged) {
+            relogged = true;
+            await ensureSession(force: true);
+            continue;
+          }
+          throw Exception('教务登录已过期，请重新登录');
         }
         if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
         final d = r.data;
@@ -117,8 +167,9 @@ class JwxtClient {
         throw Exception('非 JSON');
       } catch (e) {
         last = e;
-        if (e.toString().contains('夜间') || e.toString().contains('403')) rethrow;
-        if (i == 0) await Future<void>.delayed(const Duration(milliseconds: 400));
+        final s = e.toString();
+        if (s.contains('夜间') || s.contains('过期') || s.contains('重新登录')) rethrow;
+        if (i < 2) await Future<void>.delayed(const Duration(milliseconds: 400));
       }
     }
     throw Exception('请求失败 $path: $last');
@@ -158,7 +209,7 @@ class JwxtClient {
       );
       final chunk = last['items'];
       if (chunk is List) items.addAll(chunk);
-      total = int.tryParse('${last['totalResult'] ?? last['totalCount'] ?? items.length}') ?? items.length;
+      total = int.tryParse('${last['totalResult'] ?? items.length}') ?? items.length;
       if (items.length >= total || chunk is! List || chunk.isEmpty) break;
       page++;
     }
@@ -169,40 +220,230 @@ class JwxtClient {
 
   Future<Map<String, dynamic>> allGrades() => grades(xnm: '', xqm: '');
 
-  Future<String> _getHtml(String path, {Map<String, dynamic>? params}) async {
-    final r = await dio.get(
-      '$kJwxt$path',
-      queryParameters: params,
-      options: Options(
-        headers: {'Referer': '$kJwxt/jwglxt/xtgl/index_initMenu.html?jsdm=xs'},
-        responseType: ResponseType.plain,
-      ),
-    );
-    final body = r.data?.toString() ?? '';
-    if (r.statusCode == 403 || _looksClosed(r.statusCode, body)) {
-      portalClosed = true;
-      throw Exception('教务门户当前关闭（夜间）');
-    }
-    if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
-    if (body.contains('login_slogin') || body.contains('统一身份认证')) {
-      throw Exception('教务登录已失效');
-    }
-    return body;
-  }
+  static const _xyqkGnmkdm = 'N105515';
+  static const _xyqkIndex = '/jwglxt/xsxy/xsxyqk_cxXsxyqkIndex.html';
+  static const _xyqkKcxx = '/jwglxt/xsxy/xsxyqk_cxJxzxjhxfyqKcxx.html';
+  static const _xyqkFKcxx = '/jwglxt/xsxy/xsxyqk_cxJxzxjhxfyqFKcxx.html';
+
+  String get _xyqkReferer =>
+      '$kJwxt$_xyqkIndex?echarts=1&gnmkdm=$_xyqkGnmkdm&layout=default';
 
   Future<CreditProgress> creditProgress() async {
-    final html = await _getHtml(
-      '/jwglxt/xsxy/xsxyqk_cxXsxyqkIndex.html',
-      params: {'gnmkdm': 'N105515', 'layout': 'default', 'echarts': '1'},
-    );
-    if (html.contains('系统维护') || html.length < 200) {
-      throw Exception('学业情况页暂不可用');
-    }
-    List<dynamic> items = const [];
     try {
-      items = (await allGrades())['items'] as List? ?? const [];
-    } catch (_) {}
-    return parseCreditProgress(html, grades: items);
+      return await academicProgress().timeout(const Duration(seconds: 35));
+    } catch (e) {
+      final s = e.toString();
+      if (s.contains('夜间') || s.contains('过期') || s.contains('重新登录') || s.contains('关闭')) {
+        rethrow;
+      }
+    }
+    final raw = await allGrades().timeout(const Duration(seconds: 20));
+    final items = raw['items'] as List? ?? const [];
+    if (items.isEmpty) throw Exception('暂无成绩，无法统计学分');
+    return creditProgressFromGrades(items);
+  }
+
+  Future<CreditProgress> academicProgress() async {
+    final html = await _xyqkHtml();
+    final xh = _firstNonEmpty([
+      _namedValue(html, 'xh_id'),
+      _namedValue(html, 'sessionUserKey'),
+    ]);
+    if (xh.isEmpty) throw Exception('学业情况页未返回学号');
+    final hidden = {
+      'fromXh_id': '',
+      'xh_id': xh,
+      'cjlrxn': _namedValue(html, 'cjlrxn'),
+      'cjlrxq': _namedValue(html, 'cjlrxq'),
+      'bkcjlrxn': _namedValue(html, 'bkcjlrxn'),
+      'bkcjlrxq': _namedValue(html, 'bkcjlrxq'),
+      'xscjcxkz': _namedValue(html, 'xscjcxkz'),
+      'cjcxkzzt': _namedValue(html, 'cjcxkzzt'),
+      'cjztkz': _namedValue(html, 'cjztkz'),
+      'cjzt': _namedValue(html, 'cjzt'),
+    };
+    final nodes = _xyqkNodes(html);
+    if (nodes.isEmpty) throw Exception('学业情况未返回培养方案节点');
+    final leaves = [
+      for (final n in nodes)
+        if (n.sfmjd == '1' && n.id != 'cxcyqkxfyq') n,
+    ];
+    final courses = await Future.wait([
+      for (final n in leaves) _xyqkCourses(n, hidden),
+    ]);
+    final buckets = <CreditBucket>[];
+    var extraPassed = 0;
+    var extraFailed = 0;
+    for (var i = 0; i < leaves.length; i++) {
+      final n = leaves[i];
+      final items = courses[i];
+      if (n.id == 'qtkcxfyq' || n.id == 'cxcyqkxfyq') {
+        extraPassed += items.where((c) => c.passed).length;
+        extraFailed += items.where((c) => c.failed).length;
+      }
+      if (items.isEmpty && n.yxxf <= 0 && n.yqzdxf <= 0 && n.id == 'qtkcxfyq') {
+        continue;
+      }
+      buckets.add(
+        bucketFromXyqk(name: n.name, yxxf: n.yxxf, yqzdxf: n.yqzdxf, items: items),
+      );
+    }
+    _XyqkNode? root;
+    for (final n in nodes) {
+      if (n.name == '主修') {
+        root = n;
+        break;
+      }
+      if (root == null && n.yqzdxf > 0) root = n;
+    }
+    var passed = 0, failed = 0, unstudied = 0, studying = 0, total = 0;
+    for (final b in buckets) {
+      if (b.name == '其他课程' || b.name == '创新创业情况') continue;
+      passed += b.courses;
+      failed += b.failedCourses;
+      unstudied += b.unstudiedCourses;
+      studying += b.studyingCourses;
+      total += b.items.length;
+    }
+    return CreditProgress(
+      taken: _xyqkLabelXf(html, '修读总学分'),
+      required: _firstXf([
+        _xyqkLabelXf(html, '要求最低学分'),
+        root?.yqzdxf ?? 0,
+      ]),
+      earned: _firstXf([
+        _xyqkLabelXf(html, '获得总学分'),
+        root?.yxxf ?? 0,
+      ]),
+      gpa: _xyqkGpa(html),
+      planTotal: total,
+      planPassed: passed,
+      planFailed: failed,
+      planUnstudied: unstudied,
+      planStudying: studying,
+      extraPassed: extraPassed,
+      extraFailed: extraFailed,
+      buckets: buckets,
+    );
+  }
+
+  Future<String> _xyqkHtml() async {
+    Object? last;
+    var relogged = false;
+    for (var i = 0; i < 3; i++) {
+      try {
+        final r = await dio.get(
+          '$kJwxt$_xyqkIndex',
+          queryParameters: const {
+            'echarts': '1',
+            'gnmkdm': _xyqkGnmkdm,
+            'layout': 'default',
+          },
+          options: Options(
+            headers: {'Referer': _referer, 'Accept': 'text/html'},
+            receiveTimeout: const Duration(seconds: 20),
+          ),
+        );
+        if (r.statusCode == 403 || _looksClosed(r.statusCode, r.data)) {
+          portalClosed = true;
+          throw Exception(nightClosedMessage('教务'));
+        }
+        if (_looksLoggedOut(r) || isRedirect(r)) {
+          if (!relogged) {
+            relogged = true;
+            await ensureSession(force: true);
+            continue;
+          }
+          throw Exception('教务登录已过期，请重新登录');
+        }
+        if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+        final html = r.data.toString();
+        if (!html.contains('xfyqjd_id') || !html.contains(_xyqkGnmkdm)) {
+          throw Exception('学业情况页无培养方案');
+        }
+        return html;
+      } catch (e) {
+        last = e;
+        final s = e.toString();
+        if (s.contains('夜间') || s.contains('过期') || s.contains('重新登录') || s.contains('培养方案')) {
+          rethrow;
+        }
+        if (i < 2) await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+    }
+    throw Exception('学业情况页请求失败: $last');
+  }
+
+  Future<List<PlanCourse>> _xyqkCourses(_XyqkNode node, Map<String, String> hidden) async {
+    final extra = node.id == 'qtkcxfyq' || node.id == 'cxcyqkxfyq';
+    final path = (node.jdkcsx == '1' || extra) ? _xyqkKcxx : _xyqkFKcxx;
+    final data = <String, dynamic>{
+      'fromXh_id': hidden['fromXh_id'] ?? '',
+      'xfyqjd_id': node.id,
+      'xh_id': hidden['xh_id'] ?? '',
+      if (extra) ...{
+        'cjlrxn': hidden['cjlrxn'] ?? '',
+        'cjlrxq': hidden['cjlrxq'] ?? '',
+        'bkcjlrxn': hidden['bkcjlrxn'] ?? '',
+        'bkcjlrxq': hidden['bkcjlrxq'] ?? '',
+        'xscjcxkz': hidden['xscjcxkz'] ?? '',
+        'cjcxkzzt': hidden['cjcxkzzt'] ?? '',
+        'cjztkz': hidden['cjztkz'] ?? '',
+        'cjzt': hidden['cjzt'] ?? '',
+      },
+    };
+    try {
+      final raw = await _postJson(path, data);
+      if (raw is! List) return const [];
+      return [
+        for (final row in raw)
+          if (row is Map) planCourseFromXyqk(row),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<Object?> _postJson(String path, Map<String, dynamic> data) async {
+    Object? last;
+    var relogged = false;
+    for (var i = 0; i < 3; i++) {
+      try {
+        final r = await dio.post(
+          '$kJwxt$path',
+          data: data,
+          queryParameters: const {'gnmkdm': _xyqkGnmkdm},
+          options: Options(
+            contentType: Headers.formUrlEncodedContentType,
+            headers: {
+              'Referer': _xyqkReferer,
+              'X-Requested-With': 'XMLHttpRequest',
+              'Accept': 'application/json, text/javascript, */*; q=0.01',
+            },
+          ),
+        );
+        if (r.statusCode == 403 || _looksClosed(r.statusCode, r.data)) {
+          portalClosed = true;
+          throw Exception(nightClosedMessage('教务'));
+        }
+        if (_looksLoggedOut(r) || isRedirect(r)) {
+          if (!relogged) {
+            relogged = true;
+            await ensureSession(force: true);
+            continue;
+          }
+          throw Exception('教务登录已过期，请重新登录');
+        }
+        if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+        return _asJson(r.data);
+      } catch (e) {
+        last = e;
+        final s = e.toString();
+        if (s.contains('夜间') || s.contains('过期') || s.contains('重新登录')) rethrow;
+        if (i < 2) await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+    }
+    throw Exception('请求失败 $path: $last');
   }
 
   Future<Map<String, dynamic>> exams({int? xnm, String? xqm}) async {
@@ -296,21 +537,22 @@ class JwxtClient {
   }
 
   StudentProfile _fromMap(Map<String, dynamic> m) {
-    final userName = _pick(m, const ['userName', 'username']);
-    final xh = _pick(m, const ['xh', 'XH', 'xh_id', 'XH_ID', 'useraccount']);
-    final xm = _pick(m, const ['xm', 'XM', 'userNameCn', 'realName', 'xm_id']);
-    final userNameIsId = RegExp(r'^\d{8,}$').hasMatch(userName);
+    String at(String k) {
+      final v = m[k] ?? m[k.toUpperCase()] ?? m[k.toLowerCase()];
+      final s = '${v ?? ''}'.trim();
+      return (s.isEmpty || s == 'null') ? '' : s;
+    }
+
+    final bj = at('bjmc');
     return StudentProfile(
-      studentId: xh.isNotEmpty ? xh : (userNameIsId ? userName : ''),
-      name: xm.isNotEmpty ? xm : (userNameIsId ? '' : userName),
-      gender: _gender(_pick(m, const ['xb', 'XB', 'xbm', 'XBM', 'xbmc'])),
-      college: _pick(m, const ['xymc', 'XYMC', 'xy', 'jg_mc', 'dwmc', 'yxmc', 'YXMC']),
-      major: _cleanMajor(_pick(m, const ['zymc', 'ZYMC', 'zy', 'zyh'])),
-      klass: _pick(m, const ['bjmc', 'BJMC', 'bh', 'BH', 'xzb', 'bj']),
-      grade: _pick(m, const ['njmc', 'NJMC', 'njdm_id', 'NJDM_ID', 'nj', 'xznj']),
-      phone: _pick(m, const ['sjhm', 'SJHM', 'lxdh', 'yddh', 'phone', 'sjh']),
-      campus: _pick(m, const ['xqmc', 'XQMC', 'xqh']),
-      role: _role(_pick(m, const ['userType', 'usertype', 'jsdm'])),
+      studentId: at('xh'),
+      name: at('xm'),
+      gender: _gender(at('xb')),
+      college: at('jgmc'),
+      major: _cleanMajor(at('zymc')),
+      klass: bj.isNotEmpty ? bj : at('bj'),
+      grade: at('njmc').isNotEmpty ? at('njmc') : at('njdm_id'),
+      campus: at('xqmc'),
     );
   }
 
@@ -340,7 +582,6 @@ class JwxtClient {
     var nameFromHeading = heading.replaceAll(RegExp(r'\s*学生\s*$'), '').trim();
     var role = '';
     if (heading.contains('学生')) role = '学生';
-    if (heading.contains('教师')) role = '教师';
 
     var college = lab(const ['学院名称', '学院']);
     var klass = lab(const ['班级名称', '班级']);
@@ -372,49 +613,6 @@ class JwxtClient {
       role: role,
     );
   }
-
-  Future<Map<String, dynamic>> freeRooms({
-    int? xnm,
-    String? xqm,
-    String xqj = '1,2,3,4,5',
-    int zcd = 0,
-    int jcd = 0,
-  }) async {
-    final t = currentTerm();
-    return _post(
-      '/jwglxt/cdjy/cdjy_cxKxcdlb.html',
-      {
-        'xqh_id': '',
-        'xnm': '${xnm ?? t.$1}',
-        'xqm': xqm ?? t.$2,
-        'cdlb_id': '',
-        'cdejlb_id': '',
-        'qszws': '',
-        'jszws': '',
-        'cdmc': '',
-        'cd_id': '',
-        'lh': '',
-        'jyfs': '0',
-        'zcd': zcd,
-        'xqj': xqj,
-        'jcd': jcd,
-        'cdjylx': '',
-        'zysx': '',
-        'sflb': '',
-        'hbsl': '',
-        'bbsl': '',
-        'sfyzz': '',
-        'sfjtjs': '',
-        'tjsl': '',
-        'tymbsl': '',
-        'yczb': '',
-        'zws': '',
-        'sfbhkc': '',
-        'kszws1': '',
-      },
-      params: {'doType': 'query'},
-    );
-  }
 }
 
 Map<String, dynamic>? _asMap(Object? data) {
@@ -432,19 +630,93 @@ Map<String, dynamic>? _asMap(Object? data) {
   return null;
 }
 
-String _pick(Map<String, dynamic> m, List<String> keys) {
-  final lower = <String, String>{};
-  for (final e in m.entries) {
-    final v = '${e.value}'.trim();
-    if (v.isEmpty || v == 'null' || v == 'undefined') continue;
-    lower[e.key.toString().toLowerCase()] = v;
+Object? _asJson(Object? data) {
+  if (data is List || data is Map) return data;
+  if (data is String) {
+    final s = data.trim();
+    if (s.isEmpty) return const [];
+    try {
+      return jsonDecode(s);
+    } catch (_) {}
   }
-  for (final k in keys) {
-    final v = lower[k.toLowerCase()];
-    if (v != null && v.isNotEmpty) return v;
-  }
-  return '';
+  return data;
 }
+
+class _XyqkNode {
+  const _XyqkNode({
+    required this.id,
+    required this.name,
+    required this.jdkcsx,
+    required this.sfmjd,
+    required this.yxxf,
+    required this.yqzdxf,
+  });
+
+  final String id;
+  final String name;
+  final String jdkcsx;
+  final String sfmjd;
+  final double yxxf;
+  final double yqzdxf;
+}
+
+List<_XyqkNode> _xyqkNodes(String html) {
+  final src = html.replaceAll(r"\'", "'");
+  final seen = <String, _XyqkNode>{};
+  final metaRe = RegExp(
+    r"xfyqjd_id='([^']+)' jdkcsx='([^']*)' leaf='([^']*)' sfmjd='([^']*)'",
+  );
+  for (final m in metaRe.allMatches(src)) {
+    final id = m.group(1)!;
+    if (seen.containsKey(id)) continue;
+    seen[id] = _XyqkNode(
+      id: id,
+      name: '',
+      jdkcsx: m.group(2) ?? '',
+      sfmjd: m.group(4) ?? '',
+      yxxf: 0,
+      yqzdxf: 0,
+    );
+  }
+  final titleRe = RegExp(
+    r"""id='p([^']+)' yxxf='([^']*)' yqzdxf='([^']*)' sftg='([^']*)'>"\s*\+\s*"([^"&<]+)""",
+  );
+  for (final m in titleRe.allMatches(src)) {
+    final id = m.group(1)!;
+    final prev = seen[id];
+    if (prev == null) continue;
+    seen[id] = _XyqkNode(
+      id: id,
+      name: prev.name.isNotEmpty ? prev.name : (m.group(5) ?? '').trim(),
+      jdkcsx: prev.jdkcsx,
+      sfmjd: prev.sfmjd,
+      yxxf: double.tryParse(m.group(2) ?? '') ?? 0,
+      yqzdxf: double.tryParse(m.group(3) ?? '') ?? 0,
+    );
+  }
+  return seen.values.toList();
+}
+
+double _xyqkLabelXf(String html, String label) {
+  final m = RegExp('$label[\\s\\S]{0,400}?>([0-9.]+)<').firstMatch(html);
+  return double.tryParse(m?.group(1) ?? '') ?? 0;
+}
+
+double? _xyqkGpa(String html) {
+  final i = html.indexOf('GPA');
+  if (i < 0) return null;
+  final end = i + 500 < html.length ? i + 500 : html.length;
+  final m = RegExp(r'([0-9]+\.[0-9]+)').firstMatch(html.substring(i, end));
+  return double.tryParse(m?.group(1) ?? '');
+}
+
+double _firstXf(List<double> xs) {
+  for (final v in xs) {
+    if (v > 0) return v;
+  }
+  return 0;
+}
+
 
 String _namedValue(String html, String name) {
   final n = RegExp.escape(name);
@@ -506,9 +778,3 @@ String _gender(String v) {
   return v;
 }
 
-String _role(String v) {
-  final s = v.toLowerCase();
-  if (s.contains('xs') || s.contains('student') || v.contains('学生')) return '学生';
-  if (s.contains('js') || s.contains('teacher') || v.contains('教师')) return '教师';
-  return v;
-}

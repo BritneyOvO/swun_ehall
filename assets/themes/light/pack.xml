@@ -20,17 +20,16 @@
   </layout>
   <!-- 图标：outlined/filled 可以是 Material 名，也可以是包内图片路径，例如 icons/home.png -->
   <icons>
-    <icon name="nav.home" outlined="home_outlined" filled="home_rounded"/>
-    <icon name="nav.schedule" outlined="calendar_view_week_outlined" filled="calendar_view_week"/>
-    <icon name="nav.grades" outlined="menu_book_outlined" filled="menu_book"/>
-    <icon name="nav.mine" outlined="person_outline" filled="person"/>
-    <icon name="svc.ykt" outlined="qr_code_2"/>
-    <icon name="svc.credits" outlined="pie_chart_outline"/>
-    <icon name="svc.exams" outlined="edit_calendar_outlined"/>
-    <icon name="svc.rooms" outlined="meeting_room_outlined"/>
-    <icon name="svc.ktkq" outlined="fingerprint"/>
-    <icon name="svc.clock" outlined="location_on_outlined"/>
-    <icon name="svc.venue" outlined="sports_outlined"/>
-    <icon name="action.settings" outlined="settings_outlined"/>
+    <icon name="nav.home" outlined="home_rounded" filled="home_rounded"/>
+    <icon name="nav.schedule" outlined="calendar_view_week_rounded" filled="calendar_view_week_rounded"/>
+    <icon name="nav.grades" outlined="menu_book_rounded" filled="menu_book_rounded"/>
+    <icon name="nav.mine" outlined="person_rounded" filled="person_rounded"/>
+    <icon name="svc.ykt" outlined="qr_code_2_rounded"/>
+    <icon name="svc.credits" outlined="pie_chart_rounded"/>
+    <icon name="svc.exams" outlined="edit_calendar_rounded"/>
+    <icon name="svc.ktkq" outlined="fingerprint_rounded"/>
+    <icon name="svc.clock" outlined="location_on_rounded"/>
+    <icon name="svc.venue" outlined="sports_rounded"/>
+    <icon name="action.settings" outlined="settings_rounded"/>
   </icons>
 </theme>

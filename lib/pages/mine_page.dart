@@ -4,12 +4,12 @@ import 'package:provider/provider.dart';
 import '../models/profile.dart';
 import '../state/session.dart';
 import '../theme.dart';
+import '../widgets/loader.dart';
 import '../widgets/motion.dart';
 import 'clock_page.dart';
 import 'credits_page.dart';
 import 'exams_page.dart';
 import 'ktkq_page.dart';
-import 'rooms_page.dart';
 import 'settings_page.dart';
 import 'venue_page.dart';
 import 'ykt_page.dart';
@@ -39,20 +39,13 @@ class _MinePageState extends State<MinePage> {
       appBar: AppBar(
         title: const Text('我的'),
         automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            tooltip: '设置',
-            onPressed: () => pushPage(context, const SettingsPage()),
-            icon: PackIcon('action.settings', color: context.ink),
-          ),
-        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           FadeSlideIn(
             child: Pressable(
-              onTap: () => pushPage(context, const SettingsPage()),
+              onTap: () => pushPage(context, const ProfileSettingsPage()),
               child: _header(s, p, title),
             ),
           ),
@@ -67,25 +60,52 @@ class _MinePageState extends State<MinePage> {
               ),
               child: Column(
                 children: [
-                  _item(context, Icons.qr_code_2, '一卡通付款码', const YktPage()),
+                  _item(context, Icons.qr_code_2_rounded, '一卡通付款码', const YktPage()),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.pie_chart_outline, '共修学分', const CreditsPage()),
+                  _item(context, Icons.pie_chart_rounded, '共修学分', const CreditsPage()),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.edit_calendar_outlined, '考试安排', const ExamsPage()),
+                  _item(context, Icons.edit_calendar_rounded, '考试安排', const ExamsPage()),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.meeting_room_outlined, '空闲教室', const RoomsPage()),
+                  _item(context, Icons.sports_rounded, '预约场馆', const VenuePage()),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.sports_outlined, '预约场馆', const VenuePage()),
+                  _item(context, Icons.fingerprint_rounded, '课堂考勤', const KtkqPage()),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.fingerprint, '课堂考勤', const KtkqPage()),
-                  Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.location_on_outlined, '公寓打卡', const ClockPage()),
+                  _item(context, Icons.location_on_rounded, '公寓打卡', const ClockPage()),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 20),
-          TextButton(onPressed: () => s.logout(), child: const Text('退出登录')),
+          const SizedBox(height: 12),
+          FadeSlideIn(
+            delay: const Duration(milliseconds: 120),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: context.panel,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.line),
+              ),
+              child: _item(context, Icons.settings_rounded, '设置', const SettingsPage()),
+            ),
+          ),
+          const SizedBox(height: 12),
+          FadeSlideIn(
+            delay: const Duration(milliseconds: 150),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: context.panel,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.line),
+              ),
+              child: Pressable(
+                radius: 12,
+                onTap: () => s.logout(),
+                child: ListTile(
+                  leading: const Icon(Icons.logout_rounded, color: kCrimson, size: 22),
+                  title: const Text('退出登录', style: TextStyle(fontSize: 15, color: kCrimson)),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -121,11 +141,11 @@ class _MinePageState extends State<MinePage> {
             ],
           ),
         ),
-        Icon(Icons.chevron_right, color: context.muted, size: 18),
+        Icon(Icons.chevron_right_rounded, color: context.muted, size: 18),
         if (s.profileLoading)
           const Padding(
             padding: EdgeInsets.only(left: 8),
-            child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            child: SwunBusyDots(size: 4),
           ),
       ],
     );
@@ -138,7 +158,7 @@ class _MinePageState extends State<MinePage> {
       child: ListTile(
         leading: Icon(icon, color: context.ink, size: 22),
         title: Text(title, style: const TextStyle(fontSize: 15)),
-        trailing: Icon(Icons.chevron_right, color: context.muted, size: 18),
+        trailing: Icon(Icons.chevron_right_rounded, color: context.muted, size: 18),
       ),
     );
   }

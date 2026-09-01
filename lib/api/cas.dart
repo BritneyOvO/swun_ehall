@@ -181,7 +181,11 @@ class CasClient {
     var url = '$kAuthBase/login';
     var params = <String, dynamic>{'service': service};
     for (var i = 0; i < 6; i++) {
-      final r = await dio.get(url, queryParameters: params);
+      final r = await dio.get(
+        url,
+        queryParameters: params,
+        options: Options(receiveTimeout: const Duration(seconds: 8)),
+      );
       final next = loc(r);
       if (next.contains('ticket=')) {
         return upgradeSwunHttps(next);

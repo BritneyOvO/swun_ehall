@@ -1,5 +1,5 @@
 name: swun_ehall
-description: "西南民族大学 ehall 客户端"
+description: "西南民族大学助手"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -72,6 +72,8 @@ flutter:
   assets:
     - assets/themes/light/pack.xml
     - assets/themes/dark/pack.xml
+    - assets/icon/app_icon.png
+    - assets/icon/splash.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

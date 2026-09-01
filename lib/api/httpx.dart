@@ -46,6 +46,37 @@ String absUrl(String base, String next) {
   return upgradeSwunHttps(Uri.parse(base).resolve(next).toString());
 }
 
+bool looksNightClosed({int? status, Object? data}) {
+  final t = data?.toString() ?? '';
+  if (t.contains('没有权限访问该网站') ||
+      t.contains('没有权限访问相应的资源') ||
+      (t.contains('出错啦') && t.contains('403')) ||
+      t.contains('错误代码：403') ||
+      t.contains('错误代码:403')) {
+    return true;
+  }
+  if (status == 403) return true;
+  return t.contains('系统已关闭') ||
+      t.contains('不在服务时间') ||
+      t.contains('不在访问时间') ||
+      t.contains('非服务时间') ||
+      t.contains('服务已关闭') ||
+      t.contains('当前不在服务时间');
+}
+
+String nightClosedMessage(String name) => '$name夜间关闭';
+
+String publicError(Object e) {
+  var s = e.toString().replaceFirst('Exception: ', '');
+  if (looksNightClosed(data: s) || s.contains('夜间关闭')) {
+    return RegExp(r'[^。\s]{2,8}夜间关闭').firstMatch(s)?.group(0) ?? '该功能夜间关闭';
+  }
+  if (s.contains('<html') || s.contains('<!DOCTYPE') || s.contains('<HTML')) {
+    return '请求失败，请稍后重试';
+  }
+  return s;
+}
+
 /// CAS 有时仍回 http Location; 站点本身是 https.
 String upgradeSwunHttps(String url) {
   return url

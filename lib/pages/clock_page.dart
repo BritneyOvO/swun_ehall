@@ -7,6 +7,7 @@ import '../api/locate.dart';
 import '../demo/demo_data.dart';
 import '../state/session.dart';
 import '../theme.dart';
+import '../widgets/loader.dart';
 
 class ClockPage extends StatefulWidget {
   const ClockPage({super.key});
@@ -117,8 +118,8 @@ class _ClockPageState extends State<ClockPage> {
   List<Map<String, dynamic>> get _records {
     final raw = _data['records'];
     if (raw is! Map) return [];
-    final page = raw['page'] ?? raw['data'] ?? raw;
-    final list = page is Map ? page['list'] : (raw['list'] as List?);
+    final page = raw['page'];
+    final list = page is Map ? page['list'] : null;
     if (list is! List) return [];
     return [
       for (final e in list)
@@ -130,8 +131,8 @@ class _ClockPageState extends State<ClockPage> {
     if (_pos == null || _fences.isEmpty) return null;
     double? best;
     for (final f in _fences) {
-      final lat = double.tryParse('${f['lat'] ?? f['latitude'] ?? ''}');
-      final lng = double.tryParse('${f['lng'] ?? f['longitude'] ?? ''}');
+      final lat = double.tryParse('${f['lat'] ?? ''}');
+      final lng = double.tryParse('${f['lng'] ?? ''}');
       if (lat == null || lng == null) continue;
       final d = _haversine(_pos!.latitude, _pos!.longitude, lat, lng);
       if (best == null || d < best) best = d;
@@ -202,7 +203,7 @@ class _ClockPageState extends State<ClockPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('公寓打卡')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: kCrimson))
+          ? const Center(child: SwunLoader())
           : RefreshIndicator(
               color: kCrimson,
               onRefresh: _reload,
@@ -225,11 +226,7 @@ class _ClockPageState extends State<ClockPage> {
                   FilledButton(
                     onPressed: _punching ? null : _punch,
                     child: _punching
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
+                        ? const SwunBusyDots(color: Colors.white, size: 5)
                         : Text(done ? '再次打卡' : '立即打卡'),
                   ),
                   const SizedBox(height: 20),
@@ -352,9 +349,9 @@ class _ClockPageState extends State<ClockPage> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        title: Text('${e['clockTime'] ?? e['createTime'] ?? e['clockDate'] ?? ''}'),
-        subtitle: Text('${e['address'] ?? e['clockAddress'] ?? e['location'] ?? ''}'),
-        trailing: Text('${e['clockStatus'] ?? e['status'] ?? e['result'] ?? ''}'),
+        title: Text('${e['clockTime'] ?? ''}'),
+        subtitle: Text('${e['clockAddress'] ?? ''}'),
+        trailing: Text('${e['dataStatus'] ?? ''}' == '1' ? '正常' : '${e['dataStatus'] ?? ''}'),
       ),
     );
   }

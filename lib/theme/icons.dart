@@ -6,25 +6,42 @@ import 'package:path/path.dart' as p;
 import 'pack.dart';
 
 const kMaterialIcons = <String, IconData>{
-  'home_outlined': Icons.home_outlined,
+  'home_outlined': Icons.home_rounded,
   'home_rounded': Icons.home_rounded,
-  'calendar_view_week_outlined': Icons.calendar_view_week_outlined,
-  'calendar_view_week': Icons.calendar_view_week,
-  'menu_book_outlined': Icons.menu_book_outlined,
-  'menu_book': Icons.menu_book,
-  'person_outline': Icons.person_outline,
-  'person': Icons.person,
-  'qr_code_2': Icons.qr_code_2,
-  'pie_chart_outline': Icons.pie_chart_outline,
-  'edit_calendar_outlined': Icons.edit_calendar_outlined,
-  'meeting_room_outlined': Icons.meeting_room_outlined,
-  'fingerprint': Icons.fingerprint,
-  'location_on_outlined': Icons.location_on_outlined,
-  'sports_outlined': Icons.sports_outlined,
-  'settings_outlined': Icons.settings_outlined,
-  'brightness_auto_outlined': Icons.brightness_auto_outlined,
-  'light_mode_outlined': Icons.light_mode_outlined,
-  'dark_mode_outlined': Icons.dark_mode_outlined,
+  'calendar_view_week_outlined': Icons.calendar_view_week_rounded,
+  'calendar_view_week': Icons.calendar_view_week_rounded,
+  'calendar_view_week_rounded': Icons.calendar_view_week_rounded,
+  'menu_book_outlined': Icons.menu_book_rounded,
+  'menu_book': Icons.menu_book_rounded,
+  'menu_book_rounded': Icons.menu_book_rounded,
+  'person_outline': Icons.person_rounded,
+  'person': Icons.person_rounded,
+  'person_rounded': Icons.person_rounded,
+  'qr_code_2': Icons.qr_code_2_rounded,
+  'qr_code_2_rounded': Icons.qr_code_2_rounded,
+  'pie_chart_outline': Icons.pie_chart_rounded,
+  'pie_chart_rounded': Icons.pie_chart_rounded,
+  'edit_calendar_outlined': Icons.edit_calendar_rounded,
+  'edit_calendar_rounded': Icons.edit_calendar_rounded,
+  'meeting_room_outlined': Icons.meeting_room_rounded,
+  'meeting_room_rounded': Icons.meeting_room_rounded,
+  'fingerprint': Icons.fingerprint_rounded,
+  'fingerprint_rounded': Icons.fingerprint_rounded,
+  'location_on_outlined': Icons.location_on_rounded,
+  'location_on_rounded': Icons.location_on_rounded,
+  'sports_outlined': Icons.sports_rounded,
+  'sports_rounded': Icons.sports_rounded,
+  'settings_outlined': Icons.settings_rounded,
+  'settings_rounded': Icons.settings_rounded,
+  'brightness_auto_outlined': Icons.brightness_auto_rounded,
+  'light_mode_outlined': Icons.light_mode_rounded,
+  'dark_mode_outlined': Icons.dark_mode_rounded,
+  'palette_outlined': Icons.palette_rounded,
+  'palette_rounded': Icons.palette_rounded,
+  'logout_rounded': Icons.logout_rounded,
+  'refresh_rounded': Icons.refresh_rounded,
+  'chevron_right_rounded': Icons.chevron_right_rounded,
+  'chevron_left_rounded': Icons.chevron_left_rounded,
 };
 
 class PackIcon extends StatelessWidget {
@@ -78,7 +95,8 @@ class PackIcon extends StatelessWidget {
 
   Widget _material(PackIconDef? def, bool filled, Color? color) {
     final key = filled ? (def?.filled ?? def?.outlined) : (def?.outlined ?? def?.filled);
-    final data = (key != null && !PackIconDef.looksLikeFile(key) ? kMaterialIcons[key] : null) ?? Icons.circle_outlined;
+    final data = (key != null && !PackIconDef.looksLikeFile(key) ? kMaterialIcons[key] : null) ??
+        Icons.circle_rounded;
     return Icon(data, size: size, color: color);
   }
 }

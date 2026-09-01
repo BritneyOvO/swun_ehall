@@ -25,38 +25,72 @@ class YktClient {
   final CookieJar jar;
   final Dio dio;
   late final RsGateway rs;
+  bool nightClosed = false;
 
-  Future<YktQr> fetchQr({required String studentId, String schoolId = '187'}) async {
-    if (studentId.trim().isEmpty) throw Exception('没有学号，无法打开一卡通');
-    rs.remember(Uri.parse(kYktH5).host);
-    final menu = await rs.request(method: 'GET', url: kYktMenu);
-    if (looksLikeRuishu(status: menu.status, body: menu.body)) {
-      throw Exception('一卡通入口仍被网关拦截');
-    }
-    final expire = RegExp(r"timestamp\s*=\s*'([^']+)'").firstMatch(menu.body)?.group(1);
-    if (expire == null || expire.isEmpty) {
-      throw Exception('未拿到一卡通入口参数');
-    }
-    final fn =
-        '$kYktH5/menu/function.do?expire=$expire&stu_code=$studentId&acco_id=$studentId&school_id=$schoolId&menu=qrcode';
-    await rs.navigate(fn);
-    final hit = await rs.request(
+  Future<RsHit> _postQr(String referer) {
+    return rs.request(
       method: 'POST',
       url: kYktQrApi,
       headers: {
         'Accept': 'application/json, text/javascript, */*; q=0.01',
         'X-Requested-With': 'XMLHttpRequest',
-        'Referer': fn,
+        'Referer': referer,
       },
     );
+  }
+
+  Future<YktQr> fetchQr({required String studentId, String schoolId = '187'}) {
+    return _fetchQr(studentId: studentId, schoolId: schoolId).timeout(
+      const Duration(seconds: 22),
+      onTimeout: () => throw Exception('一卡通请求超时'),
+    );
+  }
+
+  Future<YktQr> _fetchQr({required String studentId, String schoolId = '187'}) async {
+    if (studentId.trim().isEmpty) throw Exception('没有学号，无法打开一卡通');
+    final host = Uri.parse(kYktH5).host;
+    rs.remember(host);
+    try {
+      await rs.warmup('$kYktH5/');
+    } catch (_) {}
+    await rs.navigate(kYktMenu);
+    var hit = await _postQr(kYktMenu);
+    if (looksNightClosed(status: hit.status, data: hit.body)) {
+      nightClosed = true;
+      throw Exception(nightClosedMessage('一卡通'));
+    }
     if (looksLikeRuishu(status: hit.status, body: hit.body)) {
       throw Exception('一卡通二维码仍被网关拦截');
     }
-    final payload = _payloadOf(hit.body);
+    var payload = _payloadOf(hit.body);
+    if (payload == null || payload.isEmpty) {
+      final ts = await rs.evalJs(host, r'''
+        try {
+          if (typeof timestamp === 'string' && timestamp.length) return timestamp;
+          if (window.timestamp) return String(window.timestamp);
+          return '';
+        } catch (e) { return ''; }
+      ''');
+      if (ts.trim().isNotEmpty) {
+        final fn =
+            '$kYktH5/menu/function.do?expire=$ts&stu_code=$studentId&acco_id=$studentId&school_id=$schoolId&menu=qrcode';
+        await rs.navigate(fn);
+        hit = await _postQr(fn);
+        if (looksNightClosed(status: hit.status, data: hit.body)) {
+          nightClosed = true;
+          throw Exception(nightClosedMessage('一卡通'));
+        }
+        if (looksLikeRuishu(status: hit.status, body: hit.body)) {
+          throw Exception('一卡通二维码仍被网关拦截');
+        }
+        payload = _payloadOf(hit.body);
+      }
+    }
     if (payload == null || payload.isEmpty) {
       throw Exception('用户无卡片，无法生成二维码');
     }
-    return YktQr(payload: payload, expire: expire);
+    nightClosed = false;
+    return YktQr(payload: payload);
   }
 
   String? _payloadOf(String body) {

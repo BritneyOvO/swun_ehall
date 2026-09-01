@@ -22,12 +22,16 @@ class SwunApp extends StatefulWidget {
 class _SwunAppState extends State<SwunApp> {
   final session = Session();
   final settings = AppSettings();
+  var _splashDone = false;
 
   @override
   void initState() {
     super.initState();
     session.init();
     settings.load();
+    Future<void>.delayed(const Duration(milliseconds: 900), () {
+      if (mounted) setState(() => _splashDone = true);
+    });
   }
 
   @override
@@ -59,7 +63,7 @@ class _SwunAppState extends State<SwunApp> {
             mode = ThemeMode.light;
           }
           return MaterialApp(
-            title: '民大 eHall',
+            title: '民大助手',
             debugShowCheckedModeBanner: false,
             theme: lightTheme,
             darkTheme: darkTheme,
@@ -78,7 +82,7 @@ class _SwunAppState extends State<SwunApp> {
             home: Consumer<Session>(
               builder: (context, s, _) {
                 Widget child;
-                if (!s.ready) {
+                if (!s.ready || !_splashDone) {
                   child = const _Boot(key: ValueKey('boot'));
                 } else if (s.loggedIn) {
                   child = const MainShell(key: ValueKey('shell'));
@@ -108,15 +112,21 @@ class _Boot extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: 1),
-          duration: const Duration(milliseconds: 480),
-          curve: Curves.easeOutCubic,
-          builder: (context, t, child) => Opacity(
-            opacity: t,
-            child: Transform.translate(offset: Offset(0, 8 * (1 - t)), child: child),
-          ),
-          child: Text('民大', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: context.ink, letterSpacing: 6)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('assets/icon/splash.png', width: 112, height: 112, filterQuality: FilterQuality.medium),
+            const SizedBox(height: 16),
+            Text(
+              '民大助手',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 4,
+                color: context.ink,
+              ),
+            ),
+          ],
         ),
       ),
     );

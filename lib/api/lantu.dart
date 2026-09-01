@@ -230,15 +230,15 @@ class LantuClient {
     final sex = b['sex'] ?? l['sex'];
     return StudentProfile(
       studentId: '${l['userName'] ?? ''}',
-      name: '${b['realName'] ?? b['nickName'] ?? ''}',
+      name: '${b['realName'] ?? ''}',
       gender: sex == 1 || sex == '1' ? '男' : (sex == 2 || sex == '2' ? '女' : ''),
-      college: '${b['collegeName'] ?? b['classStr'] ?? ''}',
-      major: '${b['majorId'] ?? b['zymc'] ?? ''}',
+      college: '${b['collegeName'] ?? ''}',
+      major: '${b['majorId'] ?? ''}',
       klass: '${b['classId'] ?? ''}',
       grade: '${b['sznj'] ?? ''}',
-      phone: '${b['tel'] ?? b['mobile'] ?? ''}',
-      role: b['role'] == 1 || b['role'] == '1' ? '学生' : '${b['role'] ?? ''}',
-      avatar: '${b['headImage'] ?? b['fullImage'] ?? ''}',
+      phone: '${b['tel'] ?? ''}',
+      role: '学生',
+      avatar: '${b['headImage'] ?? ''}',
     );
   }
 
@@ -259,8 +259,8 @@ class LantuClient {
         'skxq': xqj,
         'jcs': dur <= 1 ? '$start' : '$start-${start + dur - 1}',
         'kcmc': '${m['kcmc'] ?? ''}',
-        'cdmc': '${m['jash'] ?? m['jxlH'] ?? ''}',
-        'xm': '${m['jgmc'] ?? ''}',
+        'cdmc': '${m['jash'] ?? ''}',
+        'xm': '',
         'skzc': '${m['skzc'] ?? ''}',
         'skjc': start,
         'cxjc': dur,

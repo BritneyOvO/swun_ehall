@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../demo/demo_data.dart';
 import '../state/session.dart';
 import '../theme.dart';
+import '../widgets/loader.dart';
+import '../widgets/motion.dart';
 
 class VenuePage extends StatefulWidget {
   const VenuePage({super.key});
@@ -201,22 +203,78 @@ class _VenuePageState extends State<VenuePage> with SingleTickerProviderStateMix
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('预约场馆'),
-        bottom: TabBar(
-          controller: _tabs,
-          tabs: const [Tab(text: '订场地'), Tab(text: '我的预约')],
+      appBar: AppBar(title: const Text('预约场馆')),
+      body: Column(
+        children: [
+          _segment(),
+          Expanded(
+            child: _loading
+                ? const Center(child: SwunLoader())
+                : TabBarView(
+                    controller: _tabs,
+                    children: [
+                      RefreshIndicator(color: kCrimson, onRefresh: _reload, child: _bookTab()),
+                      RefreshIndicator(color: kCrimson, onRefresh: _reload, child: _mineTab()),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _segment() {
+    const labels = ['订场地', '我的预约'];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.panel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.line),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: AnimatedBuilder(
+            animation: _tabs,
+            builder: (context, _) {
+              return Row(
+                children: [
+                  for (var i = 0; i < labels.length; i++)
+                    Expanded(
+                      child: Pressable(
+                        radius: 10,
+                        onTap: () {
+                          if (_tabs.index != i) _tabs.animateTo(i);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: _tabs.index == i
+                                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            labels[i],
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: _tabs.index == i ? FontWeight.w600 : FontWeight.w400,
+                              color: _tabs.index == i ? context.primary : context.muted,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: kCrimson))
-          : TabBarView(
-              controller: _tabs,
-              children: [
-                RefreshIndicator(color: kCrimson, onRefresh: _reload, child: _bookTab()),
-                RefreshIndicator(color: kCrimson, onRefresh: _reload, child: _mineTab()),
-              ],
-            ),
     );
   }
 
@@ -276,7 +334,7 @@ class _VenuePageState extends State<VenuePage> with SingleTickerProviderStateMix
         if (_busy)
           const Padding(
             padding: EdgeInsets.only(top: 12),
-            child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),
+            child: Center(child: SwunLoader(compact: true)),
           ),
       ],
     );

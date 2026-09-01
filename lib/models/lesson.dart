@@ -3,9 +3,15 @@ import 'package:flutter/material.dart';
 const kWeekdayNames = ['', '一', '二', '三', '四', '五', '六', '日'];
 const kWeekdayLabels = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
-/// 民大默认作息 (course/getCourseTimeConfig.do).
+DateTime mondayOfSchoolWeek(int week, int curWeek) {
+  final n = DateTime.now();
+  final thisMonday = DateTime(n.year, n.month, n.day).subtract(Duration(days: n.weekday - 1));
+  return thisMonday.add(Duration(days: 7 * (week - curWeek)));
+}
+
+/// 民大作息.
 const kDefaultPeriodTimes = <PeriodTime>[
-  PeriodTime(1, '8:00', '9:15'),
+  PeriodTime(1, '8:30', '9:15'),
   PeriodTime(2, '9:20', '10:05'),
   PeriodTime(3, '10:25', '11:10'),
   PeriodTime(4, '11:15', '12:00'),
@@ -34,6 +40,37 @@ class PeriodTime {
   final int index;
   final String start;
   final String end;
+}
+
+(int, int)? parseHm(String raw) {
+  final m = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(raw.trim());
+  if (m == null) return null;
+  return (int.parse(m.group(1)!), int.parse(m.group(2)!));
+}
+
+String? periodClock(int index, {required bool end, List<PeriodTime> times = kDefaultPeriodTimes}) {
+  for (final t in times) {
+    if (t.index == index) {
+      final s = end ? t.end : t.start;
+      return s.isEmpty ? null : s;
+    }
+  }
+  return null;
+}
+
+/// True when this lesson's last period has already ended today.
+bool lessonEnded(Lesson l, DateTime now, [List<PeriodTime> times = kDefaultPeriodTimes]) {
+  final hm = periodClock(l.end, end: true, times: times);
+  if (hm == null) return false;
+  final parts = parseHm(hm);
+  if (parts == null) return false;
+  final endAt = DateTime(now.year, now.month, now.day, parts.$1, parts.$2);
+  return !now.isBefore(endAt);
+}
+
+List<Lesson> remainingToday(Iterable<Lesson> lessons, [DateTime? now]) {
+  final t = now ?? DateTime.now();
+  return [for (final l in lessons) if (!lessonEnded(l, t)) l];
 }
 
 class Lesson {
@@ -227,7 +264,7 @@ List<Lesson> lessonsFromKb(Iterable raw) {
     final (start, end) = parsePeriods(m);
     final weeks = parseWeeks(skzc: m['skzc'], zcd: m['zcd']);
     final room = '${m['cdmc'] ?? m['jash'] ?? m['jxlH'] ?? m['jasmc'] ?? ''}'.trim();
-    final teacher = '${m['xm'] ?? m['jgmc'] ?? m['jsxm'] ?? m['teacherName'] ?? ''}'.trim();
+    final teacher = '${m['xm'] ?? m['jsxm'] ?? ''}'.trim();
     for (final d in days) {
       out.add(
         Lesson(

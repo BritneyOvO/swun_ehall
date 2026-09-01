@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../demo/demo_data.dart';
 import '../state/session.dart';
 import '../widgets/async_body.dart';
 
@@ -10,10 +9,7 @@ class ExamsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<Session>();
-    final future = session.demoMode
-        ? Future.value({'items': demoExams})
-        : session.jwxt!.exams();
+    final future = context.watch<Session>().loadExams();
     return Scaffold(
       appBar: AppBar(title: const Text('考试')),
       body: AsyncBody(

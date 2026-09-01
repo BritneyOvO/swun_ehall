@@ -57,10 +57,7 @@ class EhallClient {
       if (p.contains('学院') && college.isEmpty) college = p;
       if (RegExp(r'^\d{4}$').hasMatch(p) && grade.isEmpty) grade = p;
     }
-    final cat = '${d['categoryName'] ?? ''}';
-    var role = '';
-    if (cat.contains('学生')) role = '学生';
-    if (cat.contains('教师') || cat.contains('老师')) role = '教师';
+    const role = '学生';
     final sex = '${d['sexCode'] ?? ''}';
     var gender = '';
     if (sex == '1' || sex == '男') gender = '男';

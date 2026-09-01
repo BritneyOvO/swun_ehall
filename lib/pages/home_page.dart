@@ -1,16 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/httpx.dart';
 import '../models/lesson.dart';
 import '../state/session.dart';
 import '../theme.dart';
+import '../widgets/loader.dart';
 import '../widgets/motion.dart';
 import 'clock_page.dart';
 import 'credits_page.dart';
 import 'exams_page.dart';
 import 'ktkq_page.dart';
 import 'ktkq_sign_page.dart';
-import 'rooms_page.dart';
 import 'venue_page.dart';
 import 'ykt_page.dart';
 
@@ -21,10 +24,11 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<List<Lesson>>? _today;
   final weekday = DateTime.now().weekday;
   int _week = 1;
+  Timer? _tick;
 
   List<Lesson> _todayFrom(Map<String, dynamic> data) {
     _week = int.tryParse('${data['curWeek'] ?? 1}') ?? 1;
@@ -37,12 +41,32 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _tick = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final s = context.read<Session>();
       setState(() {
-        _today = s.loadSchedule().then(_todayFrom);
+        _today = s.loadSchedule().then((data) {
+          final list = _todayFrom(data);
+          if (mounted) setState(() {});
+          return list;
+        });
       });
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override
@@ -53,193 +77,189 @@ class _HomePageState extends State<HomePage> {
       ('svc.ykt', '一卡通', YktPage()),
       ('svc.credits', '学分', CreditsPage()),
       ('svc.exams', '考试', ExamsPage()),
-      ('svc.rooms', '空教室', RoomsPage()),
       ('svc.venue', '预约场馆', VenuePage()),
       ('svc.ktkq', '课堂考勤', KtkqPage()),
       ('svc.clock', '公寓打卡', ClockPage()),
     ];
+    final cols = pack.homeGrid.clamp(2, 4);
+    final weekdayName = ['', '一', '二', '三', '四', '五', '六', '日'][weekday];
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+          children: [
+            if (pack.homeHeader == 'band')
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(height: 3, color: context.primary),
+              ),
+            FadeSlideIn(child: _hello(session, weekdayName)),
+            const SizedBox(height: 12),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 80),
+              child: GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: cols,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.08,
                 children: [
-                  if (pack.homeHeader == 'band')
-                    Container(height: 3, color: context.primary),
-                  Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-                child: FadeSlideIn(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text('民大', style: TextStyle(color: context.muted, fontSize: 13)),
-                          const Spacer(),
-                          if (session.demoMode)
-                            Text('预览', style: TextStyle(color: context.muted, fontSize: 12)),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        '你好，${session.displayName}',
-                        style: TextStyle(fontSize: 26, fontWeight: FontWeight.w600, height: 1.15, color: context.ink),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '星期${['', '一', '二', '三', '四', '五', '六', '日'][weekday]}',
-                        style: TextStyle(color: context.muted, fontSize: 14),
-                      ),
-                      if (session.jwxt?.portalClosed == true) ...[
-                        const SizedBox(height: 12),
-                        const Text(
-                          '教务夜间关闭，课表和成绩可能暂不可用。',
-                          style: TextStyle(color: kCrimson, fontSize: 13),
+                  for (final s in services)
+                    Pressable(
+                      radius: pack.cardRadius,
+                      onTap: () => pushPage(context, s.$3),
+                      child: _card(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            PackIcon(s.$1, color: context.ink, size: 22),
+                            const SizedBox(height: 8),
+                            Text(s.$2, style: TextStyle(fontSize: 13, color: context.ink)),
+                          ],
                         ),
-                      ],
-                    ],
-                  ),
-                ),
-                  ),
+                      ),
+                    ),
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 120),
+              child: _todayCard(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _hello(Session session, String weekdayName) {
+    return _card(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('民大', style: TextStyle(color: context.muted, fontSize: 13)),
+              const Spacer(),
+              if (session.demoMode) Text('预览', style: TextStyle(color: context.muted, fontSize: 12)),
+            ],
           ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            sliver: SliverToBoxAdapter(
-              child: FadeSlideIn(
-                delay: const Duration(milliseconds: 80),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: context.panel,
-                    borderRadius: BorderRadius.circular(pack.cardRadius),
-                    border: Border.all(color: context.line),
+          const SizedBox(height: 8),
+          Text(
+            '你好，${session.displayName}',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, height: 1.2, color: context.ink),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '星期$weekdayName · 第$_week周',
+            style: TextStyle(color: context.muted, fontSize: 13),
+          ),
+          if (session.jwxt?.portalClosed == true ||
+              session.ktkq?.nightClosed == true ||
+              session.ykt?.nightClosed == true) ...[
+            const SizedBox(height: 10),
+            const Text(
+              '教务、课堂考勤、一卡通夜间关闭',
+              style: TextStyle(color: kCrimson, fontSize: 13),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _todayCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+            child: Text('今天', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.ink)),
+          ),
+          FutureBuilder<List<Lesson>>(
+            future: _today,
+            builder: (context, snap) {
+              if (snap.connectionState != ConnectionState.done) {
+                return const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 20),
+                  child: Center(child: SwunLoader(compact: true)),
+                );
+              }
+              if (snap.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Text(
+                    '课表加载失败：${publicError(snap.error!)}',
+                    style: TextStyle(color: context.muted, fontSize: 13),
                   ),
-                  child: GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: pack.homeGrid.clamp(2, 4),
-                    childAspectRatio: 1.15,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    children: [
-                      for (var i = 0; i < services.length; i++)
-                        Pressable(
-                          onTap: () => pushPage(context, services[i].$3),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              PackIcon(services[i].$1, color: context.ink, size: 22),
-                              const SizedBox(height: 8),
-                              Text(services[i].$2, style: TextStyle(fontSize: 13, color: context.ink)),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-            sliver: SliverToBoxAdapter(
-              child: Text('今天', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.ink)),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-            sliver: SliverToBoxAdapter(
-              child: FutureBuilder<List<Lesson>>(
-                future: _today,
-                builder: (context, snap) {
-                  if (snap.connectionState != ConnectionState.done) {
-                    return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-                    );
-                  }
-                  final today = snap.data ?? const <Lesson>[];
-                  if (today.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: Text('今天没有课', style: TextStyle(color: context.muted)),
-                    );
-                  }
-                  return Column(
-                    children: [
-                      for (var i = 0; i < today.length; i++)
-                        FadeSlideIn(
-                          delay: Duration(milliseconds: 40 * i),
-                          child: _todayRow(today[i], i == today.length - 1),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
+                );
+              }
+              final today = snap.data ?? const <Lesson>[];
+              final left = remainingToday(today);
+              if (today.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Text('今天没有课', style: TextStyle(color: context.muted, fontSize: 13)),
+                );
+              }
+              if (left.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Text('今天的课上完了', style: TextStyle(color: context.muted, fontSize: 13)),
+                );
+              }
+              return Column(
+                children: [
+                  for (var i = 0; i < left.length; i++) ...[
+                    if (i > 0) Divider(height: 1, indent: 16, endIndent: 16, color: context.line),
+                    _lessonTile(left[i]),
+                  ],
+                ],
+              );
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _todayRow(Lesson e, bool last) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 52,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 14),
-              child: Text(
-                e.periodLabel.replaceFirst('第', '').replaceFirst('节', ''),
-                style: TextStyle(color: context.muted, fontSize: 12),
-              ),
-            ),
-          ),
-          Column(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                margin: const EdgeInsets.only(top: 18),
-                decoration: BoxDecoration(color: e.color, shape: BoxShape.circle),
-              ),
-              Container(width: 1, height: last ? 0 : 52, color: context.line),
-            ],
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Pressable(
-              onTap: () => pushPage(context, KtkqSignPage(lesson: e, week: _week)),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                decoration: BoxDecoration(
-                  color: context.panel,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.line),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(e.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                    const SizedBox(height: 4),
-                    Text('${e.periodLabel}  ${e.room}', style: TextStyle(color: context.muted, fontSize: 13)),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+  Widget _lessonTile(Lesson e) {
+    final loc = [
+      e.periodLabel,
+      if (e.room.isNotEmpty) e.room,
+    ].join('  ');
+    final sub = e.teacher.isNotEmpty ? '${e.teacher}\n$loc' : loc;
+    return Pressable(
+      radius: 0,
+      onTap: () => pushPage(context, KtkqSignPage(lesson: e, week: _week)),
+      child: ListTile(
+        isThreeLine: e.teacher.isNotEmpty,
+        leading: Container(
+          width: 4,
+          height: 36,
+          decoration: BoxDecoration(color: e.color, borderRadius: BorderRadius.circular(4)),
+        ),
+        title: Text(e.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+        subtitle: Text(sub, style: TextStyle(color: context.muted, fontSize: 13, height: 1.35)),
+        trailing: Icon(Icons.chevron_right_rounded, color: context.muted, size: 18),
       ),
+    );
+  }
+
+  Widget _card({required Widget child, EdgeInsetsGeometry? padding}) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.line),
+      ),
+      child: padding == null ? child : Padding(padding: padding, child: child),
     );
   }
 }

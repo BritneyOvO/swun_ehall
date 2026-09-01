@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../api/httpx.dart';
 import '../theme.dart';
+import 'loader.dart';
 
 class AsyncBody<T> extends StatelessWidget {
   const AsyncBody({super.key, required this.future, required this.builder});
@@ -17,14 +19,18 @@ class AsyncBody<T> extends StatelessWidget {
         if (snap.connectionState != ConnectionState.done) {
           child = const Center(
             key: ValueKey('loading'),
-            child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: kCrimson)),
+            child: SwunLoader(),
           );
         } else if (snap.hasError) {
           child = Center(
             key: const ValueKey('error'),
             child: Padding(
               padding: const EdgeInsets.all(24),
-              child: Text('${snap.error}', textAlign: TextAlign.center, style: const TextStyle(color: kMuted)),
+              child: Text(
+                publicError(snap.error!),
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: kMuted),
+              ),
             ),
           );
         } else {

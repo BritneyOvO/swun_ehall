@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../state/session.dart';
 import '../theme.dart';
+import '../widgets/loader.dart';
 import '../widgets/motion.dart';
 
 class LoginPage extends StatefulWidget {
@@ -69,7 +70,7 @@ class _LoginPageState extends State<LoginPage> {
                 decoration: InputDecoration(
                   labelText: '密码',
                   suffixIcon: IconButton(
-                    icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 20, color: context.muted),
+                    icon: Icon(_hide ? Icons.visibility_rounded : Icons.visibility_off_rounded, size: 20, color: context.muted),
                     onPressed: () => setState(() => _hide = !_hide),
                   ),
                 ),
@@ -85,11 +86,7 @@ class _LoginPageState extends State<LoginPage> {
               child: FilledButton(
                 onPressed: session.busy ? null : () => session.login(_user.text, _pass.text),
                 child: session.busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
+                    ? const SwunBusyDots(color: Colors.white, size: 5)
                     : const Text('登录'),
               ),
             ),

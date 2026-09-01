@@ -6,6 +6,7 @@ import '../models/term.dart';
 import '../state/session.dart';
 import '../theme.dart';
 import '../widgets/async_body.dart';
+import '../widgets/loader.dart';
 import '../widgets/motion.dart';
 import 'credits_page.dart';
 
@@ -53,21 +54,57 @@ class _GradesPageState extends State<GradesPage> {
       appBar: AppBar(title: const Text('成绩'), automaticallyImplyLeading: false),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<SchoolTerm>(
-                value: _term,
-                isExpanded: true,
-                borderRadius: BorderRadius.circular(10),
-                style: const TextStyle(color: kInk, fontSize: 15),
-                items: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: PopupMenuButton<SchoolTerm>(
+                tooltip: '选择学期',
+                offset: const Offset(0, 8),
+                position: PopupMenuPosition.under,
+                color: context.panel,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: context.line),
+                ),
+                constraints: const BoxConstraints(minWidth: 200, maxWidth: 280),
+                onSelected: (t) => _onTerm(t),
+                itemBuilder: (context) => [
                   for (final t in terms)
-                    DropdownMenuItem(value: t, child: Text(t.label, overflow: TextOverflow.ellipsis)),
-                  if (!terms.contains(_term))
-                    DropdownMenuItem(value: _term, child: Text(_term.label)),
+                    PopupMenuItem(
+                      value: t,
+                      height: 40,
+                      child: Text(
+                        t.label,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: t == _term ? FontWeight.w600 : FontWeight.w400,
+                          color: t == _term ? context.primary : context.ink,
+                        ),
+                      ),
+                    ),
                 ],
-                onChanged: _onTerm,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: context.panel,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: context.line),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _term.label,
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: context.ink),
+                        ),
+                        const SizedBox(width: 2),
+                        Icon(Icons.expand_more_rounded, size: 20, color: context.muted),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -99,7 +136,7 @@ class _GradesPageState extends State<GradesPage> {
                                 style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
                             ),
-                            const Icon(Icons.chevron_right, color: Colors.black26),
+                            const Icon(Icons.chevron_right_rounded, color: Colors.black26),
                           ],
                         ),
                       ),
@@ -110,7 +147,7 @@ class _GradesPageState extends State<GradesPage> {
             ),
           Expanded(
             child: _future == null
-                ? const Center(child: CircularProgressIndicator(color: kCrimson))
+                ? const Center(child: SwunLoader())
                 : AsyncBody(
                     future: _future!,
                     builder: (context, data) {
@@ -136,7 +173,7 @@ class _GradesPageState extends State<GradesPage> {
                               separatorBuilder: (_, _) => const SizedBox(height: 8),
                               itemBuilder: (context, i) {
                                 final e = Map<String, dynamic>.from(items[i] as Map);
-                                final score = '${e['bfzcj'] ?? e['cj'] ?? ''}';
+                                final score = '${e['bfzcj'] ?? ''}';
                                 final bits = <String>[
                                   if (_term.isAll) termLabelOfItem(e),
                                   if ('${e['xf'] ?? ''}'.isNotEmpty) '${e['xf']} 学分',

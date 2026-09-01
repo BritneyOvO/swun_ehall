@@ -44,6 +44,10 @@ android {
         versionName = flutter.versionName
         buildConfigField("String", "AMAP_KEY", "\"$amapKey\"")
         manifestPlaceholders["AMAP_KEY"] = amapKey
+        ndk {
+            abiFilters.clear()
+            abiFilters.add("arm64-v8a")
+        }
     }
 
     buildTypes {

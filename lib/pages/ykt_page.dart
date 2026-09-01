@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../api/httpx.dart';
 import '../state/session.dart';
 import '../theme.dart';
+import '../widgets/loader.dart';
 
 class YktPage extends StatefulWidget {
   const YktPage({super.key});
@@ -57,7 +59,7 @@ class _YktPageState extends State<YktPage> {
       final qr = s.ykt!.fetchQr(
         studentId: s.studentId,
         schoolId: '${s.lantu?.schoolId ?? 187}',
-      );
+      ).timeout(const Duration(seconds: 22), onTimeout: () => throw Exception('一卡通请求超时'));
       final brief = () async {
         try {
           return await s.lantu?.getCardBrief();
@@ -77,7 +79,7 @@ class _YktPageState extends State<YktPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
+        _error = publicError(e);
         _loading = false;
       });
     }
@@ -103,11 +105,11 @@ class _YktPageState extends State<YktPage> {
       appBar: AppBar(
         title: const Text('一卡通'),
         actions: [
-          IconButton(onPressed: () => _reload(first: true), icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: () => _reload(first: true), icon: const Icon(Icons.refresh_rounded)),
         ],
       ),
       body: _loading && _payload == null
-          ? const Center(child: CircularProgressIndicator(color: kCrimson))
+          ? const Center(child: SwunLoader())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [

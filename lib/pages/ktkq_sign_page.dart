@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/httpx.dart';
 import '../api/ktkq.dart';
 import '../api/locate.dart';
 import '../demo/demo_data.dart';
 import '../models/lesson.dart';
 import '../state/session.dart';
 import '../theme.dart';
+import '../widgets/loader.dart';
 
 class KtkqSignPage extends StatefulWidget {
   const KtkqSignPage({
@@ -91,7 +93,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
             .timeout(const Duration(seconds: 30));
       }
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
+      _error = publicError(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -164,27 +166,6 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
       final lat = _pos!.latitude;
       final lng = _pos!.longitude;
       final acc = _pos!.accuracy.isFinite ? _pos!.accuracy.round() : 0;
-      try {
-        final allow = await s.ktkq!.checkAllowSign({
-          'teachClassId': _data['teachClassId'],
-          'scheduleId': _data['scheduleId'],
-          'week': _data['week'] ?? widget.week,
-          'weekDay': _data['weekDay'] ?? _lesson.weekday,
-          'startNode': _data['startNode'] ?? _lesson.start,
-          'endNode': _data['endNode'] ?? _lesson.end,
-          'accuracy': acc,
-          'latitude': lat,
-          'longitude': lng,
-          'activityId': activityId,
-        });
-        final st = allow['data'];
-        final status = st is Map ? '${st['status'] ?? ''}' : '';
-        if (status == 'NOT_IN_SCOPE') {
-          _toast('不在签到范围');
-          return;
-        }
-      } catch (_) {}
-
       final r = await s.ktkq!.submitSign(
         activityId: activityId,
         code: code,
@@ -193,7 +174,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
         longitude: lng,
       );
       final rc = r['code'];
-      final msg = '${r['msg'] ?? r['message'] ?? ''}'.trim();
+      final msg = '${r['msg'] ?? ''}'.trim();
       final ok = rc == 0 || rc == 200 || rc == '0' || rc == '200' || msg.contains('成功') || msg.contains('已签到');
       if (ok) {
         _toast(msg.isEmpty || msg == 'success' ? '签到成功' : msg);
@@ -231,7 +212,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('课堂签到')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: kCrimson))
+          ? const Center(child: SwunLoader())
           : RefreshIndicator(
               color: kCrimson,
               onRefresh: () => _reload(refresh: true),
@@ -409,14 +390,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
               FilledButton(
                 onPressed: punching ? null : () => _punch(act),
                 child: punching
-                    ? SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                        ),
-                      )
+                    ? SwunBusyDots(color: Theme.of(context).colorScheme.onPrimary, size: 5)
                     : const Text('立即签到'),
               ),
             ],
@@ -430,8 +404,8 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        title: Text('${e['time'] ?? e['course'] ?? ''}'),
-        subtitle: Text('${e['place'] ?? ''}'.trim().isEmpty ? '${e['course'] ?? ''}' : '${e['place']}'),
+        title: Text('${e['time'] ?? ''}'),
+        subtitle: Text('${e['course'] ?? ''}'),
         trailing: Text('${e['status'] ?? ''}'),
       ),
     );
