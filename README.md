@@ -1,17 +1,74 @@
-# swun_ehall
+# 民大助手
 
-西南民族大学 ehall 客户端
+西南民族大学 **学生** Android 客户端。用学校统一身份认证（学号 + 密码）登录后，在本地查看课表、成绩、学分、考试，并使用课堂考勤、一卡通、场馆预约和公寓打卡。
 
-## Getting Started
+> 非官方应用，与学校信息化部门无关。只服务学生账号（`jsdm=xs`），请只用自己的学号登录。
 
-This project is a starting point for a Flutter application.
+<p>
+  <img src="assets/icon/app_icon.png" width="96" alt="民大助手图标">
+</p>
 
-A few resources to get you started if this is your first Flutter project:
+## 功能
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+| 模块 | 说明 |
+| --- | --- |
+| 首页 | 今日未结束课程（含教师）、常用入口 |
+| 课表 | 教务周课表，左右滑动切周 |
+| 成绩 | 教务成绩 |
+| 学分 | 学业情况：已修 / 要求 / 各方向未修 |
+| 考试 | 考试安排 |
+| 课堂考勤 | 本人签到（数字码 / 定位等校方已有方式） |
+| 一卡通 | 校园卡信息 |
+| 预约场馆 | 订场地、我的预约 |
+| 公寓打卡 | 本人打卡 |
+| 我的 / 设置 | 个人信息、主题、退出登录 |
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+登录页可点 **先看看界面**，用本地示例数据预览，不连校内系统。
+
+教务、课堂考勤、一卡通夜间关闭时，界面只提示「xxxx夜间关闭」。
+
+## 运行环境
+
+- Flutter 3.47+ / Dart 3.13+
+- Android **arm64-v8a**（工程已限制 ABI）
+- 西南民族大学学生统一身份账号
+
+## 构建
+
+```bash
+flutter pub get
+flutter build apk --debug --target-platform android-arm64
+```
+
+产物：`build/app/outputs/flutter-apk/app-debug.apk`
+
+安装到已连接的设备：
+
+```bash
+flutter install --debug
+```
+
+高德定位 key 若需要，写在 `android/local.properties`（已 gitignore）：
+
+```
+amap.key=你的Key
+```
+
+不配 key 时，定位相关能力会降级，不影响课表、成绩等。
+
+## 使用
+
+1. 打开应用，输入学号和统一身份认证密码。
+2. 或点「先看看界面」浏览示例数据。
+3. 账号密码只在登录时提交给学校 CAS / 蓝图，**不会写进本仓库**。
+
+## 说明
+
+- 课表、成绩、个人信息走教务 / 蓝图等已有接口，不爬 ehall 页面。
+- Cookie 和会话只存在本机应用目录。
+- 请勿把学号、密码、带个人信息的截图提交进 git。`screenshots/` 已忽略。
+- 接口以校方为准，夜间或维护时段可能不可用。
+
+## License
+
+个人学习项目，未附带开源许可证。学校名称、校徽等归西南民族大学所有。
