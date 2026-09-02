@@ -8,26 +8,61 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 const kUa =
     'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
 
-Dio buildDio(CookieJar jar) {
-  final dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 20),
-      receiveTimeout: const Duration(seconds: 20),
-      followRedirects: false,
-      validateStatus: (s) => s != null && s < 500,
-      headers: {
-        'User-Agent': kUa,
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-      },
-    ),
-  );
+void attachHttpClient(Dio dio) {
   dio.httpClientAdapter = IOHttpClientAdapter(
     createHttpClient: () {
       final client = HttpClient();
       client.badCertificateCallback = (cert, host, port) => true;
+      client.connectionTimeout = const Duration(seconds: 8);
+      client.idleTimeout = const Duration(seconds: 60);
+      // Prefer IPv4 to skip campus AAAA blackholes. HttpClient will not wrap
+      // this socket in TLS, so HTTPS must return a SecureSocket with SNI=host.
+      client.connectionFactory = (uri, proxyHost, proxyPort) async {
+        if (proxyHost != null && proxyPort != null) {
+          return Socket.startConnect(proxyHost, proxyPort);
+        }
+        final port = uri.hasPort
+            ? uri.port
+            : (uri.isScheme('https') ? 443 : 80);
+        Object host = uri.host;
+        try {
+          final addrs = await InternetAddress.lookup(
+            uri.host,
+            type: InternetAddressType.IPv4,
+          ).timeout(const Duration(seconds: 3));
+          if (addrs.isNotEmpty) host = addrs.first;
+        } catch (_) {}
+        if (!uri.isScheme('https')) {
+          return Socket.startConnect(host, port);
+        }
+        final raw = await Socket.startConnect(host, port);
+        return ConnectionTask.fromSocket(
+          raw.socket.then(
+            (socket) => SecureSocket.secure(
+              socket,
+              host: uri.host,
+              onBadCertificate: (_) => true,
+            ),
+          ),
+          raw.cancel,
+        );
+      };
       return client;
     },
   );
+}
+
+Dio buildDio(CookieJar jar) {
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 8),
+      receiveTimeout: const Duration(seconds: 15),
+      followRedirects: false,
+      validateStatus: (s) => s != null && s < 500,
+      headers: {'User-Agent': kUa, 'Accept-Language': 'zh-CN,zh;q=0.9'},
+    ),
+  );
+  attachHttpClient(dio);
   dio.interceptors.add(CookieManager(jar));
   return dio;
 }

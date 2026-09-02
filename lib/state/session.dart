@@ -75,17 +75,7 @@ class Session extends ChangeNotifier {
     notifyListeners();
     if (loggedIn) {
       warmupGateways();
-      unawaited(() async {
-        try {
-          if (await cas!.tgtAlive()) {
-            await jwxt!.ensureSession();
-          }
-        } catch (e) {
-          debugPrint('[jwxt] restore $e');
-        }
-        notifyListeners();
-        await refreshProfile();
-      }());
+      unawaited(refreshProfile());
     }
   }
 
@@ -321,10 +311,13 @@ class Session extends ChangeNotifier {
   }
 
   void warmupGateways() {
-    final rs = ktkq?.rs;
-    if (rs == null || demoMode) return;
+    if (demoMode) return;
     unawaited(AppLocator.warmup());
     unawaited(() async {
+      await Future<void>.delayed(const Duration(seconds: 6));
+      if (!loggedIn || demoMode) return;
+      final rs = ktkq?.rs;
+      if (rs == null) return;
       try {
         await rs.warmupAll(const [
           'https://ktkq.swun.edu.cn/',
@@ -409,6 +402,12 @@ class Session extends ChangeNotifier {
         } catch (e) {
           profileError = e.toString().replaceFirst('Exception: ', '');
         }
+      }
+      if (next.klass.isEmpty || StudentProfile.looksLikeCode(next.klass)) {
+        try {
+          await ensureJwxt();
+          next = next.merge(await jwxt!.profile());
+        } catch (_) {}
       }
       profile = next;
       if (profile.studentId.isNotEmpty) studentId = profile.studentId;
@@ -571,10 +570,15 @@ class Session extends ChangeNotifier {
         const times = kDefaultPeriodTimes;
         final kb = lantu!.mapKbList(raw);
         _applyKbTeachers(kb);
-        try {
-          final jw = await jwxt!.schedule().timeout(const Duration(seconds: 6));
-          _fillKbTeachers(kb, jw['kbList']);
-        } catch (_) {}
+        unawaited(() async {
+          try {
+            final jw = await jwxt!.schedule().timeout(
+              const Duration(seconds: 8),
+            );
+            _fillKbTeachers(kb, jw['kbList']);
+            notifyListeners();
+          } catch (_) {}
+        }());
         debugPrint('[kb] lantu ${kb.length} lessons week=${raw['curWeek']}');
         return {
           'kbList': kb,

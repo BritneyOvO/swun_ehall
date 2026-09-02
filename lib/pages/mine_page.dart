@@ -34,19 +34,35 @@ class _MinePageState extends State<MinePage> {
   Widget build(BuildContext context) {
     final s = context.watch<Session>();
     final p = s.profile;
-    final title = p.hasName ? p.name : (s.displayName.isEmpty ? '同学' : s.displayName);
+    final title = p.hasName
+        ? p.name
+        : (s.displayName.isEmpty ? '同学' : s.displayName);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('我的'),
-        automaticallyImplyLeading: false,
-      ),
+      appBar: AppBar(title: const Text('我的'), automaticallyImplyLeading: false),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           FadeSlideIn(
             child: Pressable(
+              radius: 20,
               onTap: () => pushPage(context, const ProfileSettingsPage()),
-              child: _header(s, p, title),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Color.alphaBlend(
+                    context.primary.withValues(
+                      alpha: Theme.of(context).brightness == Brightness.dark
+                          ? 0.22
+                          : 0.12,
+                    ),
+                    context.panel,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 12, 18),
+                  child: _header(s, p, title),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -55,22 +71,52 @@ class _MinePageState extends State<MinePage> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: context.panel,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.line),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: context.line.withValues(alpha: 0.7)),
               ),
               child: Column(
                 children: [
-                  _item(context, Icons.qr_code_2_rounded, '一卡通付款码', const YktPage()),
+                  _item(
+                    context,
+                    Icons.qr_code_2_rounded,
+                    '一卡通付款码',
+                    const YktPage(),
+                  ),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.pie_chart_rounded, '共修学分', const CreditsPage()),
+                  _item(
+                    context,
+                    Icons.pie_chart_rounded,
+                    '共修学分',
+                    const CreditsPage(),
+                  ),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.edit_calendar_rounded, '考试安排', const ExamsPage()),
+                  _item(
+                    context,
+                    Icons.edit_calendar_rounded,
+                    '考试安排',
+                    const ExamsPage(),
+                  ),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.sports_rounded, '预约场馆', const VenuePage()),
+                  _item(
+                    context,
+                    Icons.sports_rounded,
+                    '预约场馆',
+                    const VenuePage(),
+                  ),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.fingerprint_rounded, '课堂考勤', const KtkqPage()),
+                  _item(
+                    context,
+                    Icons.fingerprint_rounded,
+                    '课堂考勤',
+                    const KtkqPage(),
+                  ),
                   Divider(height: 1, indent: 52, color: context.line),
-                  _item(context, Icons.location_on_rounded, '公寓打卡', const ClockPage()),
+                  _item(
+                    context,
+                    Icons.location_on_rounded,
+                    '公寓打卡',
+                    const ClockPage(),
+                  ),
                 ],
               ),
             ),
@@ -81,10 +127,15 @@ class _MinePageState extends State<MinePage> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: context.panel,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.line),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: context.line.withValues(alpha: 0.7)),
               ),
-              child: _item(context, Icons.settings_rounded, '设置', const SettingsPage()),
+              child: _item(
+                context,
+                Icons.settings_rounded,
+                '设置',
+                const SettingsPage(),
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -92,16 +143,26 @@ class _MinePageState extends State<MinePage> {
             delay: const Duration(milliseconds: 150),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: context.panel,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.line),
+                color: kCrimson.withValues(
+                  alpha: Theme.of(context).brightness == Brightness.dark
+                      ? 0.16
+                      : 0.08,
+                ),
+                borderRadius: BorderRadius.circular(16),
               ),
               child: Pressable(
-                radius: 12,
+                radius: 16,
                 onTap: () => s.logout(),
                 child: ListTile(
-                  leading: const Icon(Icons.logout_rounded, color: kCrimson, size: 22),
-                  title: const Text('退出登录', style: TextStyle(fontSize: 15, color: kCrimson)),
+                  leading: const Icon(
+                    Icons.logout_rounded,
+                    color: kCrimson,
+                    size: 22,
+                  ),
+                  title: const Text(
+                    '退出登录',
+                    style: TextStyle(fontSize: 15, color: kCrimson),
+                  ),
                 ),
               ),
             ),
@@ -114,7 +175,9 @@ class _MinePageState extends State<MinePage> {
   Widget _header(Session s, StudentProfile p, String title) {
     final subtitle = s.demoMode
         ? '预览模式'
-        : (s.profileLoading && !p.hasName ? '正在读取…' : (p.role.isEmpty ? '已登录' : p.role));
+        : (s.profileLoading && !p.hasName
+              ? '正在读取…'
+              : (p.role.isEmpty ? '已登录' : p.role));
     ImageProvider? avatar;
     if (p.avatar.startsWith('http')) avatar = NetworkImage(p.avatar);
     return Row(
@@ -126,7 +189,11 @@ class _MinePageState extends State<MinePage> {
           child: avatar == null
               ? Text(
                   title.isEmpty ? '同' : title.substring(0, 1),
-                  style: TextStyle(color: context.ink, fontSize: 18, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: context.ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
                 )
               : null,
         ),
@@ -135,9 +202,18 @@ class _MinePageState extends State<MinePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text(subtitle, style: TextStyle(color: context.muted, fontSize: 13)),
+              Text(
+                subtitle,
+                style: TextStyle(color: context.muted, fontSize: 13),
+              ),
             ],
           ),
         ),
@@ -158,7 +234,11 @@ class _MinePageState extends State<MinePage> {
       child: ListTile(
         leading: Icon(icon, color: context.ink, size: 22),
         title: Text(title, style: const TextStyle(fontSize: 15)),
-        trailing: Icon(Icons.chevron_right_rounded, color: context.muted, size: 18),
+        trailing: Icon(
+          Icons.chevron_right_rounded,
+          color: context.muted,
+          size: 18,
+        ),
       ),
     );
   }

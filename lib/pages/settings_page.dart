@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../api/update.dart';
 import '../models/profile.dart';
 import '../state/session.dart';
 import '../state/settings.dart';
@@ -11,6 +12,7 @@ import '../theme.dart';
 import '../theme/catalog.dart';
 import '../widgets/loader.dart';
 import '../widgets/motion.dart';
+import '../widgets/update_prompt.dart';
 import 'accounts_page.dart';
 import 'room_locations_page.dart';
 
@@ -19,6 +21,7 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settings = context.watch<AppSettings>();
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
@@ -78,6 +81,25 @@ class SettingsPage extends StatelessWidget {
                   page: const AboutSettingsPage(),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: context.panel,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.line),
+            ),
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              title: const Text('启动时检查更新', style: TextStyle(fontSize: 15)),
+              subtitle: Text(
+                '打开应用时查询 GitHub 是否有新版本',
+                style: TextStyle(color: context.muted, fontSize: 12),
+              ),
+              value: settings.checkUpdateOnLaunch,
+              activeThumbColor: Theme.of(context).colorScheme.primary,
+              onChanged: settings.setCheckUpdateOnLaunch,
             ),
           ),
         ],
@@ -167,14 +189,16 @@ class ProfileSettingsPage extends StatelessWidget {
       ('学号', p.studentId.isNotEmpty ? p.studentId : s.studentId),
       ('性别', p.gender),
       ('身份', p.role),
-      ('学院', p.college),
-      ('专业', p.major),
-      ('班级', p.klass),
+      ('学院', _label(p.college)),
+      ('专业', _label(p.major)),
+      ('班级', _label(p.klass)),
       ('年级', p.grade.isEmpty ? '' : (p.grade.endsWith('级') ? p.grade : '${p.grade}级')),
       ('校区', p.campus),
       ('手机', p.phone),
     ].where((e) => e.$2.trim().isNotEmpty).toList();
   }
+
+  String _label(String v) => StudentProfile.looksLikeCode(v) ? '' : v;
 }
 
 class ThemeSettingsPage extends StatefulWidget {
@@ -306,7 +330,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
         '${pack.author.isEmpty ? '' : ' · ${pack.author}'}',
         style: TextStyle(color: context.muted, fontSize: 12),
       ),
-      leading: _preview(pack),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -329,36 +352,33 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
       ),
     );
   }
-
-  Widget _preview(ThemePack pack) {
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: pack.background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: pack.line),
-      ),
-      child: Center(
-        child: Container(
-          width: 14,
-          height: 14,
-          decoration: BoxDecoration(color: pack.primary, shape: BoxShape.circle),
-        ),
-      ),
-    );
-  }
 }
 
-class AboutSettingsPage extends StatelessWidget {
+class AboutSettingsPage extends StatefulWidget {
   const AboutSettingsPage({super.key});
 
+  @override
+  State<AboutSettingsPage> createState() => _AboutSettingsPageState();
+}
+
+class _AboutSettingsPageState extends State<AboutSettingsPage> {
   static const _author = 'Britney';
   static const _github = 'BritneyOvO';
-  static const _repo = 'BritneyOvO/swun_ehall';
+  static const _repo = kGithubRepo;
   static const _profileUrl = 'https://github.com/BritneyOvO';
-  static const _repoUrl = 'https://github.com/BritneyOvO/swun_ehall';
-  static const _version = '1.0.0';
+  static const _repoUrl = 'https://github.com/$kGithubRepo';
+
+  bool _checking = false;
+
+  Future<void> _check() async {
+    if (_checking) return;
+    setState(() => _checking = true);
+    try {
+      await checkForUpdate(context, silent: false);
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -379,7 +399,7 @@ class AboutSettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            _version,
+            kAppVersion,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: context.muted),
           ),
@@ -399,6 +419,13 @@ class AboutSettingsPage extends StatelessWidget {
                 _link(context, '开源仓库', _repo, _repoUrl),
               ],
             ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.tonal(
+            onPressed: _checking ? null : _check,
+            child: _checking
+                ? const SwunBusyDots(size: 5)
+                : const Text('检查更新'),
           ),
           const SizedBox(height: 12),
           Text(

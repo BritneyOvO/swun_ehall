@@ -10,6 +10,7 @@ import '../theme/pack.dart';
 class AppSettings extends ChangeNotifier {
   bool ready = false;
   bool followSystem = true;
+  bool checkUpdateOnLaunch = true;
   String packId = 'light';
   List<ThemePack> packs = [ThemePack.fallbackLight];
   String? _path;
@@ -63,6 +64,9 @@ class AppSettings extends ChangeNotifier {
             followSystem = false;
             packId = '${m['theme']}';
           }
+          if (m['checkUpdateOnLaunch'] is bool) {
+            checkUpdateOnLaunch = m['checkUpdateOnLaunch'] as bool;
+          }
         }
       }
     } catch (_) {}
@@ -73,6 +77,12 @@ class AppSettings extends ChangeNotifier {
 
   Future<void> setFollowSystem(bool v) async {
     followSystem = v;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> setCheckUpdateOnLaunch(bool v) async {
+    checkUpdateOnLaunch = v;
     notifyListeners();
     await _save();
   }
@@ -116,6 +126,7 @@ class AppSettings extends ChangeNotifier {
       await File(path).writeAsString(jsonEncode({
         'followSystem': followSystem,
         'pack': packId,
+        'checkUpdateOnLaunch': checkUpdateOnLaunch,
       }));
     } catch (_) {}
   }

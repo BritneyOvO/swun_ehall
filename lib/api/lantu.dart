@@ -9,6 +9,7 @@ import 'package:pointycastle/asn1.dart';
 import 'package:pointycastle/export.dart';
 
 import '../models/profile.dart';
+import 'httpx.dart';
 
 const kLantuAppKey = 'GiITvn';
 const kLantuSchoolId = 187;
@@ -28,17 +29,19 @@ class LantuException implements Exception {
 
 class LantuClient {
   LantuClient({this.persistPath})
-      : dio = Dio(
-          BaseOptions(
-            connectTimeout: const Duration(seconds: 12),
-            receiveTimeout: const Duration(seconds: 12),
-            headers: {
-              'Content-Type': 'application/json;charset=UTF-8',
-              'Accept-Language': 'zh-CN',
-              'User-Agent': kLantuUa,
-            },
-          ),
-        );
+    : dio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 8),
+          receiveTimeout: const Duration(seconds: 12),
+          headers: {
+            'Content-Type': 'application/json;charset=UTF-8',
+            'Accept-Language': 'zh-CN',
+            'User-Agent': kLantuUa,
+          },
+        ),
+      ) {
+    attachHttpClient(dio);
+  }
 
   final String? persistPath;
   final Dio dio;
@@ -55,11 +58,20 @@ class LantuClient {
 
   static String _genUuid() {
     String seg() {
-      final frac = Random().nextDouble().toString().split('.')[1].padRight(8, '0').substring(0, 8);
+      final frac = Random()
+          .nextDouble()
+          .toString()
+          .split('.')[1]
+          .padRight(8, '0')
+          .substring(0, 8);
       final ms = DateTime.now().millisecondsSinceEpoch.toString();
       final tail = ms.substring(ms.length - 10);
-      return BigInt.parse(frac + tail).toRadixString(16).padLeft(8, '0').substring(0, 8);
+      return BigInt.parse(frac + tail)
+          .toRadixString(16)
+          .padLeft(8, '0')
+          .substring(0, 8);
     }
+
     return 'web$seg$seg';
   }
 
@@ -96,7 +108,10 @@ class LantuClient {
     return base64Encode(out);
   }
 
-  Map<String, dynamic> _tron(Map<String, dynamic> data, {required bool secure}) {
+  Map<String, dynamic> _tron(
+    Map<String, dynamic> data, {
+    required bool secure,
+  }) {
     var param = jsonEncode(data);
     final a = <String, dynamic>{
       'appKey': kLantuAppKey,
@@ -110,7 +125,11 @@ class LantuClient {
     return a;
   }
 
-  Future<Map<String, dynamic>> _post(String url, Map<String, dynamic> data, {bool secure = false}) async {
+  Future<Map<String, dynamic>> _post(
+    String url,
+    Map<String, dynamic> data, {
+    bool secure = false,
+  }) async {
     final body = Map<String, dynamic>.from(data)
       ..['campusType'] = 1
       ..['wxCode'] = null
@@ -123,7 +142,9 @@ class LantuClient {
       options: Options(headers: {'token': token}),
     );
     final raw = r.data;
-    final result = raw is Map ? Map<String, dynamic>.from(raw) : jsonDecode(raw.toString()) as Map<String, dynamic>;
+    final result = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : jsonDecode(raw.toString()) as Map<String, dynamic>;
     final state = result['msgState'];
     if (state != null && int.tryParse('$state') != 1) {
       throw LantuException(result['msg']?.toString() ?? '请求失败');
@@ -133,7 +154,9 @@ class LantuClient {
 
   Future<void> _ensureRsa() async {
     if (publicKey != null && publicKey!.isNotEmpty) return;
-    final r = await _post('${kLantuBase}login/getRsa.do', {'schoolId': schoolId});
+    final r = await _post('${kLantuBase}login/getRsa.do', {
+      'schoolId': schoolId,
+    });
     final pk = r['publicKey']?.toString();
     if (pk == null || pk.isEmpty) throw LantuException('未拿到登录公钥');
     publicKey = pk;
@@ -141,16 +164,12 @@ class LantuClient {
 
   Future<void> login(String username, String password) async {
     await _ensureRsa();
-    final r = await _post(
-      '${kLantuBase}login/login.do',
-      {
-        'userName': username,
-        'password': password,
-        'uuId': uuid,
-        'schoolId': schoolId,
-      },
-      secure: true,
-    );
+    final r = await _post('${kLantuBase}login/login.do', {
+      'userName': username,
+      'password': password,
+      'uuId': uuid,
+      'schoolId': schoolId,
+    }, secure: true);
     _applyLogin(r);
     await _save();
   }
@@ -162,18 +181,23 @@ class LantuClient {
     } else {
       token = '${tok ?? ''}';
     }
-    userBaseInfo = r['userBaseInfo'] is Map ? Map<String, dynamic>.from(r['userBaseInfo'] as Map) : {};
-    userLoginInfo = r['userLoginInfo'] is Map ? Map<String, dynamic>.from(r['userLoginInfo'] as Map) : {};
+    userBaseInfo = r['userBaseInfo'] is Map
+        ? Map<String, dynamic>.from(r['userBaseInfo'] as Map)
+        : {};
+    userLoginInfo = r['userLoginInfo'] is Map
+        ? Map<String, dynamic>.from(r['userLoginInfo'] as Map)
+        : {};
     final sid = userLoginInfo['schoolId'];
     if (sid != null) schoolId = int.tryParse('$sid') ?? schoolId;
   }
 
-  Future<Map<String, dynamic>> getUserInfo() => _post('${kLantuBase}user/getUserInfo.do', {});
+  Future<Map<String, dynamic>> getUserInfo() =>
+      _post('${kLantuBase}user/getUserInfo.do', {});
 
   Future<Map<String, dynamic>> getCourse({int? curTime}) => _post(
-        '${kLantuJw}course/getCourse.do',
-        {'curTime': curTime ?? DateTime.now().millisecondsSinceEpoch},
-      );
+    '${kLantuJw}course/getCourse.do',
+    {'curTime': curTime ?? DateTime.now().millisecondsSinceEpoch},
+  );
 
   Future<Map<String, dynamic>> getCardBrief() =>
       _post('${kLantuInfo}playCampus/getCardBreifInfo.do', {});
@@ -181,32 +205,35 @@ class LantuClient {
   Future<Map<String, dynamic>> getCourseTimeConfig() =>
       _post('${kLantuJw}course/getCourseTimeConfig.do', {});
 
-  Future<Map<String, dynamic>> getPlaceList({int limit = 50, int offset = 0, Map<String, dynamic>? placeInfo}) {
+  Future<Map<String, dynamic>> getPlaceList({
+    int limit = 50,
+    int offset = 0,
+    Map<String, dynamic>? placeInfo,
+  }) {
     return _post('${kLantuOa}place/getPlaceList.do', {
       'limit': limit,
       'offset': offset,
       'schoolId': schoolId,
-      'placeInfo': {
-        'schoolId': schoolId,
-        ...?placeInfo,
-      },
+      'placeInfo': {'schoolId': schoolId, ...?placeInfo},
     });
   }
 
   Future<Map<String, dynamic>> getPlaceInfo(Object id) =>
-      _post('${kLantuOa}place/getPlaceInfo.do', {'placeInfo': {'id': id}});
+      _post('${kLantuOa}place/getPlaceInfo.do', {
+        'placeInfo': {'id': id},
+      });
 
-  Future<Map<String, dynamic>> getMyPlaceList({int limit = 50, int offset = 0}) {
+  Future<Map<String, dynamic>> getMyPlaceList({
+    int limit = 50,
+    int offset = 0,
+  }) {
     final uid = userLoginInfo['userId'];
     final uname = userLoginInfo['userName'];
     return _post('${kLantuOa}place/getMyPlaceList.do', {
       'limit': limit,
       'offset': offset,
       'userId': uid,
-      'placeInfo': {
-        'userId': ?uid,
-        'userName': ?uname,
-      },
+      'placeInfo': {'userId': ?uid, 'userName': ?uname},
     });
   }
 
@@ -222,7 +249,9 @@ class LantuClient {
   }
 
   Future<Map<String, dynamic>> delPlaceInfo(Object id) =>
-      _post('${kLantuOa}place/delPlaceInfo.do', {'placeInfo': {'id': id}});
+      _post('${kLantuOa}place/delPlaceInfo.do', {
+        'placeInfo': {'id': id},
+      });
 
   StudentProfile profile() {
     final b = userBaseInfo;
@@ -231,15 +260,27 @@ class LantuClient {
     return StudentProfile(
       studentId: '${l['userName'] ?? ''}',
       name: '${b['realName'] ?? ''}',
-      gender: sex == 1 || sex == '1' ? '男' : (sex == 2 || sex == '2' ? '女' : ''),
-      college: '${b['collegeName'] ?? ''}',
-      major: '${b['majorId'] ?? ''}',
-      klass: '${b['classId'] ?? ''}',
-      grade: '${b['sznj'] ?? ''}',
+      gender: sex == 1 || sex == '1'
+          ? '男'
+          : (sex == 2 || sex == '2' ? '女' : ''),
+      college: _label(b['collegeName']),
+      major: _label(b['zymc'], b['majorId']),
+      klass: _label(b['className'], b['bjmc']),
+      grade: _label(b['sznj']),
       phone: '${b['tel'] ?? ''}',
       role: '学生',
       avatar: '${b['headImage'] ?? ''}',
     );
+  }
+
+  static String _label(Object? a, [Object? b]) {
+    for (final v in [a, b]) {
+      final s = '${v ?? ''}'.trim();
+      if (s.isEmpty || s == 'null') continue;
+      if (StudentProfile.looksLikeCode(s)) continue;
+      return s;
+    }
+    return '';
   }
 
   List<Map<String, dynamic>> mapKbList(Map<String, dynamic> course) {
@@ -281,8 +322,12 @@ class LantuClient {
       token = '${m['token'] ?? ''}';
       uuid = '${m['uuid'] ?? uuid}';
       schoolId = int.tryParse('${m['schoolId'] ?? schoolId}') ?? schoolId;
-      if (m['userBaseInfo'] is Map) userBaseInfo = Map<String, dynamic>.from(m['userBaseInfo'] as Map);
-      if (m['userLoginInfo'] is Map) userLoginInfo = Map<String, dynamic>.from(m['userLoginInfo'] as Map);
+      if (m['userBaseInfo'] is Map) {
+        userBaseInfo = Map<String, dynamic>.from(m['userBaseInfo'] as Map);
+      }
+      if (m['userLoginInfo'] is Map) {
+        userLoginInfo = Map<String, dynamic>.from(m['userLoginInfo'] as Map);
+      }
       if (token.isEmpty) return;
       final info = await getUserInfo();
       if (info['userBaseInfo'] is Map) {
@@ -307,13 +352,15 @@ class LantuClient {
       ..remove('pid')
       ..remove('securityPassword')
       ..remove('password');
-    await File(path).writeAsString(jsonEncode({
-      'token': token,
-      'uuid': uuid,
-      'schoolId': schoolId,
-      'userBaseInfo': safeBase,
-      'userLoginInfo': safeLogin,
-    }));
+    await File(path).writeAsString(
+      jsonEncode({
+        'token': token,
+        'uuid': uuid,
+        'schoolId': schoolId,
+        'userBaseInfo': safeBase,
+        'userLoginInfo': safeLogin,
+      }),
+    );
   }
 
   Future<void> clear() async {

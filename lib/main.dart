@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +8,7 @@ import 'pages/shell.dart';
 import 'state/session.dart';
 import 'state/settings.dart';
 import 'theme.dart';
+import 'widgets/update_prompt.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,16 +25,52 @@ class SwunApp extends StatefulWidget {
 class _SwunAppState extends State<SwunApp> {
   final session = Session();
   final settings = AppSettings();
+  final _nav = GlobalKey<NavigatorState>();
   var _splashDone = false;
+  var _updatePrompted = false;
+  Timer? _splashTimer;
+  Timer? _updateTimer;
+  VoidCallback? _settingsWait;
 
   @override
   void initState() {
     super.initState();
     session.init();
     settings.load();
-    Future<void>.delayed(const Duration(milliseconds: 900), () {
+    _splashTimer = Timer(const Duration(milliseconds: 900), () {
       if (mounted) setState(() => _splashDone = true);
     });
+    _updateTimer = Timer(const Duration(milliseconds: 1400), () {
+      unawaited(_bootUpdateCheck());
+    });
+  }
+
+  @override
+  void dispose() {
+    _splashTimer?.cancel();
+    _updateTimer?.cancel();
+    final wait = _settingsWait;
+    if (wait != null) settings.removeListener(wait);
+    super.dispose();
+  }
+
+  Future<void> _bootUpdateCheck() async {
+    if (!mounted || _updatePrompted) return;
+    if (!settings.ready) {
+      void once() {
+        settings.removeListener(once);
+        _settingsWait = null;
+        unawaited(_bootUpdateCheck());
+      }
+      _settingsWait = once;
+      settings.addListener(once);
+      return;
+    }
+    if (!settings.checkUpdateOnLaunch) return;
+    final ctx = _nav.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    _updatePrompted = true;
+    await checkForUpdate(ctx, silent: true);
   }
 
   @override
@@ -63,6 +102,7 @@ class _SwunAppState extends State<SwunApp> {
             mode = ThemeMode.light;
           }
           return MaterialApp(
+            navigatorKey: _nav,
             title: '民大助手',
             debugShowCheckedModeBanner: false,
             theme: lightTheme,

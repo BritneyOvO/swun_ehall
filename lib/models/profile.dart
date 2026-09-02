@@ -26,7 +26,11 @@ class StudentProfile {
   final String avatar;
 
   bool get hasDetails =>
-      college.isNotEmpty || major.isNotEmpty || klass.isNotEmpty || grade.isNotEmpty || phone.isNotEmpty;
+      college.isNotEmpty ||
+      major.isNotEmpty ||
+      (klass.isNotEmpty && !looksLikeCode(klass)) ||
+      grade.isNotEmpty ||
+      phone.isNotEmpty;
 
   bool get hasName => name.isNotEmpty && !_looksLikeId(name);
 
@@ -35,9 +39,9 @@ class StudentProfile {
       studentId: _preferId(studentId, other.studentId),
       name: _preferName(name, other.name),
       gender: _prefer(gender, other.gender),
-      college: _prefer(college, other.college),
-      major: _prefer(major, other.major),
-      klass: _prefer(klass, other.klass),
+      college: _preferLabel(college, other.college),
+      major: _preferLabel(major, other.major),
+      klass: _preferLabel(klass, other.klass),
       grade: _prefer(grade, other.grade),
       phone: _prefer(phone, other.phone),
       campus: _prefer(campus, other.campus),
@@ -47,6 +51,10 @@ class StudentProfile {
   }
 
   static bool _looksLikeId(String s) => RegExp(r'^\d{8,}$').hasMatch(s.trim());
+
+  /// Lantu `classId` / `college` are numeric codes, not display names.
+  static bool looksLikeCode(String s) =>
+      RegExp(r'^\d{6,}$').hasMatch(s.trim());
 
   static String _prefer(String a, String b) {
     if (a.isNotEmpty) return a;
@@ -65,5 +73,11 @@ class StudentProfile {
     }
     if (a.isNotEmpty && !_looksLikeId(a)) return a;
     return _prefer(a, b);
+  }
+
+  static String _preferLabel(String a, String b) {
+    if (a.isNotEmpty && !looksLikeCode(a)) return a;
+    if (b.isNotEmpty && !looksLikeCode(b)) return b;
+    return '';
   }
 }

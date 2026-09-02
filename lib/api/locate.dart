@@ -1,9 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
-/// 校园打卡 H5（金智/蓝图入口）使用的高德 JS Key。
-const kDefaultAmapKey = '7bf909742712a9eca7c5e18efa431f9a';
-
 class LocateException implements Exception {
   LocateException(this.message);
   final String message;
@@ -61,8 +58,9 @@ class AppLocator {
   );
 
   static Future<void> setKey(String key) async {
+    final k = key.trim();
+    if (k.isEmpty) return;
     try {
-      final k = key.trim().isEmpty ? kDefaultAmapKey : key.trim();
       await _ch.invokeMethod('setKey', k);
     } catch (_) {}
   }
@@ -79,7 +77,6 @@ class AppLocator {
 
   static Future<void> warmup() async {
     try {
-      await setKey(kDefaultAmapKey);
       if (!await ensurePermission(request: false)) return;
       await _ch.invokeMethod('warmup');
     } catch (_) {}

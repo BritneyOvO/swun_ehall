@@ -37,6 +37,16 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  Future<void> _pickSaved(Session session, String id) async {
+    if (session.busy) return;
+    final ok = await session.switchTo(id);
+    if (ok || !mounted) return;
+    _user.text = id;
+    final pwd = await session.accounts.passwordOf(id);
+    if (!mounted) return;
+    if (pwd != null && pwd.isNotEmpty) _pass.text = pwd;
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
@@ -65,53 +75,41 @@ class _LoginPageState extends State<LoginPage> {
               delay: const Duration(milliseconds: 100),
               child: Text('使用统一身份认证账号', style: TextStyle(color: context.muted, fontSize: 14)),
             ),
-            if (saved.isNotEmpty) ...[
-              const SizedBox(height: 28),
-              FadeSlideIn(
-                delay: const Duration(milliseconds: 120),
-                child: Text('已保存的账号', style: TextStyle(color: context.muted, fontSize: 13)),
-              ),
-              const SizedBox(height: 8),
-              FadeSlideIn(
-                delay: const Duration(milliseconds: 140),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: context.panel,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: context.line),
-                  ),
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < saved.length; i++) ...[
-                        if (i > 0) Divider(height: 1, indent: 16, endIndent: 16, color: context.line),
-                        ListTile(
-                          title: Text(saved[i].label, style: const TextStyle(fontSize: 15)),
-                          subtitle: saved[i].name.isEmpty
-                              ? null
-                              : Text(saved[i].id, style: TextStyle(color: context.muted, fontSize: 12)),
-                          trailing: Icon(Icons.chevron_right_rounded, color: context.muted, size: 18),
-                          onTap: session.busy
-                              ? null
-                              : () async {
-                                  final ok = await session.switchTo(saved[i].id);
-                                  if (!ok && mounted) _user.text = saved[i].id;
-                                },
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text('其他账号', style: TextStyle(color: context.muted, fontSize: 13)),
-            ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 28),
             FadeSlideIn(
               delay: const Duration(milliseconds: 140),
               child: TextField(
                 controller: _user,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '学号'),
+                enabled: !session.busy,
+                decoration: InputDecoration(
+                  labelText: '学号',
+                  suffixIcon: saved.isEmpty
+                      ? null
+                      : PopupMenuButton<String>(
+                          tooltip: '已保存的账号',
+                          enabled: !session.busy,
+                          padding: EdgeInsets.zero,
+                          icon: Icon(Icons.arrow_drop_down_rounded, color: context.muted, size: 28),
+                          onSelected: (id) => _pickSaved(session, id),
+                          itemBuilder: (context) => [
+                            for (final a in saved)
+                              PopupMenuItem(
+                                value: a.id,
+                                child: a.name.isEmpty
+                                    ? Text(a.id)
+                                    : Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(a.label, style: const TextStyle(fontSize: 15)),
+                                          Text(a.id, style: TextStyle(fontSize: 12, color: context.muted)),
+                                        ],
+                                      ),
+                              ),
+                          ],
+                        ),
+                ),
               ),
             ),
             const SizedBox(height: 12),

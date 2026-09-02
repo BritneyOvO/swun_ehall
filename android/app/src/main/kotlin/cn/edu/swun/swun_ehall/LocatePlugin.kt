@@ -23,7 +23,7 @@ import java.security.MessageDigest
 class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
     private val main = Handler(Looper.getMainLooper())
     private val lm = app.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    private var amapKey: String = BuildConfig.AMAP_KEY.trim().ifEmpty { DEFAULT_KEY }
+    private var amapKey: String = BuildConfig.AMAP_KEY.trim()
     private var amap: AMapLocationClient? = null
     private var amapDisabled = false
     private var privacyReady = false
@@ -31,7 +31,6 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
     companion object {
         const val CHANNEL = "cn.edu.swun.swun_ehall/locate"
         private const val TAG = "SwunLocate"
-        const val DEFAULT_KEY = "7bf909742712a9eca7c5e18efa431f9a"
 
         fun registerWith(engine: FlutterEngine, ctx: Context) {
             val plugin = LocatePlugin(ctx.applicationContext)
@@ -42,11 +41,13 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "setKey" -> {
-                val key = (call.arguments as? String)?.trim().orEmpty().ifEmpty { DEFAULT_KEY }
-                amapKey = key
-                amapDisabled = false
-                destroyAmap()
-                result.success(key.isNotEmpty())
+                val key = (call.arguments as? String)?.trim().orEmpty()
+                if (key.isNotEmpty()) {
+                    amapKey = key
+                    amapDisabled = false
+                    destroyAmap()
+                }
+                result.success(amapKey.isNotEmpty())
             }
             "info" -> result.success(info())
             "warmup" -> {
