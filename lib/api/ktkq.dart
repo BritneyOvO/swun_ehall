@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cookie_jar/cookie_jar.dart';
@@ -26,6 +27,7 @@ class KtkqClient {
   Object? _weekCacheKey;
   Map<String, dynamic>? _weekCache;
   bool nightClosed = false;
+  Future<void>? _loggingIn;
 
   void _auth() {
     if (token != null && token!.isNotEmpty) {
@@ -45,63 +47,122 @@ class KtkqClient {
 
   Future<void> loginWithCas(CasClient cas) async {
     _cas = cas;
+    while (_loggingIn != null) {
+      try {
+        await _loggingIn!;
+      } catch (_) {}
+      if (token != null && token!.isNotEmpty) return;
+    }
+    final done = Completer<void>();
+    _loggingIn = done.future;
+    try {
+      Object? lastErr;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          await _loginOnce(cas);
+          return;
+        } catch (e) {
+          lastErr = e;
+          final msg = e.toString();
+          if (looksNightClosed(data: msg) ||
+              msg.contains('夜间关闭') ||
+              msg.contains('被踢回 CAS')) {
+            rethrow;
+          }
+          token = null;
+          debugPrint('[ktkq] login attempt ${attempt + 1} $e');
+        }
+      }
+      throw lastErr ?? Exception('未拿到课堂考勤 token');
+    } catch (e, st) {
+      if (!done.isCompleted) done.completeError(e, st);
+      rethrow;
+    } finally {
+      if (!done.isCompleted) done.complete();
+      if (identical(_loggingIn, done.future)) _loggingIn = null;
+    }
+  }
+
+  Future<void> _loginOnce(CasClient cas) async {
     var url = await cas.ticketFor(kKtkqService);
+    var lastUrl = url;
+    var webTried = false;
     for (var i = 0; i < 12; i++) {
       final r = await dio.get(url);
+      lastUrl = r.realUri.toString().isNotEmpty ? r.realUri.toString() : url;
       if (looksNightClosed(status: r.statusCode, data: r.data)) {
         nightClosed = true;
         throw Exception(nightClosedMessage('课堂考勤'));
       }
       token = _extractToken(r);
-      if (token != null) break;
+      if (token != null) {
+        debugPrint('[ktkq] token from dio hop len=${token!.length}');
+        break;
+      }
       if (looksLikeRuishu(status: r.statusCode, body: r.data?.toString())) {
-        rs.remember(Uri.parse(kKtkq).host);
-        await rs.navigate(url);
-        token = await rs.readEmToken();
+        token = await _tokenViaWebView(url);
+        webTried = true;
         break;
       }
       if (!isRedirect(r) || loc(r).isEmpty) break;
       url = absUrl(kKtkq, loc(r));
+      lastUrl = url;
       if (url.contains('authserver') && !url.contains('ticket=')) {
         throw Exception('课堂考勤登录失败: 被踢回 CAS');
       }
     }
-    if (token == null || token!.isEmpty) {
-      for (final c in await jar.loadForRequest(Uri.parse(kKtkq))) {
-        if (c.name == 'Authorization' && c.value.isNotEmpty) {
-          token = c.value;
-          break;
-        }
-      }
+    token ??= await _tokenFromJar();
+    if ((token == null || token!.isEmpty) && !webTried) {
+      final nav = lastUrl.contains('ticket=')
+          ? lastUrl
+          : await cas.ticketFor(kKtkqService);
+      token = await _tokenViaWebView(nav);
     }
     if (token == null || token!.isEmpty) {
       throw Exception('未拿到课堂考勤 token');
     }
     _auth();
-    await jar.saveFromResponse(Uri.parse(kKtkq), [
-      Cookie('Authorization', token!)..domain = 'ktkq.swun.edu.cn',
+    await jar.saveFromResponse(Uri.parse('$kKtkq/jwmobile/'), [
+      Cookie('Authorization', token!)
+        ..domain = 'ktkq.swun.edu.cn'
+        ..path = '/jwmobile'
+        ..httpOnly = true
+        ..secure = true,
     ]);
   }
 
-  String? _extractToken(Response r) {
-    final cookies = r.headers['set-cookie'] ?? [];
-    for (final c in cookies) {
-      final m = RegExp(r'Authorization=([^;]+)').firstMatch(c);
-      if (m != null) return m.group(1);
-    }
-    for (final u in [r.realUri.toString(), loc(r)]) {
-      if (u.isEmpty) continue;
-      final uri = Uri.tryParse(u);
-      final q = uri?.queryParameters['token'];
-      if (q != null && q.isNotEmpty) return q;
-      // 金智把 token 放在 hash：/#/index/kb/course/list?token=JWT
-      final frag = uri?.fragment ?? '';
-      final fromFrag = RegExp(r'(?:^|[?&#])token=([^&]+)').firstMatch(frag)?.group(1);
-      if (fromFrag != null && fromFrag.isNotEmpty) return fromFrag;
-      final fromUrl = RegExp(r'[?&#]token=([A-Za-z0-9._-]+)').firstMatch(u)?.group(1);
-      if (fromUrl != null && fromUrl.isNotEmpty) return fromUrl;
+  Future<String?> _tokenViaWebView(String url) async {
+    rs.remember(Uri.parse(kKtkq).host);
+    final hit = await rs.navigate(url, waitForToken: true);
+    var t = parseKtkqToken(urls: [hit.url], body: hit.body);
+    t ??= await rs.readEmToken(wait: const Duration(milliseconds: 800));
+    t ??= await _tokenFromJar();
+    if (t != null) debugPrint('[ktkq] token from webview len=${t.length}');
+    return t;
+  }
+
+  Future<String?> _tokenFromJar() async {
+    for (final path in [
+      '/jwmobile/auth/index',
+      '/jwmobile/',
+      '/jwmobile/index',
+      '/',
+    ]) {
+      for (final c in await jar.loadForRequest(Uri.parse('$kKtkq$path'))) {
+        if (c.name.toLowerCase() != 'authorization') continue;
+        final t = cleanKtkqToken(c.value);
+        if (t != null) return t;
+      }
     }
     return null;
+  }
+
+  String? _extractToken(Response r) {
+    return parseKtkqToken(
+      setCookies: r.headers['set-cookie'] ?? const [],
+      urls: [r.realUri.toString(), loc(r)],
+      body: r.data,
+    );
   }
 
   Future<Map<String, dynamic>> _api(
@@ -120,9 +181,12 @@ class KtkqClient {
           data: data,
           headers: _headers(json: method.toUpperCase() == 'POST'),
         )
-        .timeout(const Duration(seconds: 15), onTimeout: () {
-          throw Exception('课堂考勤请求超时');
-        });
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            throw Exception('课堂考勤请求超时');
+          },
+        );
     if (looksNightClosed(status: hit.status, data: hit.body)) {
       nightClosed = true;
       throw Exception(nightClosedMessage('课堂考勤'));
@@ -144,8 +208,10 @@ class KtkqClient {
     return map;
   }
 
-  Future<Map<String, dynamic>> _get(String path, [Map<String, dynamic>? params]) =>
-      _api('GET', path, params: params);
+  Future<Map<String, dynamic>> _get(
+    String path, [
+    Map<String, dynamic>? params,
+  ]) => _api('GET', path, params: params);
 
   Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body) =>
       _api('POST', path, data: body);
@@ -155,13 +221,10 @@ class KtkqClient {
   Future<Map<String, dynamic>> userInfo() => _get('/jwmobile/biz/user/info');
 
   Future<void> restoreToken() async {
-    for (final c in await jar.loadForRequest(Uri.parse(kKtkq))) {
-      if (c.name == 'Authorization' && c.value.isNotEmpty) {
-        token = c.value;
-        _auth();
-        return;
-      }
-    }
+    final t = await _tokenFromJar();
+    if (t == null) return;
+    token = t;
+    _auth();
   }
 
   Future<StudentProfile> profile() async {
@@ -191,12 +254,18 @@ class KtkqClient {
     );
   }
 
-  Future<Map<String, dynamic>> termList() => _get('/jwmobile/biz/v410/schedule/termList');
+  Future<Map<String, dynamic>> termList() =>
+      _get('/jwmobile/biz/v410/schedule/termList');
 
-  Future<Map<String, dynamic>> schoolTime({String? xnxqdm}) =>
-      _get('/jwmobile/biz/v410/schedule/school/time', xnxqdm == null ? null : {'xnxqdm': xnxqdm});
+  Future<Map<String, dynamic>> schoolTime({String? xnxqdm}) => _get(
+    '/jwmobile/biz/v410/schedule/school/time',
+    xnxqdm == null ? null : {'xnxqdm': xnxqdm},
+  );
 
-  Future<Map<String, dynamic>> weekCourses({int? week, bool refresh = false}) async {
+  Future<Map<String, dynamic>> weekCourses({
+    int? week,
+    bool refresh = false,
+  }) async {
     var data = <String, dynamic>{};
     var xnxqdm = '';
     try {
@@ -222,13 +291,17 @@ class KtkqClient {
     if (xnxqdm.isEmpty) throw Exception('未能从 school/time 提取 xnxqdm');
     final skzc = week ?? _asInt(data['todayWeekNum'], 1);
     final key = '$xnxqdm|$skzc';
-    if (!refresh && _weekCache != null && _weekCacheKey == key) return _weekCache!;
+    if (!refresh && _weekCache != null && _weekCacheKey == key) {
+      return _weekCache!;
+    }
     var out = <String, dynamic>{};
     try {
-      out = _normalizeWeek(await _post('/jwmobile/biz/v410/schedule/querySchedule', {
-        'xnxqdm': xnxqdm,
-        'skzc': skzc,
-      }));
+      out = _normalizeWeek(
+        await _post('/jwmobile/biz/v410/schedule/querySchedule', {
+          'xnxqdm': xnxqdm,
+          'skzc': skzc,
+        }),
+      );
     } catch (e) {
       debugPrint('[ktkq] querySchedule $e');
     }
@@ -282,11 +355,7 @@ class KtkqClient {
       s.putIfAbsent('kcm', () => name);
       (g['list'] as List).add(s);
     }
-    return {
-      ...raw,
-      'code': raw['code'] ?? 200,
-      'data': groups.values.toList(),
-    };
+    return {...raw, 'code': raw['code'] ?? 200, 'data': groups.values.toList()};
   }
 
   Future<Map<String, dynamic>> queryCurrentLesson({
@@ -297,31 +366,31 @@ class KtkqClient {
     required int weekDay,
     required int startNode,
     required int endNode,
-  }) =>
-      _post('/jwmobile/biz/v410/lesson/queryCurrentLesson', {
-        'teachClassId': teachClassId,
-        'teachClassType': teachClassType,
-        'scheduleId': scheduleId,
-        'week': week,
-        'weekDay': weekDay,
-        'startNode': startNode,
-        'endNode': endNode,
-      });
+  }) => _post('/jwmobile/biz/v410/lesson/queryCurrentLesson', {
+    'teachClassId': teachClassId,
+    'teachClassType': teachClassType,
+    'scheduleId': scheduleId,
+    'week': week,
+    'weekDay': weekDay,
+    'startNode': startNode,
+    'endNode': endNode,
+  });
 
   Future<Map<String, dynamic>> queryScheduleDetail({
     required String jxbid,
     required String kbid,
     required String jxblx,
-  }) =>
-      _post('/jwmobile/biz/v410/schedule/queryScheduleDetail', {
-        'jxbid': jxbid,
-        'kbid': kbid,
-        'jxblx': jxblx,
-        'wid': '',
-      });
+  }) => _post('/jwmobile/biz/v410/schedule/queryScheduleDetail', {
+    'jxbid': jxbid,
+    'kbid': kbid,
+    'jxblx': jxblx,
+    'wid': '',
+  });
 
-  Future<Map<String, dynamic>> querySigninDetail(String activityId) =>
-      _post('/jwmobile/biz/v410/signin/querySigninDetail', {'activityId': activityId});
+  Future<Map<String, dynamic>> querySigninDetail(String activityId) => _post(
+    '/jwmobile/biz/v410/signin/querySigninDetail',
+    {'activityId': activityId},
+  );
 
   Future<Map<String, dynamic>> signinDetail(String activityId) =>
       _post('/jwmobile/biz/v410/signin/detail', {'activityId': activityId});
@@ -332,17 +401,18 @@ class KtkqClient {
     Object accuracy = 0,
     Object latitude = 0,
     Object longitude = 0,
-  }) =>
-      _post('/jwmobile/biz/v410/signin/sign', {
-        'activityId': activityId,
-        'accuracy': accuracy,
-        'latitude': latitude,
-        'longitude': longitude,
-        'code': code,
-      });
+  }) => _post('/jwmobile/biz/v410/signin/sign', {
+    'activityId': activityId,
+    'accuracy': accuracy,
+    'latitude': latitude,
+    'longitude': longitude,
+    'code': code,
+  });
 
-  Future<Map<String, dynamic>> studentHistory(String teachClassId) =>
-      _post('/jwmobile/biz/v410/signin/queryStudentHistory', {'teachClassId': teachClassId});
+  Future<Map<String, dynamic>> studentHistory(String teachClassId) => _post(
+    '/jwmobile/biz/v410/signin/queryStudentHistory',
+    {'teachClassId': teachClassId},
+  );
 
   /// 用课表上的一节课，对上金智课堂考勤后再查签到活动。
   Future<Map<String, dynamic>> signForLesson(
@@ -368,10 +438,7 @@ class KtkqClient {
     final school = _asMap(meta['schoolTime']);
     final weekNum = _asInt(week ?? meta['skzc'] ?? school['todayWeekNum'], 1);
     final slots = _flattenWeek(weekData);
-    var hit = <String, dynamic>{
-      ...lesson.raw,
-      ...?slot,
-    };
+    var hit = <String, dynamic>{...lesson.raw, ...?slot};
     if (_str(hit, 'kcm').isEmpty) {
       hit['kcm'] = lesson.name;
     }
@@ -386,7 +453,9 @@ class KtkqClient {
     hit['ksjc'] ??= lesson.start;
     hit['jsjc'] ??= lesson.end;
     hit['skxq'] ??= lesson.weekday;
-    debugPrint('[ktkq] sign ${lesson.name} jxb=${_idsOf(hit).jxbid} kb=${_idsOf(hit).kbid.length} lx=${_idsOf(hit).jxblx}');
+    debugPrint(
+      '[ktkq] sign ${lesson.name} jxb=${_idsOf(hit).jxbid} kb=${_idsOf(hit).kbid.length} lx=${_idsOf(hit).jxblx}',
+    );
     if (_idsOf(hit).incomplete) {
       return {
         'courseName': lesson.name,
@@ -422,7 +491,11 @@ class KtkqClient {
     return probed;
   }
 
-  Future<Map<String, dynamic>> _probeSlot(Map<String, dynamic> item, int week, int weekDay) async {
+  Future<Map<String, dynamic>> _probeSlot(
+    Map<String, dynamic> item,
+    int week,
+    int weekDay,
+  ) async {
     final ids = _idsOf(item);
     final teachClassId = ids.jxbid;
     final teachClassType = ids.jxblx;
@@ -447,10 +520,16 @@ class KtkqClient {
       'status': 'missing_schedule',
       'message': ktkqStatusLabel('missing_schedule'),
     };
-    if (teachClassId.isEmpty || teachClassType.isEmpty || scheduleId.isEmpty) return entry;
+    if (teachClassId.isEmpty || teachClassType.isEmpty || scheduleId.isEmpty) {
+      return entry;
+    }
     try {
       try {
-        final detail = await queryScheduleDetail(jxbid: teachClassId, kbid: scheduleId, jxblx: teachClassType);
+        final detail = await queryScheduleDetail(
+          jxbid: teachClassId,
+          kbid: scheduleId,
+          jxblx: teachClassType,
+        );
         final teachers = _asMapList(_asMap(detail['data'])['teacherInfo']);
         if (teachers.isNotEmpty) entry['teacher'] = _str(teachers.first, 'xm');
       } catch (_) {}
@@ -489,7 +568,9 @@ class KtkqClient {
     }
   }
 
-  Future<Map<String, dynamic>> _probeActivity(Map<String, dynamic> activity) async {
+  Future<Map<String, dynamic>> _probeActivity(
+    Map<String, dynamic> activity,
+  ) async {
     final id = _str(activity, 'activityId');
     var query = <String, dynamic>{};
     var detail = <String, dynamic>{};
@@ -526,7 +607,10 @@ class KtkqClient {
       final nested = _asMapList(course['list']);
       final rows = nested.isEmpty ? [course] : nested;
       for (final item in rows) {
-        if (nested.isEmpty && _str(item, 'kbid').isEmpty && _str(item, 'jxbid').isEmpty && item['ksjc'] == null) {
+        if (nested.isEmpty &&
+            _str(item, 'kbid').isEmpty &&
+            _str(item, 'jxbid').isEmpty &&
+            item['ksjc'] == null) {
           continue;
         }
         item.putIfAbsent('kcm', () => name);
@@ -540,11 +624,16 @@ class KtkqClient {
     return slots;
   }
 
-  Map<String, dynamic>? _fillIds(Map<String, dynamic> hit, List<Map<String, dynamic>> slots) {
+  Map<String, dynamic>? _fillIds(
+    Map<String, dynamic> hit,
+    List<Map<String, dynamic>> slots,
+  ) {
     final jxb = _idsOf(hit).jxbid;
     if (jxb.isNotEmpty) {
       for (final s in slots) {
-        if (_idsOf(s).jxbid == jxb && !_idsOf(s).incomplete) return {...hit, ...s};
+        if (_idsOf(s).jxbid == jxb && !_idsOf(s).incomplete) {
+          return {...hit, ...s};
+        }
       }
     }
     return _matchSlot(
@@ -559,7 +648,10 @@ class KtkqClient {
     );
   }
 
-  Map<String, dynamic>? _matchSlot(Lesson lesson, List<Map<String, dynamic>> slots) {
+  Map<String, dynamic>? _matchSlot(
+    Lesson lesson,
+    List<Map<String, dynamic>> slots,
+  ) {
     Map<String, dynamic>? best;
     var bestScore = 0;
     for (final item in slots) {
@@ -606,7 +698,10 @@ class KtkqClient {
   }
 }
 
-Lesson ktkqSlotToLesson(Map<String, dynamic> course, Map<String, dynamic> item) {
+Lesson ktkqSlotToLesson(
+  Map<String, dynamic> course,
+  Map<String, dynamic> item,
+) {
   final merged = <String, dynamic>{...course, ...item};
   merged.remove('list');
   final start = _asInt(merged['ksjc'], 1);
@@ -636,6 +731,86 @@ const kKtkqStatusLabel = {
 };
 
 String ktkqStatusLabel(String s) => kKtkqStatusLabel[s] ?? s;
+
+/// 从 Set-Cookie / URL / JSON / HTML 里抽出课堂考勤 JWT，字段与 ktkq_client._extract_token 一致。
+String? parseKtkqToken({
+  Iterable<String> setCookies = const [],
+  Iterable<String> urls = const [],
+  Object? body,
+}) {
+  for (final c in setCookies) {
+    final m = RegExp(
+      r'(?:^|[,;\s])Authorization=([^;]+)',
+      caseSensitive: false,
+    ).firstMatch(c);
+    final t = cleanKtkqToken(m?.group(1));
+    if (t != null) return t;
+  }
+  for (final u in urls) {
+    final t = tokenFromKtkqUrl(u);
+    if (t != null) return t;
+  }
+  return tokenFromKtkqBody(body);
+}
+
+String? tokenFromKtkqUrl(String u) {
+  if (u.isEmpty || !u.contains('token=')) return null;
+  final uri = Uri.tryParse(u);
+  final q = uri?.queryParameters['token'];
+  final fromQuery = cleanKtkqToken(q);
+  if (fromQuery != null) return fromQuery;
+  final frag = uri?.fragment ?? '';
+  final fromFrag = cleanKtkqToken(
+    RegExp(r'(?:^|[?&#])token=([^&\s#]+)').firstMatch(frag)?.group(1),
+  );
+  if (fromFrag != null) return fromFrag;
+  return cleanKtkqToken(
+    RegExp(r'[?&#]token=([^&\s#]+)').firstMatch(u)?.group(1),
+  );
+}
+
+String? tokenFromKtkqBody(Object? data) {
+  if (data == null) return null;
+  if (data is Map) {
+    final map = Map<Object?, Object?>.from(data);
+    final direct = cleanKtkqToken(map['token']?.toString());
+    if (direct != null) return direct;
+    final inner = map['data'];
+    if (inner is Map) {
+      final nested = cleanKtkqToken(inner['token']?.toString());
+      if (nested != null) return nested;
+    }
+  }
+  final s = data.toString();
+  if (s.isEmpty) return null;
+  try {
+    final decoded = jsonDecode(s);
+    if (decoded is Map) return tokenFromKtkqBody(decoded);
+  } catch (_) {}
+  return cleanKtkqToken(
+    RegExp(r'''["']token["']\s*[:=]\s*["']([^"']+)["']''')
+        .firstMatch(s)
+        ?.group(1),
+  );
+}
+
+String? cleanKtkqToken(String? raw) {
+  var s = (raw ?? '').trim();
+  if (s.length >= 2 &&
+      ((s.startsWith('"') && s.endsWith('"')) ||
+          (s.startsWith("'") && s.endsWith("'")))) {
+    s = s.substring(1, s.length - 1).trim();
+  }
+  try {
+    s = Uri.decodeComponent(s);
+  } catch (_) {}
+  s = s.trim();
+  if (s.toLowerCase().startsWith('bearer ')) s = s.substring(7).trim();
+  if (s.isEmpty || s == 'null' || s == 'undefined' || s.length < 16) {
+    return null;
+  }
+  return s;
+}
 
 String ktkqSignTypeLabel(String t) {
   switch (t.toUpperCase()) {
@@ -686,11 +861,8 @@ class _KtkqIds {
   bool get incomplete => jxbid.isEmpty || jxblx.isEmpty || kbid.isEmpty;
 }
 
-_KtkqIds _idsOf(Map<String, dynamic> m) => _KtkqIds(
-      _str(m, 'jxbid'),
-      _str(m, 'jxblx'),
-      _str(m, 'kbid'),
-    );
+_KtkqIds _idsOf(Map<String, dynamic> m) =>
+    _KtkqIds(_str(m, 'jxbid'), _str(m, 'jxblx'), _str(m, 'kbid'));
 
 List<Map<String, dynamic>> _asMapList(Object? v) {
   if (v is! List) return [];
@@ -720,18 +892,23 @@ DateTime? _parseDt(Object? v) {
   if (s.isEmpty) return null;
   s = s.replaceAll('/', '-');
   final sp = s.indexOf(' ');
-  if (sp > 0 && !s.contains('T')) s = '${s.substring(0, sp)}T${s.substring(sp + 1)}';
+  if (sp > 0 && !s.contains('T')) {
+    s = '${s.substring(0, sp)}T${s.substring(sp + 1)}';
+  }
   return DateTime.tryParse(s);
 }
 
-bool _alreadySigned(Map<String, dynamic> m) => '${m['signStatus'] ?? ''}' == '1';
+bool _alreadySigned(Map<String, dynamic> m) =>
+    '${m['signStatus'] ?? ''}' == '1';
 
 String _activityStatus(
   Map<String, dynamic> activity,
   Map<String, dynamic> queryDetail,
   Map<String, dynamic> signDetail,
 ) {
-  if (_alreadySigned(queryDetail) || _alreadySigned(signDetail)) return 'already_signed';
+  if (_alreadySigned(queryDetail) || _alreadySigned(signDetail)) {
+    return 'already_signed';
+  }
   if (_truthyKq(activity['isEnd'])) return 'expired';
   final start = _parseDt(signDetail['startTime']);
   final end = _parseDt(signDetail['endTime']);
@@ -773,7 +950,10 @@ String _slotTime(Map<String, dynamic> item) {
   return [sksj, node].where((e) => e.isNotEmpty).join('  ');
 }
 
-List<Map<String, dynamic>> _historyRows(Map<String, dynamic> raw, String courseName) {
+List<Map<String, dynamic>> _historyRows(
+  Map<String, dynamic> raw,
+  String courseName,
+) {
   final src = raw['data'];
   if (src is! List) return [];
   final out = <Map<String, dynamic>>[];

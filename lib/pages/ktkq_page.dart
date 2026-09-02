@@ -32,8 +32,10 @@ class _KtkqPageState extends State<KtkqPage> {
   Future<Map<String, dynamic>> _load({bool refresh = false}) async {
     final s = context.read<Session>();
     if (s.demoMode) return Map<String, dynamic>.from(demoKtkq);
-    await s.ensureKtkq().timeout(const Duration(seconds: 20));
-    return s.ktkq!.weekCourses(refresh: refresh).timeout(const Duration(seconds: 20));
+    await s.ensureKtkq().timeout(const Duration(seconds: 50));
+    return s.ktkq!
+        .weekCourses(refresh: refresh)
+        .timeout(const Duration(seconds: 20));
   }
 
   void _reload() {
@@ -46,26 +48,45 @@ class _KtkqPageState extends State<KtkqPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('课堂考勤'),
-        actions: [IconButton(onPressed: _reload, icon: const Icon(Icons.refresh_rounded))],
+        actions: [
+          IconButton(
+            onPressed: _reload,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       body: future == null
           ? const Center(child: SwunLoader())
           : AsyncBody(
               future: future,
               builder: (context, data) {
-                final meta = data['_meta'] is Map ? Map<String, dynamic>.from(data['_meta'] as Map) : {};
-                final st = meta['schoolTime'] is Map ? Map<String, dynamic>.from(meta['schoolTime'] as Map) : {};
-                final week = int.tryParse('${meta['skzc'] ?? st['todayWeekNum'] ?? 1}') ?? 1;
+                final meta = data['_meta'] is Map
+                    ? Map<String, dynamic>.from(data['_meta'] as Map)
+                    : {};
+                final st = meta['schoolTime'] is Map
+                    ? Map<String, dynamic>.from(meta['schoolTime'] as Map)
+                    : {};
+                final week =
+                    int.tryParse(
+                      '${meta['skzc'] ?? st['todayWeekNum'] ?? 1}',
+                    ) ??
+                    1;
                 final rows = data['data'];
                 return ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
                     Text(
                       '${st['xnxqmc'] ?? meta['xnxqdm'] ?? ''}  第 $week 周',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 6),
-                    Text('点一门课进入签到。课表里点课程也可以。', style: TextStyle(color: context.muted, fontSize: 13)),
+                    Text(
+                      '点一门课进入签到。课表里点课程也可以。',
+                      style: TextStyle(color: context.muted, fontSize: 13),
+                    ),
                     const SizedBox(height: 12),
                     if (data['code'] != 200 && data['code'] != 0)
                       Card(
@@ -78,7 +99,8 @@ class _KtkqPageState extends State<KtkqPage> {
                       const Card(child: ListTile(title: Text('本周暂无课程')))
                     else
                       for (final raw in rows)
-                        if (raw is Map) _weekCard(Map<String, dynamic>.from(raw), week),
+                        if (raw is Map)
+                          _weekCard(Map<String, dynamic>.from(raw), week),
                   ],
                 );
               },
@@ -95,7 +117,10 @@ class _KtkqPageState extends State<KtkqPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${c['kcm'] ?? ''} (${c['kch'] ?? ''})', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(
+              '${c['kcm'] ?? ''} (${c['kch'] ?? ''})',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
             if ('${c['xf'] ?? ''}${c['xs'] ?? ''}'.trim().isNotEmpty)
               Text(
                 [
@@ -115,11 +140,7 @@ class _KtkqPageState extends State<KtkqPage> {
                       KtkqSignPage(
                         lesson: ktkqSlotToLesson(c, item),
                         week: week,
-                        slot: {
-                          ...c,
-                          ...item,
-                          'list': null,
-                        },
+                        slot: {...c, ...item, 'list': null},
                       ),
                     );
                   },
@@ -131,8 +152,13 @@ class _KtkqPageState extends State<KtkqPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('${it['jxbmc'] ?? ''}', style: const TextStyle(color: kCrimson)),
-                              Text('${it['sksj'] ?? ''}  ${it['jasmc'] ?? ''}  节次 ${it['ksjc'] ?? ''}~${it['jsjc'] ?? ''}'),
+                              Text(
+                                '${it['jxbmc'] ?? ''}',
+                                style: const TextStyle(color: kCrimson),
+                              ),
+                              Text(
+                                '${it['sksj'] ?? ''}  ${it['jasmc'] ?? ''}  节次 ${it['ksjc'] ?? ''}~${it['jsjc'] ?? ''}',
+                              ),
                             ],
                           ),
                         ),

@@ -49,17 +49,23 @@ class _YktPageState extends State<YktPage> {
         await Future<void>.delayed(const Duration(milliseconds: 300));
         if (!mounted) return;
         setState(() {
-          _payload = 'SWUN-DEMO-YKT-${s.studentId.isEmpty ? '202430000000' : s.studentId}';
+          _payload =
+              'SWUN-DEMO-YKT-${s.studentId.isEmpty ? '202430000000' : s.studentId}';
           _balanceYuan = 18.7;
           _error = null;
           _loading = false;
         });
         return;
       }
-      final qr = s.ykt!.fetchQr(
-        studentId: s.studentId,
-        schoolId: '${s.lantu?.schoolId ?? 187}',
-      ).timeout(const Duration(seconds: 22), onTimeout: () => throw Exception('一卡通请求超时'));
+      final qr = s.ykt!
+          .fetchQr(
+            studentId: s.studentId,
+            schoolId: '${s.lantu?.schoolId ?? 187}',
+          )
+          .timeout(
+            const Duration(seconds: 40),
+            onTimeout: () => throw Exception('一卡通请求超时'),
+          );
       final brief = () async {
         try {
           return await s.lantu?.getCardBrief();
@@ -105,7 +111,10 @@ class _YktPageState extends State<YktPage> {
       appBar: AppBar(
         title: const Text('一卡通'),
         actions: [
-          IconButton(onPressed: () => _reload(first: true), icon: const Icon(Icons.refresh_rounded)),
+          IconButton(
+            onPressed: () => _reload(first: true),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
         ],
       ),
       body: _loading && _payload == null
@@ -117,7 +126,10 @@ class _YktPageState extends State<YktPage> {
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Text(_error!, style: const TextStyle(color: kCrimson)),
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(color: kCrimson),
+                      ),
                     ),
                   ),
                 Row(
@@ -125,7 +137,10 @@ class _YktPageState extends State<YktPage> {
                   children: [
                     const Padding(
                       padding: EdgeInsets.only(bottom: 6),
-                      child: Text('余额', style: TextStyle(color: kMuted, fontSize: 13)),
+                      child: Text(
+                        '余额',
+                        style: TextStyle(color: kMuted, fontSize: 13),
+                      ),
                     ),
                     const Spacer(),
                     TweenAnimationBuilder<double>(
@@ -133,8 +148,13 @@ class _YktPageState extends State<YktPage> {
                       duration: const Duration(milliseconds: 500),
                       curve: Curves.easeOutCubic,
                       builder: (context, v, _) => Text(
-                        _balanceYuan == null ? '--' : '¥ ${v.toStringAsFixed(2)}',
-                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
+                        _balanceYuan == null
+                            ? '--'
+                            : '¥ ${v.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -145,7 +165,13 @@ class _YktPageState extends State<YktPage> {
                     padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
                     child: Column(
                       children: [
-                        const Text('付款码', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                        const Text(
+                          '付款码',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         if (_payload == null)
                           const Padding(
@@ -166,7 +192,10 @@ class _YktPageState extends State<YktPage> {
                               data: _payload!,
                               size: 240,
                               backgroundColor: Colors.white,
-                              eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: kInk),
+                              eyeStyle: const QrEyeStyle(
+                                eyeShape: QrEyeShape.square,
+                                color: kInk,
+                              ),
                               dataModuleStyle: const QrDataModuleStyle(
                                 dataModuleShape: QrDataModuleShape.square,
                                 color: kInk,
@@ -177,10 +206,16 @@ class _YktPageState extends State<YktPage> {
                         Text(
                           _payload == null ? '' : _payload!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.black45, fontSize: 12),
+                          style: const TextStyle(
+                            color: Colors.black45,
+                            fontSize: 12,
+                          ),
                         ),
                         const SizedBox(height: 8),
-                        const Text('每分钟自动刷新', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                        const Text(
+                          '每分钟自动刷新',
+                          style: TextStyle(color: Colors.black54, fontSize: 13),
+                        ),
                       ],
                     ),
                   ),
@@ -188,7 +223,11 @@ class _YktPageState extends State<YktPage> {
                 const SizedBox(height: 12),
                 const Text(
                   '温馨提示：二维码显示异常时请切换校园网后下拉刷新。付款码走一卡通瑞数网关，请勿截图长时间外传。',
-                  style: TextStyle(color: Colors.black45, fontSize: 12, height: 1.4),
+                  style: TextStyle(
+                    color: Colors.black45,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
                 ),
               ],
             ),

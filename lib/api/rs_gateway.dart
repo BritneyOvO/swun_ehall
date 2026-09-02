@@ -14,14 +14,20 @@ const _tsMark = '\$_ts';
 bool looksLikeRuishu({int? status, String? body}) {
   if (status == 412) return true;
   final s = body ?? '';
-  if (s.contains(_tsMark) && (s.contains('nsd=') || s.contains('3AAFGrVH') || s.contains('FSSBBIl1'))) {
+  if (s.contains(_tsMark) &&
+      (s.contains('nsd=') ||
+          s.contains('3AAFGrVH') ||
+          s.contains('FSSBBIl1'))) {
     return true;
   }
   return false;
 }
 
 bool _isWafName(String n) =>
-    n.contains('3AAFGrVH') || n.contains('FSSBBIl1') || n.startsWith('FSSBB') || n.contains('3AAFG');
+    n.contains('3AAFGrVH') ||
+    n.contains('FSSBBIl1') ||
+    n.startsWith('FSSBB') ||
+    n.contains('3AAFG');
 
 class RsHit {
   RsHit({required this.status, required this.body, this.url = ''});
@@ -39,6 +45,7 @@ class RsHit {
     if (status == 0 || status == 412) return false;
     if (looksLikeRuishu(status: status, body: body)) return false;
     if (looksLikeHtml) return false;
+    if (status >= 200 && status < 300) return true;
     return body.trim().isNotEmpty;
   }
 
@@ -89,7 +96,9 @@ class RsGateway {
   static const _cookieTtl = Duration(minutes: 8);
 
   bool _cookiesFresh(_Slot s) =>
-      s.ctl != null && s.cookieAt != null && DateTime.now().difference(s.cookieAt!) < _cookieTtl;
+      s.ctl != null &&
+      s.cookieAt != null &&
+      DateTime.now().difference(s.cookieAt!) < _cookieTtl;
 
   _Slot _slot(String host) => _slots.putIfAbsent(host, _Slot.new);
 
@@ -164,21 +173,25 @@ class RsGateway {
           s.cookieAt != null &&
           DateTime.now().difference(s.cookieAt!) < _cookieTtl &&
           await _hasWafCookie(uri)) {
-        debugPrint('[rs] warmup ${uri.host} skip ${DateTime.now().difference(t0).inMilliseconds}ms');
+        debugPrint(
+          '[rs] warmup ${uri.host} skip ${DateTime.now().difference(t0).inMilliseconds}ms',
+        );
         return;
       }
       await _refreshChallenge(uri);
-      debugPrint('[rs] warmup ${uri.host} ${DateTime.now().difference(t0).inMilliseconds}ms');
+      debugPrint(
+        '[rs] warmup ${uri.host} ${DateTime.now().difference(t0).inMilliseconds}ms',
+      );
     }, timeout: const Duration(seconds: 10));
   }
 
   Future<void> warmupAll(Iterable<String> urls) => Future.wait(
-        urls.map(
-          (u) => warmup(u).catchError((Object e) {
-            debugPrint('[rs] warmup $u $e');
-          }),
-        ),
-      );
+    urls.map(
+      (u) => warmup(u).catchError((Object e) {
+        debugPrint('[rs] warmup $u $e');
+      }),
+    ),
+  );
 
   Future<RsHit> request({
     required String method,
@@ -189,11 +202,13 @@ class RsGateway {
   }) async {
     var uri = Uri.parse(url);
     if (query != null && query.isNotEmpty) {
-      uri = uri.replace(queryParameters: {
-        ...uri.queryParameters,
-        for (final e in query.entries)
-          if (e.value != null) e.key: '${e.value}',
-      });
+      uri = uri.replace(
+        queryParameters: {
+          ...uri.queryParameters,
+          for (final e in query.entries)
+            if (e.value != null) e.key: '${e.value}',
+        },
+      );
     }
     final host = uri.host;
     final keep = headers?['Referer'] ?? headers?['referer'];
@@ -206,19 +221,30 @@ class RsGateway {
         final first = await _dioOnce(method, uri, data: data, headers: headers);
         if (first != null && first.usable) {
           _dioOk.add(host);
-          debugPrint('[rs] $host dio ${DateTime.now().difference(t0).inMilliseconds}ms');
+          debugPrint(
+            '[rs] $host dio ${DateTime.now().difference(t0).inMilliseconds}ms',
+          );
           return first;
         }
-        if (first != null && looksLikeRuishu(status: first.status, body: first.body)) {
+        if (first != null &&
+            looksLikeRuishu(status: first.status, body: first.body)) {
           _rsHosts.add(host);
           _dioOk.remove(host);
         }
       }
       if (s.ctl != null) {
         try {
-          final hit = await _jsFetch(s, method, uri, data: data, headers: headers);
+          final hit = await _jsFetch(
+            s,
+            method,
+            uri,
+            data: data,
+            headers: headers,
+          );
           if (hit.usable) {
-            debugPrint('[rs] $host js ${DateTime.now().difference(t0).inMilliseconds}ms');
+            debugPrint(
+              '[rs] $host js ${DateTime.now().difference(t0).inMilliseconds}ms',
+            );
             return hit;
           }
         } catch (e) {
@@ -232,7 +258,9 @@ class RsGateway {
         await Future<void>.delayed(const Duration(milliseconds: 280));
         hit = await _jsFetch(s, method, uri, data: data, headers: headers);
       }
-      debugPrint('[rs] $host refresh ${DateTime.now().difference(t0).inMilliseconds}ms ${hit.status}');
+      debugPrint(
+        '[rs] $host refresh ${DateTime.now().difference(t0).inMilliseconds}ms ${hit.status}',
+      );
       if (!hit.usable) {
         throw Exception('网关仍被拦截');
       }
@@ -240,7 +268,7 @@ class RsGateway {
     });
   }
 
-  Future<RsHit> navigate(String url) {
+  Future<RsHit> navigate(String url, {bool waitForToken = false}) {
     final uri = Uri.parse(url);
     return _locked(uri.host, () async {
       await _ensureView(uri.host);
@@ -250,8 +278,13 @@ class RsGateway {
         await _pushCookies(uri);
         await _pushHostCookies('authserver.swun.edu.cn');
         await _load(s, url);
-        await _waitNavigated(s, uri);
+        await _waitNavigated(s, uri, waitForToken: waitForToken);
         await _pullCookies(uri);
+        if (uri.path.contains('/jwmobile')) {
+          await _pullCookies(
+            Uri.parse('${uri.scheme}://${uri.host}/jwmobile/'),
+          );
+        }
         s.originAt = DateTime.now();
         s.cookieAt = s.originAt;
         _rsHosts.add(uri.host);
@@ -260,10 +293,15 @@ class RsGateway {
       } finally {
         s.allowOffHost = false;
       }
-    }, timeout: const Duration(seconds: 18));
+    }, timeout: Duration(seconds: waitForToken ? 24 : 18));
   }
 
-  Future<RsHit?> _dioOnce(String method, Uri uri, {Object? data, Map<String, String>? headers}) async {
+  Future<RsHit?> _dioOnce(
+    String method,
+    Uri uri, {
+    Object? data,
+    Map<String, String>? headers,
+  }) async {
     try {
       final r = await dio.requestUri(
         uri,
@@ -271,17 +309,29 @@ class RsGateway {
         options: Options(
           method: method,
           headers: headers,
-          contentType: method == 'POST' && data is Map ? Headers.jsonContentType : null,
+          contentType: method == 'POST' && data is Map
+              ? Headers.jsonContentType
+              : null,
           sendTimeout: const Duration(seconds: 5),
           receiveTimeout: const Duration(seconds: 5),
           validateStatus: (s) => s != null && s < 500,
         ),
       );
-      final body = r.data is String ? r.data as String : (r.data == null ? '' : jsonEncode(r.data));
-      return RsHit(status: r.statusCode ?? 0, body: body, url: r.realUri.toString());
+      final body = r.data is String
+          ? r.data as String
+          : (r.data == null ? '' : jsonEncode(r.data));
+      return RsHit(
+        status: r.statusCode ?? 0,
+        body: body,
+        url: r.realUri.toString(),
+      );
     } on DioException catch (e) {
       if (e.response?.statusCode == 412) {
-        return RsHit(status: 412, body: '${e.response?.data ?? ''}', url: uri.toString());
+        return RsHit(
+          status: 412,
+          body: '${e.response?.data ?? ''}',
+          url: uri.toString(),
+        );
       }
       return null;
     }
@@ -292,7 +342,9 @@ class RsGateway {
     await _ensureView(uri.host);
     var target = _homeOf(uri.host);
     final keep = keepUrl == null ? null : Uri.tryParse(keepUrl);
-    if (keep != null && keep.host == uri.host && keep.scheme.startsWith('http')) {
+    if (keep != null &&
+        keep.host == uri.host &&
+        keep.scheme.startsWith('http')) {
       target = keep.replace(fragment: '').toString();
     }
     final before = await _wafSig(uri);
@@ -369,18 +421,22 @@ class RsGateway {
       shouldOverrideUrlLoading: (c, action) async {
         final next = action.request.url;
         if (next == null) return wv.NavigationActionPolicy.ALLOW;
-        if (next.host.isEmpty || next.host == host) return wv.NavigationActionPolicy.ALLOW;
+        if (next.host.isEmpty || next.host == host) {
+          return wv.NavigationActionPolicy.ALLOW;
+        }
         if (s.allowOffHost) return wv.NavigationActionPolicy.ALLOW;
         return wv.NavigationActionPolicy.CANCEL;
       },
       onReceivedServerTrustAuthRequest: (c, challenge) async {
-        return wv.ServerTrustAuthResponse(action: wv.ServerTrustAuthResponseAction.PROCEED);
+        return wv.ServerTrustAuthResponse(
+          action: wv.ServerTrustAuthResponseAction.PROCEED,
+        );
       },
     );
     await s.view!.run().timeout(
-          const Duration(seconds: 8),
-          onTimeout: () => throw Exception('后台 WebView 启动超时'),
-        );
+      const Duration(seconds: 8),
+      onTimeout: () => throw Exception('后台 WebView 启动超时'),
+    );
     s.ctl ??= s.view!.webViewController;
     if (s.ctl == null) {
       await ready.future.timeout(const Duration(seconds: 6));
@@ -399,15 +455,37 @@ class RsGateway {
           .loadUrl(urlRequest: wv.URLRequest(url: wv.WebUri(url)))
           .timeout(const Duration(seconds: 3));
     } catch (_) {}
-    await gate.future.timeout(const Duration(milliseconds: 1000), onTimeout: () {});
+    await gate.future.timeout(
+      const Duration(milliseconds: 1000),
+      onTimeout: () {},
+    );
   }
 
   Future<List<wv.Cookie>> _cmCookies(Uri uri) async {
+    final path = uri.path.isEmpty ? '/' : uri.path;
+    final urls = <String>{
+      '${uri.scheme}://${uri.host}/',
+      '${uri.scheme}://${uri.host}$path',
+    };
     try {
       final cm = wv.CookieManager.instance();
-      return await cm
-          .getCookies(url: wv.WebUri('${uri.scheme}://${uri.host}/'))
-          .timeout(const Duration(seconds: 2), onTimeout: () => <wv.Cookie>[]);
+      final byName = <String, wv.Cookie>{};
+      for (final u in urls) {
+        final got = await cm
+            .getCookies(url: wv.WebUri(u))
+            .timeout(
+              const Duration(seconds: 2),
+              onTimeout: () => <wv.Cookie>[],
+            );
+        for (final c in got) {
+          final prev = byName[c.name];
+          if (prev == null ||
+              '${c.value ?? ''}'.length > '${prev.value ?? ''}'.length) {
+            byName[c.name] = c;
+          }
+        }
+      }
+      return byName.values.toList();
     } catch (_) {
       return const [];
     }
@@ -416,11 +494,18 @@ class RsGateway {
   Future<String> _wafSig(Uri uri) async {
     final parts = <String>[];
     for (final c in await _cmCookies(uri)) {
-      if (_isWafName(c.name) && (c.value ?? '').isNotEmpty) parts.add('${c.name}=${c.value}');
+      if (_isWafName(c.name) && (c.value ?? '').isNotEmpty) {
+        parts.add('${c.name}=${c.value}');
+      }
     }
     try {
-      for (final c in await jar.loadForRequest(uri).timeout(const Duration(seconds: 2))) {
-        if (_isWafName(c.name) && c.value.isNotEmpty) parts.add('${c.name}=${c.value}');
+      for (final c
+          in await jar
+              .loadForRequest(uri)
+              .timeout(const Duration(seconds: 2))) {
+        if (_isWafName(c.name) && c.value.isNotEmpty) {
+          parts.add('${c.name}=${c.value}');
+        }
       }
     } catch (_) {}
     parts.sort();
@@ -428,7 +513,7 @@ class RsGateway {
   }
 
   Future<void> _waitWafCookie(Uri uri, {String? previous}) async {
-    final until = DateTime.now().add(const Duration(milliseconds: 900));
+    final until = DateTime.now().add(const Duration(milliseconds: 2800));
     while (DateTime.now().isBefore(until)) {
       final sig = await _wafSig(uri);
       if (sig.isNotEmpty && sig != previous) return;
@@ -438,20 +523,35 @@ class RsGateway {
     throw Exception('网关挑战超时 (瑞数)');
   }
 
-  Future<void> _waitNavigated(_Slot s, Uri uri) async {
+  Future<void> _waitNavigated(
+    _Slot s,
+    Uri uri, {
+    bool waitForToken = false,
+  }) async {
     final until = DateTime.now().add(const Duration(seconds: 10));
+    DateTime? htmlAt;
     while (DateTime.now().isBefore(until)) {
       final snap = await _snapshot(s);
       final h = Uri.tryParse(snap.href)?.host ?? '';
       if (h == uri.host && !snap.href.startsWith('about:')) {
         if (snap.rs) {
+          // 一卡通等页会把 $_ts 脚本一直留在 HTML 里，cookie 齐了就视为过关。
+          if (!waitForToken && await _hasWafCookie(uri) && snap.htmlLen > 40) {
+            return;
+          }
           await Future<void>.delayed(const Duration(milliseconds: 80));
           continue;
         }
-        if (snap.emToken.isNotEmpty || snap.lsToken.isNotEmpty) return;
-        if (snap.href.contains('token=')) return;
-        if (snap.cookie.contains('Authorization=')) return;
-        if (snap.htmlLen > 40) return;
+        if (_tokenFromSnap(snap) != null) return;
+        if (!waitForToken && snap.htmlLen > 40) return;
+        if (waitForToken && snap.htmlLen > 40) {
+          // SPA 往往先出 HTML，token 稍后才写进 hash / localStorage。
+          htmlAt ??= DateTime.now();
+          if (DateTime.now().difference(htmlAt) >=
+              const Duration(milliseconds: 2500)) {
+            return;
+          }
+        }
       }
       await Future<void>.delayed(const Duration(milliseconds: 80));
     }
@@ -460,19 +560,23 @@ class RsGateway {
   Future<bool> _hasWafCookie(Uri uri) async {
     if ((await _cmCookies(uri)).any((c) => _isWafName(c.name))) return true;
     try {
-      final list = await jar.loadForRequest(uri).timeout(const Duration(seconds: 2));
+      final list = await jar
+          .loadForRequest(uri)
+          .timeout(const Duration(seconds: 2));
       if (list.any((c) => _isWafName(c.name))) return true;
     } catch (_) {}
     return false;
   }
 
   Future<_Snap> _snapshot(_Slot s) {
-    return _jsLocked(s, () async {
-      final ctl = s.ctl;
-      if (ctl == null) return _Snap();
-      try {
-        final r = await ctl.callAsyncJavaScript(
-          functionBody: '''
+    return _jsLocked(
+      s,
+      () async {
+        final ctl = s.ctl;
+        if (ctl == null) return _Snap();
+        try {
+          final r = await ctl.callAsyncJavaScript(
+            functionBody: '''
           var h = document.documentElement ? document.documentElement.innerHTML : '';
           return {
             href: location.href || '',
@@ -484,27 +588,26 @@ class RsGateway {
             lsToken: (function(){ try { return localStorage.getItem('token') || ''; } catch(e){ return ''; } })()
           };
         ''',
-        );
-        final v = r?.value;
-        if (v is Map) {
-          return _Snap(
-            href: '${v['href'] ?? ''}',
-            cookie: '${v['cookie'] ?? ''}',
-            rs: v['rs'] == true,
-            htmlLen: int.tryParse('${v['htmlLen'] ?? 0}') ?? 0,
-            text: '${v['text'] ?? ''}',
-            emToken: '${v['emToken'] ?? ''}',
-            lsToken: '${v['lsToken'] ?? ''}',
           );
+          final v = r?.value;
+          if (v is Map) {
+            return _Snap(
+              href: '${v['href'] ?? ''}',
+              cookie: '${v['cookie'] ?? ''}',
+              rs: v['rs'] == true,
+              htmlLen: int.tryParse('${v['htmlLen'] ?? 0}') ?? 0,
+              text: '${v['text'] ?? ''}',
+              emToken: '${v['emToken'] ?? ''}',
+              lsToken: '${v['lsToken'] ?? ''}',
+            );
+          }
+        } catch (e) {
+          debugPrint('[rs] snapshot $e');
         }
-      } catch (e) {
-        debugPrint('[rs] snapshot $e');
-      }
-      return _Snap();
-    }, timeout: const Duration(seconds: 2)).then(
-      (v) => v,
-      onError: (_, _) => _Snap(),
-    );
+        return _Snap();
+      },
+      timeout: const Duration(seconds: 2),
+    ).then((v) => v, onError: (_, _) => _Snap());
   }
 
   Future<RsHit> _jsFetch(
@@ -519,29 +622,95 @@ class RsGateway {
       final ctl = s.ctl;
       if (ctl == null) throw Exception('网关未就绪');
       final r = await ctl.callAsyncJavaScript(
-        functionBody: r'''
+        functionBody:
+            '''
         try {
           const hdr = (typeof headerJson === 'string' && headerJson.length)
             ? JSON.parse(headerJson) : {};
-          if (!hdr.Referer && !hdr.referer) {
-            try { hdr.Referer = (location.href || '').split('#')[0] || (location.origin + '/'); } catch (e) {}
-          }
-          const opt = {
-            method: method,
-            credentials: 'include',
-            redirect: 'follow',
-            headers: hdr
-          };
-          if (body) opt.body = body;
-          const ctrl = new AbortController();
-          const timer = setTimeout(function(){ ctrl.abort(); }, 4000);
-          opt.signal = ctrl.signal;
+          let reqUrl = url;
           try {
-            const resp = await fetch(url, opt);
-            const text = await resp.text();
-            return {status: resp.status, body: text, url: resp.url, error: ''};
-          } finally {
-            clearTimeout(timer);
+            const u = new URL(url, location.href);
+            if (u.origin === location.origin) reqUrl = u.pathname + u.search;
+          } catch (e) {}
+          const pack = function(status, text, finalUrl, error) {
+            return {status: status || 0, body: text || '', url: finalUrl || url, error: error || ''};
+          };
+          const viaJquery = function() {
+            const jqLib = (typeof jQuery !== 'undefined') ? jQuery : null;
+            if (!jqLib || !jqLib.ajax) return Promise.resolve(null);
+            return new Promise(function(resolve) {
+              jqLib.ajax({
+                type: method,
+                url: reqUrl,
+                data: body || undefined,
+                cache: false,
+                dataType: 'text',
+                headers: hdr,
+                timeout: 4000,
+                success: function(data, _s, xhr) {
+                  resolve(pack(xhr && xhr.status, typeof data === 'string' ? data : String(data == null ? '' : data), (xhr && xhr.responseURL) || url, ''));
+                },
+                error: function(xhr) {
+                  resolve(pack(xhr && xhr.status, xhr && xhr.responseText, url, ''));
+                }
+              });
+            });
+          };
+          const viaXhr = function() {
+            return new Promise(function(resolve) {
+              try {
+                const xhr = new XMLHttpRequest();
+                xhr.open(method, reqUrl, true);
+                xhr.withCredentials = true;
+                xhr.timeout = 4000;
+                Object.keys(hdr).forEach(function(k) {
+                  const lk = k.toLowerCase();
+                  if (lk === 'referer' || lk === 'origin' || lk === 'host' || lk === 'cookie' || lk === 'user-agent') return;
+                  try { xhr.setRequestHeader(k, hdr[k]); } catch (e) {}
+                });
+                xhr.onload = function() {
+                  resolve(pack(xhr.status, xhr.responseText, xhr.responseURL || url, ''));
+                };
+                xhr.onerror = function() { resolve(pack(0, '', url, 'xhr')); };
+                xhr.ontimeout = function() { resolve(pack(0, '', url, 'timeout')); };
+                xhr.send(body || null);
+              } catch (e) {
+                resolve(pack(0, '', url, String(e)));
+              }
+            });
+          };
+          const viaFetch = async function() {
+            if (!hdr.Referer && !hdr.referer) {
+              try { hdr.Referer = (location.href || '').split('#')[0] || (location.origin + '/'); } catch (e) {}
+            }
+            const opt = {method: method, credentials: 'include', redirect: 'follow', headers: hdr};
+            if (body) opt.body = body;
+            const ctrl = new AbortController();
+            const timer = setTimeout(function(){ ctrl.abort(); }, 4000);
+            opt.signal = ctrl.signal;
+            try {
+              const resp = await fetch(url, opt);
+              const text = await resp.text();
+              return pack(resp.status, text, resp.url, '');
+            } finally {
+              clearTimeout(timer);
+            }
+          };
+          const mark = '$_tsMark';
+          const jq = await viaJquery();
+          if (jq && jq.status && jq.status !== 412 && String(jq.body || '').indexOf(mark) < 0) return jq;
+          const xhr = await viaXhr();
+          if (xhr.status && xhr.status !== 412 && String(xhr.body || '').indexOf(mark) < 0) return xhr;
+          try {
+            const f = await viaFetch();
+            if (f.status && f.status !== 412) return f;
+            if (xhr && xhr.status) return xhr;
+            if (jq && jq.status) return jq;
+            return f;
+          } catch (e) {
+            if (xhr && xhr.status) return xhr;
+            if (jq && jq.status) return jq;
+            return pack(0, '', url, String(e));
           }
         } catch (e) {
           return {status: 0, body: '', url: url, error: String(e)};
@@ -571,12 +740,15 @@ class RsGateway {
     });
   }
 
-  Future<void> _pushHostCookies(String host) => _pushCookies(Uri.parse('https://$host/'));
+  Future<void> _pushHostCookies(String host) =>
+      _pushCookies(Uri.parse('https://$host/'));
 
   Future<void> _pushCookies(Uri uri) async {
     try {
       final cm = wv.CookieManager.instance();
-      final list = await jar.loadForRequest(uri).timeout(const Duration(seconds: 2));
+      final list = await jar
+          .loadForRequest(uri)
+          .timeout(const Duration(seconds: 2));
       final root = wv.WebUri('${uri.scheme}://${uri.host}/');
       await Future.wait([
         for (final c in list)
@@ -585,7 +757,9 @@ class RsGateway {
               url: root,
               name: c.name,
               value: c.value,
-              domain: (c.domain == null || c.domain!.isEmpty) ? uri.host : c.domain,
+              domain: (c.domain == null || c.domain!.isEmpty)
+                  ? uri.host
+                  : c.domain,
               path: c.path ?? '/',
               isSecure: c.secure,
               isHttpOnly: c.httpOnly,
@@ -605,7 +779,9 @@ class RsGateway {
       ]).timeout(const Duration(seconds: 2));
     } catch (_) {}
     try {
-      final list = await jar.loadForRequest(uri).timeout(const Duration(seconds: 2));
+      final list = await jar
+          .loadForRequest(uri)
+          .timeout(const Duration(seconds: 2));
       final expired = [
         for (final c in list)
           if (_isWafName(c.name))
@@ -626,7 +802,10 @@ class RsGateway {
     for (final c in got) {
       final v = '${c.value ?? ''}';
       if (v.isEmpty) continue;
-      if ((c.name == 'Authorization' || c.name == 'token' || c.name == 'CASTGC') && v.length < 12) {
+      if ((c.name == 'Authorization' ||
+              c.name == 'token' ||
+              c.name == 'CASTGC') &&
+          v.length < 12) {
         continue;
       }
       out.add(
@@ -639,7 +818,9 @@ class RsGateway {
     }
     if (out.isNotEmpty) {
       try {
-        await jar.saveFromResponse(uri, out).timeout(const Duration(seconds: 2));
+        await jar
+            .saveFromResponse(uri, out)
+            .timeout(const Duration(seconds: 2));
       } catch (_) {}
     }
   }
@@ -661,12 +842,75 @@ class RsGateway {
     }
   }
 
-  Future<String?> readEmToken({String host = 'ktkq.swun.edu.cn'}) async {
-    final s = _slot(host);
-    if (s.ctl == null) return null;
-    final snap = await _snapshot(s);
-    if (snap.emToken.isNotEmpty) return snap.emToken;
-    return RegExp(r'(?:^|;\s*)Authorization=([^;]+)').firstMatch(snap.cookie)?.group(1);
+  Future<String?> readEmToken({
+    String host = 'ktkq.swun.edu.cn',
+    Duration wait = Duration.zero,
+  }) async {
+    final until = DateTime.now().add(wait);
+    while (true) {
+      final s = _slot(host);
+      if (s.ctl != null) {
+        final snap = await _snapshot(s);
+        final fromSnap = _tokenFromSnap(snap);
+        if (fromSnap != null) return fromSnap;
+      }
+      final fromCm = await _authFromCookieManager(host);
+      if (fromCm != null) return fromCm;
+      if (!DateTime.now().isBefore(until)) return null;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+  }
+
+  String? _tokenFromSnap(_Snap snap) {
+    for (final raw in [snap.emToken, snap.lsToken]) {
+      final t = _webToken(raw);
+      if (t != null) return t;
+    }
+    final fromHref = _webTokenFromUrl(snap.href);
+    if (fromHref != null) return fromHref;
+    return _webToken(
+      RegExp(r'(?:^|;\s*)Authorization=([^;]+)')
+          .firstMatch(snap.cookie)
+          ?.group(1),
+    );
+  }
+
+  Future<String?> _authFromCookieManager(String host) async {
+    for (final path in ['/jwmobile/auth/index', '/jwmobile/', '/']) {
+      for (final c in await _cmCookies(Uri.parse('https://$host$path'))) {
+        if (c.name.toLowerCase() != 'authorization' &&
+            c.name.toLowerCase() != 'token') {
+          continue;
+        }
+        final t = _webToken(c.value);
+        if (t != null) return t;
+      }
+    }
+    return null;
+  }
+
+  String? _webTokenFromUrl(String u) {
+    if (u.isEmpty || !u.contains('token=')) return null;
+    final m = RegExp(r'[?&#]token=([^&\s#]+)').firstMatch(u);
+    return _webToken(m?.group(1));
+  }
+
+  String? _webToken(String? raw) {
+    var s = (raw ?? '').trim();
+    if (s.length >= 2 &&
+        ((s.startsWith('"') && s.endsWith('"')) ||
+            (s.startsWith("'") && s.endsWith("'")))) {
+      s = s.substring(1, s.length - 1);
+    }
+    try {
+      s = Uri.decodeComponent(s);
+    } catch (_) {}
+    s = s.trim();
+    if (s.toLowerCase().startsWith('bearer ')) s = s.substring(7).trim();
+    if (s.isEmpty || s == 'null' || s == 'undefined' || s.length < 16) {
+      return null;
+    }
+    return s;
   }
 
   Future<String?> readToken({String host = 'gyglxt.swun.edu.cn'}) async {
@@ -674,12 +918,18 @@ class RsGateway {
     if (s.ctl == null) return null;
     final snap = await _snapshot(s);
     if (snap.lsToken.isNotEmpty) return snap.lsToken;
-    final hash = RegExp(r'[?&#]token=([A-Za-z0-9_-]+)').firstMatch(snap.href)?.group(1);
+    final hash = RegExp(r'[?&#]token=([A-Za-z0-9_-]+)')
+        .firstMatch(snap.href)
+        ?.group(1);
     if (hash != null && hash.isNotEmpty) return hash;
     return RegExp(r'(?:^|;\s*)token=([^;]+)').firstMatch(snap.cookie)?.group(1);
   }
 
-  Future<void> writeLocalStorage(String key, String value, {String host = 'gyglxt.swun.edu.cn'}) async {
+  Future<void> writeLocalStorage(
+    String key,
+    String value, {
+    String host = 'gyglxt.swun.edu.cn',
+  }) async {
     final s = _slot(host);
     if (s.ctl == null) return;
     try {

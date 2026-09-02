@@ -13,12 +13,7 @@ import '../theme.dart';
 import '../widgets/loader.dart';
 
 class KtkqSignPage extends StatefulWidget {
-  const KtkqSignPage({
-    super.key,
-    required this.lesson,
-    this.week,
-    this.slot,
-  });
+  const KtkqSignPage({super.key, required this.lesson, this.week, this.slot});
 
   final Lesson lesson;
   final int? week;
@@ -64,7 +59,10 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     if (raw is! List) return [];
     return [
       for (final e in raw)
-        if (e is Map<String, dynamic>) e else if (e is Map) Map<String, dynamic>.from(e),
+        if (e is Map<String, dynamic>)
+          e
+        else if (e is Map)
+          Map<String, dynamic>.from(e),
     ];
   }
 
@@ -85,11 +83,18 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     final s = context.read<Session>();
     try {
       if (s.demoMode) {
-        _data = jsonDecode(jsonEncode(demoKtkqSign(_lesson))) as Map<String, dynamic>;
+        _data = jsonDecode(
+          jsonEncode(demoKtkqSign(_lesson)),
+        ) as Map<String, dynamic>;
       } else {
-        await s.ensureKtkq().timeout(const Duration(seconds: 25));
+        await s.ensureKtkq().timeout(const Duration(seconds: 50));
         _data = await s.ktkq!
-            .signForLesson(_lesson, week: widget.week, slot: widget.slot, refresh: refresh)
+            .signForLesson(
+              _lesson,
+              week: widget.week,
+              slot: widget.slot,
+              refresh: refresh,
+            )
             .timeout(const Duration(seconds: 30));
       }
     } catch (e) {
@@ -175,7 +180,13 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
       );
       final rc = r['code'];
       final msg = '${r['msg'] ?? ''}'.trim();
-      final ok = rc == 0 || rc == 200 || rc == '0' || rc == '200' || msg.contains('成功') || msg.contains('已签到');
+      final ok =
+          rc == 0 ||
+          rc == 200 ||
+          rc == '0' ||
+          rc == '200' ||
+          msg.contains('成功') ||
+          msg.contains('已签到');
       if (ok) {
         final room = '${_data['classroom'] ?? _lesson.room}'.trim();
         if (room.isNotEmpty) {
@@ -233,14 +244,24 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Text(_error!, style: const TextStyle(color: kCrimson)),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: kCrimson),
+                        ),
                       ),
                     ),
                   _courseCard(status),
                   const SizedBox(height: 12),
                   _locCard(),
                   const SizedBox(height: 20),
-                  Text('签到活动', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.ink)),
+                  Text(
+                    '签到活动',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: context.ink,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   if (_activities.isEmpty)
                     Card(
@@ -251,7 +272,14 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
                   else
                     for (final a in _activities) _activityCard(a),
                   const SizedBox(height: 20),
-                  Text('本课记录', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.ink)),
+                  Text(
+                    '本课记录',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: context.ink,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   if (_history.isEmpty)
                     const Card(child: ListTile(title: Text('暂无签到记录')))
@@ -266,7 +294,8 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
   Widget _courseCard(String status) {
     final room = '${_data['classroom'] ?? _lesson.room}';
     final teacher = '${_data['teacher'] ?? _lesson.teacher}';
-    final time = '${_data['timeText'] ?? '${kWeekdayLabels[_lesson.weekday]}  ${_lesson.periodLabel}'}';
+    final time =
+        '${_data['timeText'] ?? '${kWeekdayLabels[_lesson.weekday]}  ${_lesson.periodLabel}'}';
     final week = _data['week'] ?? widget.week;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
@@ -281,18 +310,31 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
           Row(
             children: [
               Expanded(
-                child: Text(_lesson.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                child: Text(
+                  _lesson.name,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
               if (status.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: _statusColor(status).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
                     ktkqStatusLabel(status),
-                    style: TextStyle(color: _statusColor(status), fontSize: 12, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: _statusColor(status),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
             ],
@@ -302,13 +344,19 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
           if (room.isNotEmpty || teacher.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
-              [if (teacher.isNotEmpty) teacher, if (room.isNotEmpty) room].join('  ·  '),
+              [
+                if (teacher.isNotEmpty) teacher,
+                if (room.isNotEmpty) room,
+              ].join('  ·  '),
               style: TextStyle(color: context.muted, fontSize: 13),
             ),
           ],
           if (week != null) ...[
             const SizedBox(height: 4),
-            Text('第 $week 周', style: TextStyle(color: context.muted, fontSize: 12)),
+            Text(
+              '第 $week 周',
+              style: TextStyle(color: context.muted, fontSize: 12),
+            ),
           ],
         ],
       ),
@@ -324,7 +372,10 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
           children: [
             Row(
               children: [
-                const Text('当前位置', style: TextStyle(fontWeight: FontWeight.w700)),
+                const Text(
+                  '当前位置',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
                 const Spacer(),
                 TextButton(
                   onPressed: _locating ? null : () => _locate(force: true),
@@ -340,7 +391,10 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
               ),
             ],
             if (_pos == null && _locError == null)
-              Text(_locating ? '正在定位…' : '尚未定位', style: TextStyle(color: context.muted)),
+              Text(
+                _locating ? '正在定位…' : '尚未定位',
+                style: TextStyle(color: context.muted),
+              ),
             if (_pos != null) ...[
               Text(_address),
               Text(
@@ -360,7 +414,10 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     final type = '${act['signType'] ?? ''}';
     final pending = status == 'pending_signin';
     final punching = _punchingId == id;
-    final range = ['${act['startTime'] ?? ''}', '${act['endTime'] ?? ''}'].where((e) => e.isNotEmpty).join(' ~ ');
+    final range = [
+      '${act['startTime'] ?? ''}',
+      '${act['endTime'] ?? ''}',
+    ].where((e) => e.isNotEmpty).join(' ~ ');
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -378,20 +435,29 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
                 ),
                 Text(
                   ktkqStatusLabel(status),
-                  style: TextStyle(color: _statusColor(status), fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: _statusColor(status),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
             if (range.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text(range, style: TextStyle(color: context.muted, fontSize: 12)),
+                child: Text(
+                  range,
+                  style: TextStyle(color: context.muted, fontSize: 12),
+                ),
               ),
             if (pending && ktkqNeedsCode(type)) ...[
               const SizedBox(height: 10),
               TextField(
                 controller: _codeOf(id, '${act['signCode'] ?? ''}'),
-                keyboardType: type.toUpperCase() == 'NUMBER' ? TextInputType.number : TextInputType.text,
+                keyboardType: type.toUpperCase() == 'NUMBER'
+                    ? TextInputType.number
+                    : TextInputType.text,
                 decoration: const InputDecoration(hintText: '教师口令 / 数字码'),
               ),
             ],
@@ -400,7 +466,10 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
               FilledButton(
                 onPressed: punching ? null : () => _punch(act),
                 child: punching
-                    ? SwunBusyDots(color: Theme.of(context).colorScheme.onPrimary, size: 5)
+                    ? SwunBusyDots(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                        size: 5,
+                      )
                     : const Text('立即签到'),
               ),
             ],

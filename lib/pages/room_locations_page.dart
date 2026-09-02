@@ -20,9 +20,13 @@ class RoomLocationsPage extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.all(32),
                 child: Text(
-                  '课堂签到成功后，会把教室名称和当时的经纬度保存在本机私有目录。',
+                  '课堂签到成功后，会把教室名称和当时的经纬度保存在本机。同一教室可以留下多次记录。',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: context.muted, fontSize: 14, height: 1.5),
+                  style: TextStyle(
+                    color: context.muted,
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
                 ),
               ),
             )
@@ -40,7 +44,7 @@ class RoomLocationsPage extends StatelessWidget {
     final time = when == null
         ? ''
         : '${when.year.toString().padLeft(4, '0')}-${when.month.toString().padLeft(2, '0')}-${when.day.toString().padLeft(2, '0')} '
-            '${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}';
+              '${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}';
     return DecoratedBox(
       decoration: BoxDecoration(
         color: context.panel,
@@ -55,26 +59,39 @@ class RoomLocationsPage extends StatelessWidget {
             Expanded(
               child: InkWell(
                 onTap: () async {
-                  await Clipboard.setData(ClipboardData(text: '${room.room}  ${room.coordText}'));
+                  await Clipboard.setData(
+                    ClipboardData(text: '${room.room}  ${room.coordText}'),
+                  );
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制教室和坐标')));
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('已复制教室和坐标')));
                 },
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(room.room, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    Text(
+                      room.room,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     Text(room.coordText, style: const TextStyle(fontSize: 14)),
                     if (room.course.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(room.course, style: TextStyle(color: context.muted, fontSize: 13)),
+                      Text(
+                        room.course,
+                        style: TextStyle(color: context.muted, fontSize: 13),
+                      ),
                     ],
                     if (time.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         [
-                          if (room.accuracy > 0) '精度 ${room.accuracy.toStringAsFixed(0)} 米',
-                          '更新于 $time',
+                          if (room.accuracy > 0)
+                            '精度 ${room.accuracy.toStringAsFixed(0)} 米',
+                          '记录于 $time',
                         ].join(' · '),
                         style: TextStyle(color: context.muted, fontSize: 12),
                       ),
@@ -85,7 +102,7 @@ class RoomLocationsPage extends StatelessWidget {
             ),
             IconButton(
               tooltip: '删除',
-              onPressed: () => s.forgetRoom(room.room),
+              onPressed: () => s.forgetRoom(room),
               icon: Icon(Icons.delete_rounded, color: context.muted, size: 20),
             ),
           ],

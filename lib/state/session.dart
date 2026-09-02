@@ -55,6 +55,7 @@ class Session extends ChangeNotifier {
   Future<CreditProgress>? _xfFut;
   Future<Map<String, dynamic>>? _ksFut;
   Completer<void>? _casGate;
+  Future<void>? _ensuringKtkq;
   String? _teacherPath;
   final _teacherSlot = <String, String>{};
   final _teacherName = <String, String>{};
@@ -93,9 +94,14 @@ class Session extends ChangeNotifier {
     _support = support;
     await ktkq?.dispose();
     if (id != '_scratch') studentId = id;
-    final dir = id == '_scratch' ? Directory('${support.path}/.scratch') : await accounts.ensureDir(id);
+    final dir = id == '_scratch'
+        ? Directory('${support.path}/.scratch')
+        : await accounts.ensureDir(id);
     if (!await dir.exists()) await dir.create(recursive: true);
-    _jar = PersistCookieJar(storage: FileStorage('${dir.path}/cookies'), ignoreExpires: true);
+    _jar = PersistCookieJar(
+      storage: FileStorage('${dir.path}/cookies'),
+      ignoreExpires: true,
+    );
     cas = CasClient(_jar!);
     ehall = EhallClient(_jar!);
     jwxt = JwxtClient(_jar!)..attachCas(cas!);
@@ -142,7 +148,8 @@ class Session extends ChangeNotifier {
     }
     if (studentId.isEmpty) studentId = accounts.currentId ?? '';
     if (displayName.isEmpty || displayName == '同学') {
-      displayName = accounts.current?.label ?? (studentId.isEmpty ? '同学' : studentId);
+      displayName =
+          accounts.current?.label ?? (studentId.isEmpty ? '同学' : studentId);
     }
     gyglxt?.username = studentId.isEmpty ? null : studentId;
   }
@@ -161,7 +168,12 @@ class Session extends ChangeNotifier {
     }
   }
 
-  Future<void> login(String username, String password, {bool attach = true, String? restoreId}) async {
+  Future<void> login(
+    String username,
+    String password, {
+    bool attach = true,
+    String? restoreId,
+  }) async {
     busy = true;
     error = null;
     notifyListeners();
@@ -195,7 +207,11 @@ class Session extends ChangeNotifier {
       _clearCaches();
       await _loadTeachers();
       jwxt!.attachCas(cas!);
-      await accounts.upsert(id: studentId, name: displayName, password: password);
+      await accounts.upsert(
+        id: studentId,
+        name: displayName,
+        password: password,
+      );
       gyglxt?.username = studentId;
       unawaited(() async {
         try {
@@ -280,8 +296,8 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> forgetRoom(String room) async {
-    await rooms.remove(room);
+  Future<void> forgetRoom(RoomFix room) async {
+    await rooms.remove(room.id);
     notifyListeners();
   }
 
@@ -380,7 +396,9 @@ class Session extends ChangeNotifier {
         try {
           final info = await lantu!.getUserInfo();
           if (info['userBaseInfo'] is Map) {
-            lantu!.userBaseInfo = Map<String, dynamic>.from(info['userBaseInfo'] as Map);
+            lantu!.userBaseInfo = Map<String, dynamic>.from(
+              info['userBaseInfo'] as Map,
+            );
             next = next.merge(lantu!.profile());
           }
         } catch (_) {}
@@ -495,11 +513,13 @@ class Session extends ChangeNotifier {
     final path = _teacherPath;
     if (path == null) return;
     try {
-      await File(path).writeAsString(jsonEncode({
-        'xh': studentId,
-        'slot': _teacherSlot,
-        'name': _teacherName,
-      }));
+      await File(path).writeAsString(
+        jsonEncode({
+          'xh': studentId,
+          'slot': _teacherSlot,
+          'name': _teacherName,
+        }),
+      );
     } catch (_) {}
   }
 
@@ -508,7 +528,10 @@ class Session extends ChangeNotifier {
       final cur = '${row['xm'] ?? ''}'.trim();
       if (cur.isNotEmpty && cur != '—') continue;
       final name = _normKc(row['kcmc']);
-      row['xm'] = _teacherSlot['$name|${row['xqj'] ?? row['skxq']}|${_startOf(row)}'] ?? _teacherName[name] ?? '';
+      row['xm'] =
+          _teacherSlot['$name|${row['xqj'] ?? row['skxq']}|${_startOf(row)}'] ??
+          _teacherName[name] ??
+          '';
     }
   }
 
@@ -542,7 +565,9 @@ class Session extends ChangeNotifier {
         if (lantu == null || !lantu!.isLoggedIn) {
           throw Exception('请重新登录后再看课表');
         }
-        final raw = await lantu!.getCourse().timeout(const Duration(seconds: 12));
+        final raw = await lantu!.getCourse().timeout(
+          const Duration(seconds: 12),
+        );
         const times = kDefaultPeriodTimes;
         final kb = lantu!.mapKbList(raw);
         _applyKbTeachers(kb);
@@ -578,7 +603,9 @@ class Session extends ChangeNotifier {
     return _cjCache[key] ??= () async {
       try {
         await ensureJwxt().timeout(const Duration(seconds: 20));
-        return await jwxt!.grades(xnm: xnm, xqm: xqm).timeout(const Duration(seconds: 25));
+        return await jwxt!
+            .grades(xnm: xnm, xqm: xqm)
+            .timeout(const Duration(seconds: 25));
       } catch (e) {
         _cjCache.remove(key);
         rethrow;
@@ -593,7 +620,9 @@ class Session extends ChangeNotifier {
     return _xfFut ??= () async {
       try {
         await ensureJwxt().timeout(const Duration(seconds: 20));
-        return await jwxt!.creditProgress().timeout(const Duration(seconds: 45));
+        return await jwxt!.creditProgress().timeout(
+          const Duration(seconds: 45),
+        );
       } catch (e) {
         _xfFut = null;
         rethrow;
@@ -624,6 +653,22 @@ class Session extends ChangeNotifier {
   Future<void> ensureKtkq() async {
     if (demoMode) return;
     if (ktkq == null) return;
+    while (_ensuringKtkq != null) {
+      try {
+        await _ensuringKtkq!.timeout(const Duration(seconds: 50));
+      } catch (_) {}
+      if (ktkq!.token != null && ktkq!.token!.isNotEmpty) return;
+    }
+    final done = _ensureKtkqBody();
+    _ensuringKtkq = done;
+    try {
+      await done;
+    } finally {
+      if (identical(_ensuringKtkq, done)) _ensuringKtkq = null;
+    }
+  }
+
+  Future<void> _ensureKtkqBody() async {
     await ktkq!.restoreToken();
     if (ktkq!.token != null && ktkq!.token!.isNotEmpty) {
       try {
@@ -634,7 +679,7 @@ class Session extends ChangeNotifier {
       ktkq!.token = null;
     }
     await _waitCas();
-    await ktkq!.loginWithCas(cas!).timeout(const Duration(seconds: 20));
+    await ktkq!.loginWithCas(cas!).timeout(const Duration(seconds: 45));
   }
 
   Future<void> ensureGyglxt() async {
@@ -650,7 +695,8 @@ class Session extends ChangeNotifier {
       await _waitCas();
       await gyglxt!.loginWithCas(cas!).timeout(const Duration(seconds: 20));
     }
-    if ((gyglxt!.username == null || gyglxt!.username!.isEmpty) && studentId.isNotEmpty) {
+    if ((gyglxt!.username == null || gyglxt!.username!.isEmpty) &&
+        studentId.isNotEmpty) {
       gyglxt!.username = studentId;
     }
   }

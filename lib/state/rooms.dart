@@ -3,6 +3,7 @@ import 'dart:io';
 
 class RoomFix {
   const RoomFix({
+    required this.id,
     required this.room,
     required this.latitude,
     required this.longitude,
@@ -11,6 +12,7 @@ class RoomFix {
     this.at,
   });
 
+  final String id;
   final String room;
   final double latitude;
   final double longitude;
@@ -18,16 +20,18 @@ class RoomFix {
   final String course;
   final DateTime? at;
 
-  String get coordText => '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+  String get coordText =>
+      '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
 
   Map<String, dynamic> toJson() => {
-        'room': room,
-        'latitude': latitude,
-        'longitude': longitude,
-        'accuracy': accuracy,
-        'course': course,
-        'at': at?.toIso8601String() ?? '',
-      };
+    'id': id,
+    'room': room,
+    'latitude': latitude,
+    'longitude': longitude,
+    'accuracy': accuracy,
+    'course': course,
+    'at': at?.toIso8601String() ?? '',
+  };
 
   static RoomFix? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -36,7 +40,10 @@ class RoomFix {
     final lng = (raw['longitude'] as num?)?.toDouble();
     if (room.isEmpty || lat == null || lng == null) return null;
     final atRaw = '${raw['at'] ?? ''}';
+    var id = '${raw['id'] ?? ''}'.trim();
+    if (id.isEmpty) id = '$room|$atRaw|$lat|$lng';
     return RoomFix(
+      id: id,
       room: room,
       latitude: lat,
       longitude: lng,
@@ -72,7 +79,9 @@ class RoomStore {
         if (fix != null) out.add(fix);
       }
       out.sort((a, b) {
-        final at = (b.at ?? DateTime.fromMillisecondsSinceEpoch(0)).compareTo(a.at ?? DateTime.fromMillisecondsSinceEpoch(0));
+        final at = (b.at ?? DateTime.fromMillisecondsSinceEpoch(0)).compareTo(
+          a.at ?? DateTime.fromMillisecondsSinceEpoch(0),
+        );
         return at != 0 ? at : a.room.compareTo(b.room);
       });
       items = out;
@@ -88,20 +97,27 @@ class RoomStore {
   }) async {
     final name = room.trim();
     if (name.isEmpty || !latitude.isFinite || !longitude.isFinite) return;
+    final at = DateTime.now();
     final next = RoomFix(
+      id: '${at.microsecondsSinceEpoch}',
       room: name,
       latitude: latitude,
       longitude: longitude,
       accuracy: accuracy,
       course: course.trim(),
-      at: DateTime.now(),
+      at: at,
     );
-    items = [next, for (final e in items) if (e.room != name) e];
+    items = [next, ...items];
     await _save();
   }
 
-  Future<void> remove(String room) async {
-    items = [for (final e in items) if (e.room != room) e];
+  Future<void> remove(String id) async {
+    final key = id.trim();
+    if (key.isEmpty) return;
+    items = [
+      for (final e in items)
+        if (e.id != key) e,
+    ];
     await _save();
   }
 

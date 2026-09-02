@@ -52,3 +52,6 @@ screenshots/
 captures/
 *.apk
 *.har
+android/key.properties
+android/*.jks
+android/*.keystore

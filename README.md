@@ -27,6 +27,10 @@
 
 教务、课堂考勤、一卡通夜间关闭时，界面只提示「xxxx夜间关闭」。
 
+[![CI](https://github.com/BritneyOvO/swun_ehall/actions/workflows/ci.yml/badge.svg)](https://github.com/BritneyOvO/swun_ehall/actions/workflows/ci.yml)
+
+安装包见 [Releases](https://github.com/BritneyOvO/swun_ehall/releases)：`*-arm64-debug.apk` 为调试包，`*-arm64-release.apk` 为发布包。仅 **arm64-v8a**。
+
 ## 运行环境
 
 - Flutter 3.47+ / Dart 3.13+
@@ -37,16 +41,23 @@
 
 ```bash
 flutter pub get
+flutter test
 flutter build apk --debug --target-platform android-arm64
+flutter build apk --release --target-platform android-arm64
 ```
 
-产物：`build/app/outputs/flutter-apk/app-debug.apk`
+产物：
+
+- `build/app/outputs/flutter-apk/app-debug.apk`
+- `build/app/outputs/flutter-apk/app-release.apk`
 
 安装到已连接的设备：
 
 ```bash
 flutter install --debug
 ```
+
+发布包需要 `android/key.properties` 和 `android/upload-keystore.jks`（已 gitignore）。没有密钥时 release 会回退到 debug 签名。
 
 高德定位 key 若需要，写在 `android/local.properties`（已 gitignore）：
 
