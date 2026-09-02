@@ -177,6 +177,16 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
       final msg = '${r['msg'] ?? ''}'.trim();
       final ok = rc == 0 || rc == 200 || rc == '0' || rc == '200' || msg.contains('成功') || msg.contains('已签到');
       if (ok) {
+        final room = '${_data['classroom'] ?? _lesson.room}'.trim();
+        if (room.isNotEmpty) {
+          await s.rememberRoom(
+            room: room,
+            latitude: lat,
+            longitude: lng,
+            accuracy: acc.toDouble(),
+            course: _lesson.name,
+          );
+        }
         _toast(msg.isEmpty || msg == 'success' ? '签到成功' : msg);
         await _reload(refresh: true);
         return;

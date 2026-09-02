@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../api/httpx.dart';
+import '../api/zhcgm.dart';
 import '../demo/demo_data.dart';
 import '../state/session.dart';
 import '../theme.dart';
@@ -14,48 +19,21 @@ class VenuePage extends StatefulWidget {
   State<VenuePage> createState() => _VenuePageState();
 }
 
-class _VenuePageState extends State<VenuePage> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+class _VenuePageState extends State<VenuePage> {
   bool _loading = true;
-  bool _busy = false;
   String? _error;
-  List<Map<String, dynamic>> _venues = [];
-  List<Map<String, dynamic>> _mine = [];
-  DateTime _day = DateTime.now();
-  String _type = '羽毛球';
+  String _typeId = '';
+  String _typeName = '';
+  String _placeTypeId = '';
+  List<Map<String, dynamic>> _types = [];
+  List<Map<String, dynamic>> _fields = [];
+
+  ZhcgmClient? get _zhcgm => context.read<Session>().zhcgm;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
-  }
-
-  @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
-
-  List<String> get _types {
-    final s = <String>{};
-    for (final v in _venues) {
-      final t = _typeOf(v);
-      if (t.isNotEmpty) s.add(t);
-    }
-    if (s.isEmpty) return const ['羽毛球', '篮球', '乒乓球'];
-    final list = s.toList()..sort();
-    if (list.contains('羽毛球')) {
-      list.remove('羽毛球');
-      list.insert(0, '羽毛球');
-    }
-    return list;
-  }
-
-  List<Map<String, dynamic>> get _filtered {
-    return [
-      for (final v in _venues)
-        if (_typeOf(v) == _type || (_type.isEmpty && _typeOf(v).isEmpty)) v,
-    ];
   }
 
   Future<void> _reload() async {
@@ -66,40 +44,258 @@ class _VenuePageState extends State<VenuePage> with SingleTickerProviderStateMix
     final s = context.read<Session>();
     try {
       if (s.demoMode) {
-        _venues = [
-          for (final e in demoVenues) Map<String, dynamic>.from(e)..['taken'] = [...(e['taken'] as List? ?? const [])],
+        _types = [
+          for (final t in const ['羽毛球', '篮球', '乒乓球']) {'id': t, 'name': t},
         ];
-        _mine = [for (final e in demoVenueBookings) Map<String, dynamic>.from(e)];
-        _type = '羽毛球';
+        _typeId = '羽毛球';
+        _typeName = '羽毛球';
+        _fields = [
+          for (final e in demoVenues)
+            if ('${e['placeType']}' == _typeName)
+              {'id': e['id'], 'dataName': e['placeName'], 'dataAddress': e['campusName']},
+        ];
       } else {
-        final lantu = s.lantu;
-        if (lantu == null || !lantu.isLoggedIn) {
-          throw Exception('请先登录后再预约场地');
+        final z = s.zhcgm ?? ZhcgmClient();
+        unawaited(s.ensureZhcgm());
+        final types = await z.sportTypes();
+        _types = [for (final t in types) if ('${t['name'] ?? ''}'.trim().isNotEmpty) t];
+        if (_types.isEmpty) {
+          _fields = [];
+        } else {
+          if (_typeId.isEmpty || !_types.any((t) => '${t['id']}' == _typeId)) {
+            var prefer = _types.first;
+            for (final t in _types) {
+              if ('${t['name']}' == '羽毛球') {
+                prefer = t;
+                break;
+              }
+            }
+            _typeId = '${prefer['id']}';
+            _typeName = '${prefer['name']}';
+          }
+          await _loadFields();
         }
-        final list = await lantu.getPlaceList();
-        final mine = await lantu.getMyPlaceList();
-        _venues = _asMaps(list['placeList']);
-        _mine = _asMaps(mine['placeList']);
-        final types = _types;
-        if (types.isNotEmpty && !types.contains(_type)) _type = types.first;
       }
     } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '').replaceFirst('LantuException: ', '');
+      _error = publicError(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _bookSlot(Map<String, dynamic> court, String start) async {
-    final end = _nextHour(start);
+  Future<void> _loadFields() async {
+    final z = _zhcgm ?? ZhcgmClient();
+    final pack = await z.fields(_typeId);
+    _fields = pack.fields;
+    _placeTypeId = pack.placeTypes.isEmpty ? '' : '${pack.placeTypes.first['id'] ?? ''}';
+    for (final t in _types) {
+      if ('${t['id']}' == _typeId) _typeName = '${t['name']}';
+    }
+  }
+
+  Future<void> _selectType(Map<String, dynamic> t) async {
+    final id = '${t['id']}';
+    if (id == _typeId) return;
+    setState(() {
+      _typeId = id;
+      _typeName = '${t['name']}';
+      _loading = true;
+    });
+    try {
+      if (context.read<Session>().demoMode) {
+        _fields = [
+          for (final e in demoVenues)
+            if ('${e['placeType']}' == _typeName)
+              {'id': e['id'], 'dataName': e['placeName'], 'dataAddress': e['campusName']},
+        ];
+      } else {
+        await _loadFields();
+      }
+    } catch (e) {
+      _error = publicError(e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openOfficial() async {
+    final ok = await launchUrl(Uri.parse(kZhcgmHost), mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('无法打开智慧场馆')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('预约场馆'),
+        actions: [
+          TextButton(onPressed: _openOfficial, child: const Text('智慧场馆')),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: SwunLoader())
+          : RefreshIndicator(
+              color: kCrimson,
+              onRefresh: _reload,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+                children: [
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(_error!, style: const TextStyle(color: kCrimson, fontSize: 13)),
+                    ),
+                  if (_types.isNotEmpty)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final t in _types)
+                          ChoiceChip(
+                            label: Text('${t['name']}'),
+                            selected: '${t['id']}' == _typeId,
+                            onSelected: (_) => _selectType(t),
+                          ),
+                      ],
+                    ),
+                  const SizedBox(height: 12),
+                  if (_fields.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 28),
+                      child: Center(child: Text('这个项目暂时没有场地')),
+                    )
+                  else
+                    for (final f in _fields) _card(f),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _card(Map<String, dynamic> f) {
+    final name = '${f['dataName'] ?? f['name'] ?? ''}'.trim();
+    final addr = '${f['dataAddress'] ?? f['dataAddr'] ?? ''}'.trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Pressable(
+        onTap: () => pushPage(
+          context,
+          VenueFieldPage(
+            field: f,
+            sportTypeId: _typeId,
+            sportTypeName: _typeName,
+            placeTypeId: _placeTypeId,
+          ),
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.panel,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.line),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name.isEmpty ? '场地' : name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      if (addr.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(addr, style: TextStyle(color: context.muted, fontSize: 13)),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: context.muted, size: 18),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class VenueFieldPage extends StatefulWidget {
+  const VenueFieldPage({
+    super.key,
+    required this.field,
+    required this.sportTypeId,
+    required this.sportTypeName,
+    required this.placeTypeId,
+  });
+
+  final Map<String, dynamic> field;
+  final String sportTypeId;
+  final String sportTypeName;
+  final String placeTypeId;
+
+  @override
+  State<VenueFieldPage> createState() => _VenueFieldPageState();
+}
+
+class _VenueFieldPageState extends State<VenueFieldPage> {
+  bool _loading = true;
+  bool _busy = false;
+  String? _error;
+  List<List<Map<String, dynamic>>> _cols = [];
+  final _day = DateTime.now();
+
+  String get _fieldName => '${widget.field['dataName'] ?? widget.field['name'] ?? ''}'.trim();
+  String get _addr => '${widget.field['dataAddress'] ?? ''}'.trim();
+  String get _fieldId => '${widget.field['id'] ?? ''}';
+
+  String _ymd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+  }
+
+  Future<void> _reload() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final s = context.read<Session>();
+    try {
+      if (s.demoMode) {
+        _cols = [];
+      } else {
+        await s.ensureZhcgm();
+        final z = s.zhcgm!;
+        _cols = await z.sessions(
+          fieldId: _fieldId,
+          sportTypeId: widget.sportTypeId,
+          placeTypeId: widget.placeTypeId,
+          searchDate: _ymd(_day),
+        );
+      }
+    } catch (e) {
+      _error = publicError(e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _book(Map<String, dynamic> slot) async {
+    if (zhcgmSlotTaken(slot) || _busy) return;
+    final time = '${zhcgmSlotLabel(slot)}–${zhcgmSlotLabel({'openStartTime': slot['openEndTime']})}';
     final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('确认预约'),
-        content: Text('${_typeOf(court)} ${_nameOf(court)}\n${_dayText(_day)}  $start–$end'),
+        content: Text('${slot['placeName'] ?? ''}\n今天  $time'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('预约')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('预约')),
         ],
       ),
     );
@@ -107,126 +303,74 @@ class _VenuePageState extends State<VenuePage> with SingleTickerProviderStateMix
     final s = context.read<Session>();
     setState(() => _busy = true);
     try {
-      if (s.demoMode) {
-        final taken = (court['taken'] as List?) ?? [];
-        taken.add(start);
-        court['taken'] = taken;
-        _mine.insert(0, {
-          'id': 'demo-${court['id']}-$start-${_ymd(_day)}',
-          'placeName': _nameOf(court),
-          'placeType': _typeOf(court),
-          'campusName': _campusOf(court),
-          'bookDate': _dayText(_day),
-          'startTime': start,
-          'endTime': end,
-          'status': '已预约',
-        });
-        _toast('已预约 ${_nameOf(court)} $start');
-        return;
-      }
-      final lantu = s.lantu!;
-      final id = court['id'] ?? court['placeId'];
-      final date = _ymd(_day);
-      final r = await lantu.addPlaceBooking({
-        'id': id,
-        'placeId': id,
-        'placeName': _nameOf(court),
-        'startTime': start,
-        'endTime': end,
-        'bookDate': date,
-        'useDate': date,
-        'date': date,
-        'userName': s.studentId,
-        'userId': lantu.userLoginInfo['userId'],
-        'holdUnit': '个人',
-        'activityName': '场地预约',
-        'peopleNum': 2,
-        'peopleNumber': 2,
-        'phone': s.profile.phone,
-      });
-      _toast('${r['msg'] ?? '预约成功'}');
+      await s.ensureZhcgm();
+      final r = await s.zhcgm!.reserve(
+        fieldId: _fieldId,
+        fieldName: _fieldName,
+        sportTypeId: widget.sportTypeId,
+        sportTypeName: widget.sportTypeName,
+        siteName: _addr,
+        day: _day,
+        sessionIds: ['${slot['id']}'],
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${r['msg'] ?? '预约成功'}')));
       await _reload();
     } catch (e) {
-      _toast(e.toString().replaceFirst('Exception: ', '').replaceFirst('LantuException: ', ''));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(publicError(e))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _cancel(Map<String, dynamic> row) async {
-    final id = row['id'] ?? row['placeId'];
-    if (id == null) {
-      _toast('没有预约编号');
-      return;
-    }
-    final s = context.read<Session>();
-    try {
-      if (s.demoMode) {
-        _mine.removeWhere((e) => '${e['id']}' == '$id');
-        for (final v in _venues) {
-          if (_nameOf(v) == _nameOf(row)) {
-            final taken = [...((v['taken'] as List?) ?? const [])];
-            taken.remove('${row['startTime']}');
-            v['taken'] = taken;
-          }
-        }
-        _toast('已取消');
-        setState(() {});
-        return;
-      }
-      final r = await s.lantu!.delPlaceInfo(id);
-      _toast('${r['msg'] ?? '已取消'}');
-      await _reload();
-    } catch (e) {
-      _toast(e.toString().replaceFirst('Exception: ', '').replaceFirst('LantuException: ', ''));
-    }
-  }
-
-  bool _taken(Map<String, dynamic> court, String hour) {
-    final taken = court['taken'];
-    if (taken is List && taken.map((e) => '$e').contains(hour)) return true;
-    final date = _ymd(_day);
-    for (final b in _mine) {
-      if (_nameOf(b) == _nameOf(court) && '${b['startTime']}' == hour) {
-        final bd = '${b['bookDate'] ?? b['useDate'] ?? b['date'] ?? ''}';
-        if (bd == date || bd == _dayText(_day) || bd.contains(_day.month.toString())) return true;
-      }
-    }
-    return false;
-  }
-
-  void _toast(String m) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('预约场馆')),
-      body: Column(
-        children: [
-          _segment(),
-          Expanded(
-            child: _loading
-                ? const Center(child: SwunLoader())
-                : TabBarView(
-                    controller: _tabs,
-                    children: [
-                      RefreshIndicator(color: kCrimson, onRefresh: _reload, child: _bookTab()),
-                      RefreshIndicator(color: kCrimson, onRefresh: _reload, child: _mineTab()),
-                    ],
-                  ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(_fieldName.isEmpty ? '场地' : _fieldName)),
+      body: _loading
+          ? const Center(child: SwunLoader())
+          : RefreshIndicator(
+              color: kCrimson,
+              onRefresh: _reload,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+                children: [
+                  if (_addr.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(_addr, style: TextStyle(color: context.muted, fontSize: 13)),
+                    ),
+                  Text('今天 · 灰色为已订满', style: TextStyle(color: context.muted, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(_error!, style: const TextStyle(color: kCrimson, fontSize: 13)),
+                    ),
+                  if (_cols.isEmpty && _error == null)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 32),
+                      child: Center(child: Text('今天没有可显示的时段')),
+                    )
+                  else
+                    for (final col in _cols) _court(col),
+                  if (_busy)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12),
+                      child: Center(child: SwunLoader(compact: true)),
+                    ),
+                ],
+              ),
+            ),
     );
   }
 
-  Widget _segment() {
-    const labels = ['订场地', '我的预约'];
+  Widget _court(List<Map<String, dynamic>> col) {
+    if (col.isEmpty) return const SizedBox.shrink();
+    final name = '${col.first['placeName'] ?? ''}'.trim();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.only(bottom: 12),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: context.panel,
@@ -234,265 +378,47 @@ class _VenuePageState extends State<VenuePage> with SingleTickerProviderStateMix
           border: Border.all(color: context.line),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: AnimatedBuilder(
-            animation: _tabs,
-            builder: (context, _) {
-              return Row(
-                children: [
-                  for (var i = 0; i < labels.length; i++)
-                    Expanded(
-                      child: Pressable(
-                        radius: 10,
-                        onTap: () {
-                          if (_tabs.index != i) _tabs.animateTo(i);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOutCubic,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: _tabs.index == i
-                                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            labels[i],
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: _tabs.index == i ? FontWeight.w600 : FontWeight.w400,
-                              color: _tabs.index == i ? context.primary : context.muted,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _bookTab() {
-    final hours = _hoursFor(_filtered);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      children: [
-        if (_error != null)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(_error!, style: const TextStyle(color: kCrimson)),
-            ),
-          ),
-        SizedBox(
-          height: 36,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (var i = 0; i < 7; i++)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(_dayText(DateTime.now().add(Duration(days: i)))),
-                    selected: _ymd(_day) == _ymd(DateTime.now().add(Duration(days: i))),
-                    onSelected: (_) => setState(() => _day = DateTime.now().add(Duration(days: i))),
-                  ),
-                ),
+              Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final s in col) _chip(s),
+                ],
+              ),
             ],
           ),
         ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final t in _types)
-              ChoiceChip(
-                label: Text(t),
-                selected: _type == t,
-                onSelected: (_) => setState(() => _type = t),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text('点绿色时段即可预约，每次 1 小时', style: TextStyle(color: context.muted, fontSize: 12)),
-        const SizedBox(height: 12),
-        if (_filtered.isEmpty)
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('当前没有可预约的场地。预览模式可体验羽毛球场预约。'),
-            ),
-          )
-        else
-          for (final court in _filtered) _courtCard(court, hours),
-        if (_busy)
-          const Padding(
-            padding: EdgeInsets.only(top: 12),
-            child: Center(child: SwunLoader(compact: true)),
-          ),
-      ],
-    );
-  }
-
-  Widget _courtCard(Map<String, dynamic> court, List<String> hours) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(_nameOf(court), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                const Spacer(),
-                Text(_campusOf(court), style: TextStyle(color: context.muted, fontSize: 12)),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final h in hours)
-                  _slotChip(court, h),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _slotChip(Map<String, dynamic> court, String hour) {
-    final taken = _taken(court, hour);
-    final mine = _mine.any(
-      (b) => _nameOf(b) == _nameOf(court) && '${b['startTime']}' == hour && '${b['bookDate']}' == _dayText(_day),
-    );
-    Color bg;
-    Color fg;
-    if (mine) {
-      bg = kCrimson.withValues(alpha: 0.14);
-      fg = kCrimson;
-    } else if (taken) {
-      bg = context.line;
-      fg = context.muted;
-    } else {
-      bg = const Color(0xFF2E7D32).withValues(alpha: 0.12);
-      fg = const Color(0xFF2E7D32);
-    }
+  Widget _chip(Map<String, dynamic> s) {
+    final taken = zhcgmSlotTaken(s);
+    final label = zhcgmSlotLabel(s);
+    final hint = zhcgmSlotHint(s);
+    final bg = taken ? context.line : const Color(0xFF2E7D32).withValues(alpha: 0.12);
+    final fg = taken ? context.muted : const Color(0xFF2E7D32);
     return InkWell(
-      onTap: taken || _busy ? null : () => _bookSlot(court, hour),
+      onTap: taken || _busy ? null : () => _book(s),
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        width: 64,
+        width: 72,
         padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
-        child: Text(
-          hour,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w600),
+        child: Column(
+          children: [
+            Text(label, style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w600)),
+            Text(hint, style: TextStyle(color: fg, fontSize: 10)),
+          ],
         ),
       ),
     );
   }
-
-  Widget _mineTab() {
-    if (_mine.isEmpty) {
-      return ListView(
-        children: const [
-          SizedBox(height: 80),
-          Center(child: Text('还没有场地预约')),
-        ],
-      );
-    }
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        for (final e in _mine)
-          Card(
-            margin: const EdgeInsets.only(bottom: 10),
-            child: ListTile(
-              title: Text('${_typeOf(e)} ${_nameOf(e)}'.trim()),
-              subtitle: Text(
-                '${e['bookDate'] ?? e['useDate'] ?? e['date'] ?? ''}  ${e['startTime'] ?? ''}–${e['endTime'] ?? ''}\n'
-                '${_campusOf(e)}',
-              ),
-              isThreeLine: true,
-              trailing: TextButton(onPressed: () => _cancel(e), child: const Text('取消')),
-            ),
-          ),
-      ],
-    );
-  }
 }
 
-List<Map<String, dynamic>> _asMaps(Object? raw) {
-  if (raw is! List) return [];
-  return [
-    for (final e in raw)
-      if (e is Map) Map<String, dynamic>.from(e),
-  ];
-}
-
-String _pick(Map<String, dynamic> m, List<String> keys) {
-  for (final k in keys) {
-    final v = '${m[k] ?? ''}'.trim();
-    if (v.isNotEmpty && v != 'null') return v;
-  }
-  return '';
-}
-
-String _nameOf(Map<String, dynamic> m) => _pick(m, const ['placeName', 'name', 'title']);
-String _typeOf(Map<String, dynamic> m) => _pick(m, const ['placeType', 'type']);
-String _campusOf(Map<String, dynamic> m) => _pick(m, const ['campusName', 'campus', 'xqmc']);
-
-String _ymd(DateTime d) =>
-    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-String _dayText(DateTime d) {
-  final now = DateTime.now();
-  final a = DateTime(now.year, now.month, now.day);
-  final b = DateTime(d.year, d.month, d.day);
-  final diff = b.difference(a).inDays;
-  if (diff == 0) return '今天';
-  if (diff == 1) return '明天';
-  const week = ['一', '二', '三', '四', '五', '六', '日'];
-  return '${d.month}/${d.day} 周${week[d.weekday - 1]}';
-}
-
-int _toMin(String hhmm) {
-  final p = hhmm.split(':');
-  if (p.length < 2) return 0;
-  return (int.tryParse(p[0]) ?? 0) * 60 + (int.tryParse(p[1]) ?? 0);
-}
-
-String _fmtMin(int m) {
-  final h = (m ~/ 60).clamp(0, 23);
-  final mm = m % 60;
-  return '${h.toString().padLeft(2, '0')}:${mm.toString().padLeft(2, '0')}';
-}
-
-List<String> _hoursFor(List<Map<String, dynamic>> courts) {
-  var a = 8 * 60;
-  var b = 21 * 60;
-  for (final v in courts) {
-    final oa = _toMin('${v['openTime'] ?? v['startTime'] ?? '08:00'}');
-    final ob = _toMin('${v['closeTime'] ?? v['endTime'] ?? '21:00'}');
-    if (oa > 0 && oa < a) a = oa;
-    if (ob > b) b = ob;
-  }
-  final out = <String>[];
-  for (var t = a; t < b; t += 60) {
-    out.add(_fmtMin(t));
-  }
-  return out.isEmpty ? const ['08:00', '09:00', '10:00', '11:00'] : out;
-}
-
-String _nextHour(String start) => _fmtMin(_toMin(start) + 60);

@@ -11,6 +11,8 @@ import '../theme.dart';
 import '../theme/catalog.dart';
 import '../widgets/loader.dart';
 import '../widgets/motion.dart';
+import 'accounts_page.dart';
+import 'room_locations_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -22,6 +24,31 @@ class SettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: context.panel,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.line),
+            ),
+            child: Column(
+              children: [
+                _row(
+                  context,
+                  icon: Icons.manage_accounts_rounded,
+                  title: '账号管理',
+                  page: const AccountsPage(),
+                ),
+                Divider(height: 1, indent: 52, color: context.line),
+                _row(
+                  context,
+                  icon: Icons.place_outlined,
+                  title: '教室位置',
+                  page: const RoomLocationsPage(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           DecoratedBox(
             decoration: BoxDecoration(
               color: context.panel,

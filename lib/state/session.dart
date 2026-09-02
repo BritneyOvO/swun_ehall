@@ -14,11 +14,14 @@ import '../api/jwxt.dart';
 import '../api/ktkq.dart';
 import '../api/lantu.dart';
 import '../api/ykt.dart';
+import '../api/zhcgm.dart';
 import '../demo/demo_data.dart';
 import '../models/credit.dart';
 import '../models/lesson.dart';
 import '../models/profile.dart';
 import '../models/term.dart';
+import 'accounts.dart';
+import 'rooms.dart';
 
 class Session extends ChangeNotifier {
   PersistCookieJar? _jar;
@@ -29,6 +32,10 @@ class Session extends ChangeNotifier {
   GyglxtClient? gyglxt;
   YktClient? ykt;
   LantuClient? lantu;
+  ZhcgmClient? zhcgm;
+  final accounts = AccountStore();
+  final rooms = RoomStore();
+  Directory? _support;
 
   bool ready = false;
   bool loggedIn = false;
@@ -53,25 +60,15 @@ class Session extends ChangeNotifier {
   final _teacherName = <String, String>{};
 
   Future<void> init() async {
-    final dir = await getApplicationSupportDirectory();
-    _jar = PersistCookieJar(storage: FileStorage('${dir.path}/cookies'), ignoreExpires: true);
-    cas = CasClient(_jar!);
-    ehall = EhallClient(_jar!);
-    jwxt = JwxtClient(_jar!)..attachCas(cas!);
-    ktkq = KtkqClient(_jar!);
-    gyglxt = GyglxtClient(_jar!, gateway: ktkq!.rs);
-    ykt = YktClient(_jar!, gateway: ktkq!.rs);
-    lantu = LantuClient(persistPath: '${dir.path}/lantu.json');
-    _teacherPath = '${dir.path}/kb_teachers.json';
-    await lantu!.restore();
-    await _loadTeachers();
-    await ktkq!.restoreToken();
-    await gyglxt!.restoreToken();
-    loggedIn = lantu!.isLoggedIn || await cas!.hasTgt();
-    if (lantu!.isLoggedIn) {
-      profile = lantu!.profile();
-      if (profile.studentId.isNotEmpty) studentId = profile.studentId;
-      if (profile.hasName) displayName = profile.name;
+    _support = await getApplicationSupportDirectory();
+    await accounts.load(_support!);
+    final current = accounts.currentId;
+    if (current != null && current.isNotEmpty) {
+      await _attachAccount(current, restore: true);
+      loggedIn = lantu!.isLoggedIn || await cas!.hasTgt();
+      if (loggedIn) _applyIdentity();
+    } else {
+      await _attachAccount('_scratch', restore: false);
     }
     ready = true;
     notifyListeners();
@@ -91,12 +88,95 @@ class Session extends ChangeNotifier {
     }
   }
 
-  Future<void> login(String username, String password) async {
+  Future<void> _attachAccount(String id, {required bool restore}) async {
+    final support = _support ?? await getApplicationSupportDirectory();
+    _support = support;
+    await ktkq?.dispose();
+    if (id != '_scratch') studentId = id;
+    final dir = id == '_scratch' ? Directory('${support.path}/.scratch') : await accounts.ensureDir(id);
+    if (!await dir.exists()) await dir.create(recursive: true);
+    _jar = PersistCookieJar(storage: FileStorage('${dir.path}/cookies'), ignoreExpires: true);
+    cas = CasClient(_jar!);
+    ehall = EhallClient(_jar!);
+    jwxt = JwxtClient(_jar!)..attachCas(cas!);
+    ktkq = KtkqClient(_jar!);
+    gyglxt = GyglxtClient(_jar!, gateway: ktkq!.rs);
+    ykt = YktClient(_jar!, gateway: ktkq!.rs);
+    lantu = LantuClient(persistPath: '${dir.path}/lantu.json');
+    zhcgm = ZhcgmClient(persistPath: '${dir.path}/zhcgm.json');
+    _teacherPath = '${dir.path}/kb_teachers.json';
+    await rooms.bind('${dir.path}/rooms.json');
+    _clearCaches();
+    ktkq?.token = null;
+    gyglxt?.token = null;
+    zhcgm?.token = null;
+    if (!restore) {
+      lantu!.token = '';
+      return;
+    }
+    await lantu!.restore();
+    await zhcgm!.restore();
+    await _loadTeachers();
+    await ktkq!.restoreToken();
+    await gyglxt!.restoreToken();
+  }
+
+  void _clearCaches() {
+    _kbFut = null;
+    _cjCache.clear();
+    _xfFut = null;
+    _ksFut = null;
+    _teacherSlot.clear();
+    _teacherName.clear();
+    _profileAt = null;
+    _casGate = null;
+    profileError = null;
+    profileLoading = false;
+  }
+
+  void _applyIdentity() {
+    if (lantu != null && lantu!.isLoggedIn) {
+      profile = lantu!.profile();
+      if (profile.studentId.isNotEmpty) studentId = profile.studentId;
+      if (profile.hasName) displayName = profile.name;
+    }
+    if (studentId.isEmpty) studentId = accounts.currentId ?? '';
+    if (displayName.isEmpty || displayName == '同学') {
+      displayName = accounts.current?.label ?? (studentId.isEmpty ? '同学' : studentId);
+    }
+    gyglxt?.username = studentId.isEmpty ? null : studentId;
+  }
+
+  Future<void> _restorePrevious(String? prev) async {
+    if (prev == null || prev.isEmpty || prev == '_scratch') return;
+    try {
+      await _attachAccount(prev, restore: true);
+      loggedIn = lantu!.isLoggedIn || await cas!.hasTgt();
+      if (loggedIn) {
+        _applyIdentity();
+        warmupGateways();
+      }
+    } catch (e) {
+      debugPrint('[account] restore $e');
+    }
+  }
+
+  Future<void> login(String username, String password, {bool attach = true, String? restoreId}) async {
     busy = true;
     error = null;
     notifyListeners();
+    final prev = restoreId ?? accounts.currentId;
+    final prevLoggedIn = restoreId != null || (loggedIn && !demoMode);
     try {
       final user = username.trim();
+      if (user.isEmpty || password.isEmpty) {
+        throw Exception('请输入学号和密码');
+      }
+      demoMode = false;
+      if (attach) {
+        await _attachAccount(user, restore: false);
+        await _jar?.deleteAll();
+      }
       await lantu!.login(user, password);
       _casGate = Completer<void>();
       try {
@@ -108,19 +188,15 @@ class Session extends ChangeNotifier {
         if (!(_casGate?.isCompleted ?? true)) _casGate!.complete();
       }
       loggedIn = true;
-      demoMode = false;
       studentId = user;
       profile = lantu!.profile();
       if (profile.studentId.isNotEmpty) studentId = profile.studentId;
       displayName = profile.hasName ? profile.name : studentId;
-      _kbFut = null;
-      _cjCache.clear();
-      _xfFut = null;
-      _ksFut = null;
-      _teacherSlot.clear();
-      _teacherName.clear();
+      _clearCaches();
       await _loadTeachers();
       jwxt!.attachCas(cas!);
+      await accounts.upsert(id: studentId, name: displayName, password: password);
+      gyglxt?.username = studentId;
       unawaited(() async {
         try {
           await jwxt!.ensureSession(force: true);
@@ -134,10 +210,98 @@ class Session extends ChangeNotifier {
     } catch (e) {
       error = e.toString().replaceFirst('Exception: ', '');
       loggedIn = false;
+      if (prevLoggedIn) await _restorePrevious(prev);
     } finally {
       busy = false;
       notifyListeners();
     }
+  }
+
+  Future<bool> switchTo(String id) async {
+    final sid = id.trim();
+    if (sid.isEmpty) return false;
+    if (demoMode) {
+      error = '预览模式不能切换账号';
+      notifyListeners();
+      return false;
+    }
+    if (sid == accounts.currentId && loggedIn) return true;
+    busy = true;
+    error = null;
+    notifyListeners();
+    final prev = accounts.currentId;
+    final wasIn = loggedIn && !demoMode;
+    try {
+      await _attachAccount(sid, restore: true);
+      loggedIn = lantu!.isLoggedIn || await cas!.hasTgt();
+      if (loggedIn) {
+        await accounts.setCurrent(sid);
+        studentId = sid;
+        _applyIdentity();
+        warmupGateways();
+        unawaited(refreshProfile(force: true));
+        return true;
+      }
+      final pwd = await accounts.passwordOf(sid);
+      if (pwd != null && pwd.isNotEmpty) {
+        await _jar?.deleteAll();
+        await login(sid, pwd, attach: false, restoreId: wasIn ? prev : null);
+        return loggedIn && (studentId == sid || accounts.currentId == sid);
+      }
+      studentId = sid;
+      error = '请输入该账号的密码';
+      return false;
+    } catch (e) {
+      error = e.toString().replaceFirst('Exception: ', '');
+      loggedIn = false;
+      if (wasIn) await _restorePrevious(prev);
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> rememberRoom({
+    required String room,
+    required double latitude,
+    required double longitude,
+    double accuracy = 0,
+    String course = '',
+  }) async {
+    if (demoMode) return;
+    await rooms.record(
+      room: room,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
+      course: course,
+    );
+    notifyListeners();
+  }
+
+  Future<void> forgetRoom(String room) async {
+    await rooms.remove(room);
+    notifyListeners();
+  }
+
+  Future<void> removeAccount(String id) async {
+    final sid = id.trim();
+    if (sid.isEmpty) return;
+    final wasCurrent = sid == accounts.currentId || sid == studentId;
+    if (wasCurrent) {
+      await logout(forget: false);
+    }
+    await accounts.remove(sid);
+    if (wasCurrent) {
+      final next = accounts.currentId;
+      if (next != null) {
+        await switchTo(next);
+      } else {
+        await _attachAccount('_scratch', restore: false);
+      }
+    }
+    notifyListeners();
   }
 
   void warmupGateways() {
@@ -248,7 +412,8 @@ class Session extends ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
+  Future<void> logout({bool forget = false}) async {
+    final id = studentId.isEmpty ? accounts.currentId : studentId;
     await ktkq?.dispose();
     await lantu?.clear();
     await _jar?.deleteAll();
@@ -258,18 +423,18 @@ class Session extends ChangeNotifier {
     profileError = null;
     profileLoading = false;
     displayName = '同学';
-    studentId = '';
     profile = const StudentProfile();
-    _profileAt = null;
-    _kbFut = null;
-    _cjCache.clear();
-    _xfFut = null;
-    _ksFut = null;
-    _teacherSlot.clear();
-    _teacherName.clear();
-    _casGate = null;
+    _clearCaches();
     ktkq?.token = null;
     gyglxt?.token = null;
+    await zhcgm?.clear();
+    if (forget && id != null && id.isNotEmpty) {
+      await accounts.remove(id);
+      studentId = '';
+      await _attachAccount('_scratch', restore: false);
+    } else {
+      studentId = id ?? '';
+    }
     notifyListeners();
   }
 
@@ -447,6 +612,13 @@ class Session extends ChangeNotifier {
         rethrow;
       }
     }();
+  }
+
+  Future<void> ensureZhcgm() async {
+    if (demoMode) return;
+    if (zhcgm == null) return;
+    await _waitCas();
+    await zhcgm!.ensure(cas!).timeout(const Duration(seconds: 25));
   }
 
   Future<void> ensureKtkq() async {
