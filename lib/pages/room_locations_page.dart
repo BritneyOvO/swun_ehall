@@ -14,7 +14,17 @@ class RoomLocationsPage extends StatelessWidget {
     final s = context.watch<Session>();
     final rooms = s.rooms.items;
     return Scaffold(
-      appBar: AppBar(title: const Text('教室位置')),
+      appBar: AppBar(
+        title: const Text('教室位置'),
+        actions: [
+          if (rooms.isNotEmpty)
+            IconButton(
+              tooltip: '复制全部',
+              onPressed: () => _copyAll(context, rooms),
+              icon: const Icon(Icons.copy_all_rounded),
+            ),
+        ],
+      ),
       body: rooms.isEmpty
           ? Center(
               child: Padding(
@@ -39,12 +49,33 @@ class RoomLocationsPage extends StatelessWidget {
     );
   }
 
-  Widget _card(BuildContext context, Session s, RoomFix room) {
+  Future<void> _copyAll(BuildContext context, List<RoomFix> rooms) async {
+    final text = rooms.map(_line).join('\n');
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('已复制 ${rooms.length} 条教室位置')));
+  }
+
+  String _timeOf(RoomFix room) {
     final when = room.at;
-    final time = when == null
-        ? ''
-        : '${when.year.toString().padLeft(4, '0')}-${when.month.toString().padLeft(2, '0')}-${when.day.toString().padLeft(2, '0')} '
-              '${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}';
+    if (when == null) return '';
+    return '${when.year.toString().padLeft(4, '0')}-${when.month.toString().padLeft(2, '0')}-${when.day.toString().padLeft(2, '0')} '
+        '${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _line(RoomFix room) {
+    return [
+      room.room,
+      room.coordText,
+      if (room.course.isNotEmpty) room.course,
+      if (_timeOf(room).isNotEmpty) _timeOf(room),
+    ].join('  ');
+  }
+
+  Widget _card(BuildContext context, Session s, RoomFix room) {
+    final time = _timeOf(room);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: context.panel,
@@ -59,9 +90,7 @@ class RoomLocationsPage extends StatelessWidget {
             Expanded(
               child: InkWell(
                 onTap: () async {
-                  await Clipboard.setData(
-                    ClipboardData(text: '${room.room}  ${room.coordText}'),
-                  );
+                  await Clipboard.setData(ClipboardData(text: _line(room)));
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context)
                       .showSnackBar(const SnackBar(content: Text('已复制教室和坐标')));

@@ -11,10 +11,11 @@ const kYktMenu = '$kYktH5/menu/menu.do?menu=qrcode';
 const kYktQrApi = '$kYktH5/qrcode/queryCardInfo.do';
 
 class YktQr {
-  const YktQr({required this.payload, this.expire});
+  const YktQr({required this.payload, this.expire, this.balanceYuan});
 
   final String payload;
   final String? expire;
+  final double? balanceYuan;
 }
 
 class YktClient {
@@ -42,9 +43,43 @@ class YktClient {
 
   Future<YktQr> fetchQr({required String studentId, String schoolId = '187'}) {
     return _fetchQr(studentId: studentId, schoolId: schoolId).timeout(
-      const Duration(seconds: 40),
+      const Duration(seconds: 50),
       onTimeout: () => throw Exception('一卡通请求超时'),
     );
+  }
+
+  Future<String> _openFunction({
+    required String studentId,
+    required String schoolId,
+    required String menu,
+  }) async {
+    final host = Uri.parse(kYktH5).host;
+    await rs.navigate(kYktMenu);
+    final ts = await _menuTimestamp(host);
+    if (ts.isEmpty) throw Exception('一卡通页面未就绪');
+    final fn =
+        '$kYktH5/menu/function.do?expire=$ts&stu_code=$studentId&acco_id=$studentId&school_id=$schoolId&menu=$menu';
+    await rs.navigate(fn);
+    return fn;
+  }
+
+  Future<double?> _readBalanceYuan() async {
+    final host = Uri.parse(kYktH5).host;
+    final raw = (await rs.evalJs(host, r'''
+      try {
+        var ps = document.getElementsByTagName('p');
+        for (var i = 0; i < ps.length; i++) {
+          var t = ps[i].innerText || '';
+          if (t.indexOf('账户余额') >= 0) {
+            var inp = ps[i].querySelector('input');
+            if (inp && inp.value) return String(inp.value);
+            return t;
+          }
+        }
+        return '';
+      } catch (e) { return ''; }
+    ''')).trim();
+    return parseYktYuan(raw);
   }
 
   Future<String> _menuTimestamp(String host) async {
@@ -71,14 +106,21 @@ class YktClient {
     if (studentId.trim().isEmpty) throw Exception('没有学号，无法打开一卡通');
     final host = Uri.parse(kYktH5).host;
     rs.remember(host);
-    await rs.navigate(kYktMenu);
-    final ts = await _menuTimestamp(host);
-    if (ts.isEmpty) {
-      throw Exception('一卡通页面未就绪');
-    }
-    final fn =
-        '$kYktH5/menu/function.do?expire=$ts&stu_code=$studentId&acco_id=$studentId&school_id=$schoolId&menu=qrcode';
-    await rs.navigate(fn);
+    double? balance;
+    try {
+      await _openFunction(
+        studentId: studentId,
+        schoolId: schoolId,
+        menu: 'data',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      balance = await _readBalanceYuan();
+    } catch (_) {}
+    final fn = await _openFunction(
+      studentId: studentId,
+      schoolId: schoolId,
+      menu: 'qrcode',
+    );
     await Future<void>.delayed(const Duration(milliseconds: 280));
     final hit = await _postQr(fn);
     if (looksNightClosed(status: hit.status, data: hit.body)) {
@@ -93,7 +135,7 @@ class YktClient {
       throw Exception('用户无卡片，无法生成二维码');
     }
     nightClosed = false;
-    return YktQr(payload: payload);
+    return YktQr(payload: payload, balanceYuan: balance);
   }
 
   String? _payloadOf(String body) {
@@ -125,4 +167,11 @@ class YktClient {
     if (t.startsWith('<')) return null;
     return t;
   }
+}
+
+/// 一卡通个人档案「账户余额：3.45元」.
+double? parseYktYuan(String raw) {
+  final m = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(raw.replaceAll(',', ''));
+  if (m == null) return null;
+  return double.tryParse(m.group(1)!);
 }

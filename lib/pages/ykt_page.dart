@@ -57,28 +57,19 @@ class _YktPageState extends State<YktPage> {
         });
         return;
       }
-      final qr = s.ykt!
+      final got = await s.ykt!
           .fetchQr(
             studentId: s.studentId,
             schoolId: '${s.lantu?.schoolId ?? 187}',
           )
           .timeout(
-            const Duration(seconds: 40),
+            const Duration(seconds: 55),
             onTimeout: () => throw Exception('一卡通请求超时'),
           );
-      final brief = () async {
-        try {
-          return await s.lantu?.getCardBrief();
-        } catch (_) {
-          return null;
-        }
-      }();
-      final got = await qr;
-      final info = await brief;
       if (!mounted) return;
       setState(() {
         _payload = got.payload;
-        _balanceYuan = _yuanOf(info);
+        _balanceYuan = got.balanceYuan;
         _error = null;
         _loading = false;
       });
@@ -89,20 +80,6 @@ class _YktPageState extends State<YktPage> {
         _loading = false;
       });
     }
-  }
-
-  double? _yuanOf(Map<String, dynamic>? info) {
-    if (info == null) return null;
-    final main = info['cardBreifInfo'];
-    Object? v;
-    if (main is Map) {
-      final md = main['mainData'];
-      if (md is Map) v = md['value'];
-    }
-    v ??= info['value'];
-    final n = int.tryParse('$v');
-    if (n == null) return null;
-    return n / 100.0;
   }
 
   @override
