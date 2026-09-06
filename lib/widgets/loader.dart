@@ -2,6 +2,34 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+class RefreshBusyButton extends StatelessWidget {
+  const RefreshBusyButton({
+    super.key,
+    required this.busy,
+    this.onPressed,
+    this.tooltip = '刷新',
+  });
+
+  final bool busy;
+  final VoidCallback? onPressed;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: busy ? null : onPressed,
+      icon: busy
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.refresh_rounded),
+    );
+  }
+}
+
 class SwunLoader extends StatelessWidget {
   const SwunLoader({super.key, this.compact = false});
 

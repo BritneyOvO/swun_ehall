@@ -472,6 +472,10 @@ class Session extends ChangeNotifier {
 
   void invalidateSchedule() => _kbFut = null;
 
+  void invalidateGrades() => _cjCache.clear();
+
+  void invalidateExams() => _ksFut = null;
+
   String _normKc(Object? s) => '$s'.replaceAll(RegExp(r'\s+'), '');
 
   String _startOf(Map<String, dynamic> m) {
@@ -550,7 +554,7 @@ class Session extends ChangeNotifier {
     _applyKbTeachers(kb);
   }
 
-  Future<Map<String, dynamic>> loadSchedule() {
+  Future<Map<String, dynamic>> loadSchedule({bool force = false}) {
     if (demoMode) {
       return Future.value({
         'kbList': demoSchedule,
@@ -559,7 +563,11 @@ class Session extends ChangeNotifier {
         'times': kDefaultPeriodTimes,
       });
     }
-    return _kbFut ??= () async {
+    if (force) _kbFut = null;
+    final hit = _kbFut;
+    if (hit != null) return hit;
+    late final Future<Map<String, dynamic>> fut;
+    fut = () async {
       try {
         if (lantu == null || !lantu!.isLoggedIn) {
           throw Exception('请重新登录后再看课表');
@@ -588,13 +596,19 @@ class Session extends ChangeNotifier {
         };
       } catch (e) {
         debugPrint('[kb] $e');
-        _kbFut = null;
+        if (identical(_kbFut, fut)) _kbFut = null;
         rethrow;
       }
     }();
+    _kbFut = fut;
+    return fut;
   }
 
-  Future<Map<String, dynamic>> loadGrades({String xnm = '', String xqm = ''}) {
+  Future<Map<String, dynamic>> loadGrades({
+    String xnm = '',
+    String xqm = '',
+    bool force = false,
+  }) {
     if (demoMode) {
       return Future.value({
         'items': [
@@ -604,47 +618,65 @@ class Session extends ChangeNotifier {
       });
     }
     final key = '$xnm|$xqm';
-    return _cjCache[key] ??= () async {
+    if (force) _cjCache.remove(key);
+    final hit = _cjCache[key];
+    if (hit != null) return hit;
+    late final Future<Map<String, dynamic>> fut;
+    fut = () async {
       try {
         await ensureJwxt().timeout(const Duration(seconds: 20));
         return await jwxt!
             .grades(xnm: xnm, xqm: xqm)
             .timeout(const Duration(seconds: 25));
       } catch (e) {
-        _cjCache.remove(key);
+        if (identical(_cjCache[key], fut)) _cjCache.remove(key);
         rethrow;
       }
     }();
+    _cjCache[key] = fut;
+    return fut;
   }
 
   void invalidateCredits() => _xfFut = null;
 
-  Future<CreditProgress> loadCredits() {
+  Future<CreditProgress> loadCredits({bool force = false}) {
     if (demoMode) return Future.value(demoCreditProgress);
-    return _xfFut ??= () async {
+    if (force) _xfFut = null;
+    final hit = _xfFut;
+    if (hit != null) return hit;
+    late final Future<CreditProgress> fut;
+    fut = () async {
       try {
         await ensureJwxt().timeout(const Duration(seconds: 20));
         return await jwxt!.creditProgress().timeout(
           const Duration(seconds: 45),
         );
       } catch (e) {
-        _xfFut = null;
+        if (identical(_xfFut, fut)) _xfFut = null;
         rethrow;
       }
     }();
+    _xfFut = fut;
+    return fut;
   }
 
-  Future<Map<String, dynamic>> loadExams() {
+  Future<Map<String, dynamic>> loadExams({bool force = false}) {
     if (demoMode) return Future.value({'items': demoExams});
-    return _ksFut ??= () async {
+    if (force) _ksFut = null;
+    final hit = _ksFut;
+    if (hit != null) return hit;
+    late final Future<Map<String, dynamic>> fut;
+    fut = () async {
       try {
         await ensureJwxt();
         return await jwxt!.exams();
       } catch (e) {
-        _ksFut = null;
+        if (identical(_ksFut, fut)) _ksFut = null;
         rethrow;
       }
     }();
+    _ksFut = fut;
+    return fut;
   }
 
   Future<void> ensureZhcgm() async {

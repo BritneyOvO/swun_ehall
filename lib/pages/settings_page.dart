@@ -120,33 +120,52 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-class ProfileSettingsPage extends StatelessWidget {
+class ProfileSettingsPage extends StatefulWidget {
   const ProfileSettingsPage({super.key});
+
+  @override
+  State<ProfileSettingsPage> createState() => _ProfileSettingsPageState();
+}
+
+class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
+  var _busy = false;
+
+  Future<void> _reload() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await context.read<Session>().refreshProfile(force: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
     return Scaffold(
-      appBar: AppBar(title: const Text('个人信息')),
-      body: RefreshIndicator(
-        color: Theme.of(context).colorScheme.primary,
-        onRefresh: () => session.refreshProfile(force: true),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
+      appBar: AppBar(
+        title: const Text('个人信息'),
+        actions: [
+          RefreshBusyButton(busy: _busy, onPressed: _reload),
+        ],
+      ),
+      body: _busy
+          ? const Center(child: SwunLoader())
+          : ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
           children: [
             _profile(context, session),
             if (session.profileError != null && !session.profile.hasDetails && !session.profile.hasName) ...[
               const SizedBox(height: 8),
               Text(
-                '${session.profileError}，下拉可重试',
+                '${session.profileError}，点右上角刷新可重试',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: context.muted, fontSize: 12),
               ),
             ],
           ],
         ),
-      ),
     );
   }
 
@@ -258,10 +277,10 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
       appBar: AppBar(
         title: const Text('主题外观'),
         actions: [
-          IconButton(
+          RefreshBusyButton(
             tooltip: '重新扫描',
-            onPressed: _busy ? null : _reload,
-            icon: const Icon(Icons.refresh_rounded),
+            busy: _busy,
+            onPressed: _reload,
           ),
         ],
       ),

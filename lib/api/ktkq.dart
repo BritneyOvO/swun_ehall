@@ -182,7 +182,7 @@ class KtkqClient {
           headers: _headers(json: method.toUpperCase() == 'POST'),
         )
         .timeout(
-          const Duration(seconds: 15),
+          const Duration(seconds: 25),
           onTimeout: () {
             throw Exception('课堂考勤请求超时');
           },
@@ -271,39 +271,55 @@ class KtkqClient {
     try {
       final st = await schoolTime();
       data = _dataOf(st);
-      xnxqdm = _str(data, 'xnxqdm');
+      xnxqdm = pickKtkqXnxqdm(data, const []);
     } catch (e) {
       debugPrint('[ktkq] schoolTime $e');
     }
     if (xnxqdm.isEmpty) {
       try {
         final terms = await termList();
-        for (final t in _asMapList(terms['data'])) {
-          if (t['currentFlag'] == true || t['currentFlag'] == 1) {
-            xnxqdm = _str(t, 'termCode');
-            break;
+        final rows = _termRows(terms['data']);
+        xnxqdm = pickKtkqXnxqdm(data, rows);
+        if (xnxqdm.isNotEmpty) {
+          try {
+            final st = await schoolTime(xnxqdm: xnxqdm);
+            data = _dataOf(st);
+            final again = pickKtkqXnxqdm(data, const []);
+            if (again.isNotEmpty) xnxqdm = again;
+          } catch (e) {
+            debugPrint('[ktkq] schoolTime($xnxqdm) $e');
           }
         }
       } catch (e) {
         debugPrint('[ktkq] termList $e');
       }
     }
-    if (xnxqdm.isEmpty) throw Exception('未能从 school/time 提取 xnxqdm');
-    final skzc = week ?? _asInt(data['todayWeekNum'], 1);
+    if (xnxqdm.isEmpty) {
+      debugPrint('[ktkq] no xnxqdm schoolTime=${data.keys.toList()}');
+      throw Exception('未能确定当前学期');
+    }
+    final skzc =
+        week ?? _asInt(data['todayWeekNum'], _asInt(data['skzc'], 1));
     final key = '$xnxqdm|$skzc';
     if (!refresh && _weekCache != null && _weekCacheKey == key) {
       return _weekCache!;
     }
-    var out = <String, dynamic>{};
+    Map<String, dynamic> out;
+    Future<Map<String, dynamic>> pull() => _post(
+      '/jwmobile/biz/v410/schedule/querySchedule',
+      {'xnxqdm': xnxqdm, 'skzc': skzc},
+    );
     try {
-      out = _normalizeWeek(
-        await _post('/jwmobile/biz/v410/schedule/querySchedule', {
-          'xnxqdm': xnxqdm,
-          'skzc': skzc,
-        }),
-      );
+      out = _normalizeWeek(await pull());
     } catch (e) {
       debugPrint('[ktkq] querySchedule $e');
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      try {
+        out = _normalizeWeek(await pull());
+      } catch (e2) {
+        debugPrint('[ktkq] querySchedule retry $e2');
+        rethrow;
+      }
     }
     final n = _asMapList(out['data']).length;
     final sample = n == 0 ? <String, dynamic>{} : _flattenWeek(out).first;
@@ -850,7 +866,54 @@ Map<String, dynamic> _asMap(Object? v) {
   return {};
 }
 
-Map<String, dynamic> _dataOf(Map<String, dynamic> resp) => _asMap(resp['data']);
+Map<String, dynamic> _dataOf(Map<String, dynamic> resp) {
+  final raw = resp['data'];
+  if (raw is String) {
+    final s = raw.trim();
+    if (s.isNotEmpty && s != 'null' && !s.startsWith('{') && !s.startsWith('[')) {
+      return {'xnxqdm': s};
+    }
+  }
+  return _asMap(raw);
+}
+
+List<Map<String, dynamic>> _termRows(Object? data) {
+  final direct = _asMapList(data);
+  if (direct.isNotEmpty) return direct;
+  if (data is Map) {
+    final m = Map<String, dynamic>.from(data);
+    for (final k in const ['list', 'records', 'termList', 'rows']) {
+      final rows = _asMapList(m[k]);
+      if (rows.isNotEmpty) return rows;
+    }
+  }
+  return const [];
+}
+
+String _termCodeOf(Map<String, dynamic> m) {
+  for (final k in const ['xnxqdm', 'termCode', 'dm', 'id']) {
+    final s = _str(m, k);
+    if (s.isNotEmpty) return s;
+  }
+  return '';
+}
+
+/// 学年学期代码：school/time 优先，否则 termList 当前项（currentFlag / sfdq），再否则第一项。
+String pickKtkqXnxqdm(
+  Map<String, dynamic> schoolTimeData,
+  List<Map<String, dynamic>> terms,
+) {
+  final fromSchool = _termCodeOf(schoolTimeData);
+  if (fromSchool.isNotEmpty) return fromSchool;
+  for (final t in terms) {
+    if (_truthyKq(t['currentFlag']) || _truthyKq(t['sfdq'])) {
+      final code = _termCodeOf(t);
+      if (code.isNotEmpty) return code;
+    }
+  }
+  if (terms.isNotEmpty) return _termCodeOf(terms.first);
+  return '';
+}
 
 /// 课班三件套，字段与 astrbot_plugin_ktqd._build_course_entry 一致。
 class _KtkqIds {

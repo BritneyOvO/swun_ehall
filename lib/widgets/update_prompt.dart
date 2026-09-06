@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/update.dart';
@@ -11,10 +13,32 @@ Future<void> showUpdateDialog(BuildContext context, AppRelease rel) {
   return showDialog<void>(
     context: context,
     builder: (ctx) {
+      final theme = Theme.of(ctx);
+      final mdStyle = MarkdownStyleSheet.fromTheme(theme).copyWith(
+        p: TextStyle(fontSize: 13, color: ctx.muted, height: 1.45),
+        listBullet: TextStyle(fontSize: 13, color: ctx.muted),
+        a: TextStyle(fontSize: 13, color: ctx.primary, height: 1.45),
+        em: TextStyle(fontSize: 13, color: ctx.muted, fontStyle: FontStyle.italic),
+        strong: TextStyle(fontSize: 13, color: ctx.ink, fontWeight: FontWeight.w600),
+        code: TextStyle(
+          fontSize: 12,
+          fontFamily: 'monospace',
+          color: ctx.ink,
+          backgroundColor: ctx.line.withValues(alpha: 0.35),
+        ),
+        h1: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: ctx.ink, height: 1.35),
+        h2: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: ctx.ink, height: 1.35),
+        h3: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: ctx.ink, height: 1.35),
+        blockSpacing: 8,
+        listIndent: 20,
+        horizontalRuleDecoration: BoxDecoration(
+          border: Border(top: BorderSide(color: ctx.line)),
+        ),
+      );
       return AlertDialog(
         title: const Text('发现新版本'),
         content: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 320),
+          constraints: const BoxConstraints(maxWidth: 480, maxHeight: 360),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -23,9 +47,20 @@ Future<void> showUpdateDialog(BuildContext context, AppRelease rel) {
                 Text('当前 $kAppVersion，最新 ${rel.version}'),
                 if (notes.isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  Text(
-                    notes,
-                    style: TextStyle(fontSize: 13, color: ctx.muted, height: 1.4),
+                  MarkdownBody(
+                    data: notes,
+                    selectable: true,
+                    extensionSet: md.ExtensionSet.gitHubWeb,
+                    styleSheet: mdStyle,
+                    onTapLink: (text, href, title) {
+                      final url = href?.trim() ?? '';
+                      if (url.isEmpty) return;
+                      final uri = Uri.tryParse(url);
+                      if (uri == null) return;
+                      unawaited(
+                        launchUrl(uri, mode: LaunchMode.externalApplication),
+                      );
+                    },
                   ),
                 ],
               ],

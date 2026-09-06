@@ -21,6 +21,7 @@ class _GradesPageState extends State<GradesPage> {
   late SchoolTerm _term;
   Future<Map<String, dynamic>>? _future;
   Future<CreditProgress>? _credits;
+  var _busy = false;
 
   @override
   void initState() {
@@ -30,13 +31,26 @@ class _GradesPageState extends State<GradesPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  void _load() {
+  void _load({bool force = false}) {
     if (!mounted) return;
     final s = context.read<Session>();
+    final g = s.loadGrades(xnm: _term.xnm, xqm: _term.xqm, force: force);
+    final c = force || _credits == null
+        ? s.loadCredits(force: force)
+        : _credits!;
     setState(() {
-      _future = s.loadGrades(xnm: _term.xnm, xqm: _term.xqm);
-      _credits ??= s.loadCredits();
+      _busy = true;
+      _future = g;
+      _credits = c;
     });
+    g.whenComplete(() {
+      if (mounted) setState(() => _busy = false);
+    });
+  }
+
+  void _reload() {
+    if (_busy) return;
+    _load(force: true);
   }
 
   void _onTerm(SchoolTerm? next) {
@@ -51,7 +65,13 @@ class _GradesPageState extends State<GradesPage> {
     final terms = buildGradeTerms(studentId: session.studentId, grade: session.profile.grade);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('成绩'), automaticallyImplyLeading: false),
+      appBar: AppBar(
+        title: const Text('成绩'),
+        automaticallyImplyLeading: false,
+        actions: [
+          RefreshBusyButton(busy: _busy, onPressed: _reload),
+        ],
+      ),
       body: Column(
         children: [
           Align(
@@ -150,6 +170,7 @@ class _GradesPageState extends State<GradesPage> {
                 ? const Center(child: SwunLoader())
                 : AsyncBody(
                     future: _future!,
+                    onRetry: _busy ? null : _reload,
                     builder: (context, data) {
                       final items = (data['items'] as List?) ?? [];
                       if (items.isEmpty) {

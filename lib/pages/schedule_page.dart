@@ -20,6 +20,8 @@ class SchedulePage extends StatefulWidget {
 class _SchedulePageState extends State<SchedulePage> {
   Future<Map<String, dynamic>>? _future;
   var _started = false;
+  var _epoch = 0;
+  var _busy = false;
 
   @override
   void didChangeDependencies() {
@@ -30,8 +32,16 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   void _reload() {
-    context.read<Session>().invalidateSchedule();
-    setState(() => _future = context.read<Session>().loadSchedule());
+    if (_busy) return;
+    final fut = context.read<Session>().loadSchedule(force: true);
+    setState(() {
+      _epoch++;
+      _busy = true;
+      _future = fut;
+    });
+    fut.whenComplete(() {
+      if (mounted) setState(() => _busy = false);
+    });
   }
 
   @override
@@ -41,21 +51,26 @@ class _SchedulePageState extends State<SchedulePage> {
         title: const Text('课表'),
         automaticallyImplyLeading: false,
         actions: [
-          IconButton(onPressed: _reload, icon: const Icon(Icons.refresh_rounded)),
+          RefreshBusyButton(busy: _busy, onPressed: _reload),
         ],
       ),
       body: _future == null
           ? const Center(child: SwunLoader())
           : AsyncBody(
+              key: ValueKey(_epoch),
               future: _future!,
-              builder: (context, data) => _ScheduleBoard(data: data),
+              onRetry: _busy ? null : _reload,
+              builder: (context, data) => _ScheduleBoard(
+                key: ObjectKey(data),
+                data: data,
+              ),
             ),
     );
   }
 }
 
 class _ScheduleBoard extends StatefulWidget {
-  const _ScheduleBoard({required this.data});
+  const _ScheduleBoard({super.key, required this.data});
 
   final Map<String, dynamic> data;
 

@@ -88,13 +88,13 @@ class _YktPageState extends State<YktPage> {
       appBar: AppBar(
         title: const Text('一卡通'),
         actions: [
-          IconButton(
+          RefreshBusyButton(
+            busy: _loading,
             onPressed: () => _reload(first: true),
-            icon: const Icon(Icons.refresh_rounded),
           ),
         ],
       ),
-      body: _loading && _payload == null
+      body: _loading
           ? const Center(child: SwunLoader())
           : ListView(
               padding: const EdgeInsets.all(16),
@@ -199,7 +199,7 @@ class _YktPageState extends State<YktPage> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  '温馨提示：二维码显示异常时请切换校园网后下拉刷新。付款码走一卡通瑞数网关，请勿截图长时间外传。',
+                  '温馨提示：二维码显示异常时请切换校园网后点右上角刷新。付款码走一卡通瑞数网关，请勿截图长时间外传。',
                   style: TextStyle(
                     color: Colors.black45,
                     fontSize: 12,

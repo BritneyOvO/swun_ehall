@@ -29,6 +29,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final weekday = DateTime.now().weekday;
   int _week = 1;
   Timer? _tick;
+  var _refreshing = false;
 
   List<Lesson> _todayFrom(Map<String, dynamic> data) {
     _week = int.tryParse('${data['curWeek'] ?? 1}') ?? 1;
@@ -129,6 +130,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  void _reloadToday() {
+    if (_refreshing) return;
+    final fut = context.read<Session>().loadSchedule(force: true).then((data) {
+      final list = _todayFrom(data);
+      if (mounted) setState(() {});
+      return list;
+    });
+    setState(() {
+      _refreshing = true;
+      _today = fut;
+    });
+    fut.whenComplete(() {
+      if (mounted) setState(() => _refreshing = false);
+    });
+  }
+
   List<Color> _accents(BuildContext context) {
     final p = HSLColor.fromColor(context.primary);
     Color hue(double d) {
@@ -223,10 +240,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
                 const Spacer(),
                 if (session.demoMode)
-                  Text(
-                    '预览',
-                    style: TextStyle(color: context.muted, fontSize: 12),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text(
+                      '预览',
+                      style: TextStyle(color: context.muted, fontSize: 12),
+                    ),
                   ),
+                RefreshBusyButton(busy: _refreshing, onPressed: _reloadToday),
               ],
             ),
             const SizedBox(height: 10),

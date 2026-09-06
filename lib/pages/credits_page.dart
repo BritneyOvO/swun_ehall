@@ -18,6 +18,8 @@ class CreditsPage extends StatefulWidget {
 class _CreditsPageState extends State<CreditsPage> {
   Future<CreditProgress>? _future;
   var _started = false;
+  var _epoch = 0;
+  var _busy = false;
 
   @override
   void didChangeDependencies() {
@@ -28,8 +30,16 @@ class _CreditsPageState extends State<CreditsPage> {
   }
 
   void _reload() {
-    context.read<Session>().invalidateCredits();
-    setState(() => _future = context.read<Session>().loadCredits());
+    if (_busy) return;
+    final fut = context.read<Session>().loadCredits(force: true);
+    setState(() {
+      _epoch++;
+      _busy = true;
+      _future = fut;
+    });
+    fut.whenComplete(() {
+      if (mounted) setState(() => _busy = false);
+    });
   }
 
   @override
@@ -37,12 +47,14 @@ class _CreditsPageState extends State<CreditsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('共修学分'),
-        actions: [IconButton(onPressed: _reload, icon: const Icon(Icons.refresh_rounded))],
+        actions: [RefreshBusyButton(busy: _busy, onPressed: _reload)],
       ),
       body: _future == null
           ? const Center(child: SwunLoader())
           : AsyncBody(
+              key: ValueKey(_epoch),
               future: _future!,
+              onRetry: _busy ? null : _reload,
               builder: (context, p) => ListView(
                 padding: const EdgeInsets.all(16),
                 children: [

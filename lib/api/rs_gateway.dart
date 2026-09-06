@@ -265,7 +265,7 @@ class RsGateway {
         throw Exception('网关仍被拦截');
       }
       return hit;
-    });
+    }, timeout: const Duration(seconds: 20));
   }
 
   Future<RsHit> navigate(String url, {bool waitForToken = false}) {
@@ -635,6 +635,8 @@ class RsGateway {
           const pack = function(status, text, finalUrl, error) {
             return {status: status || 0, body: text || '', url: finalUrl || url, error: error || ''};
           };
+          const ct = String(hdr['Content-Type'] || hdr['content-type'] || '').toLowerCase();
+          const jsonish = ct.indexOf('json') >= 0 || (body && (body.charAt(0) === '{' || body.charAt(0) === '['));
           const viaJquery = function() {
             const jqLib = (typeof jQuery !== 'undefined') ? jQuery : null;
             if (!jqLib || !jqLib.ajax) return Promise.resolve(null);
@@ -646,7 +648,7 @@ class RsGateway {
                 cache: false,
                 dataType: 'text',
                 headers: hdr,
-                timeout: 4000,
+                timeout: 8000,
                 success: function(data, _s, xhr) {
                   resolve(pack(xhr && xhr.status, typeof data === 'string' ? data : String(data == null ? '' : data), (xhr && xhr.responseURL) || url, ''));
                 },
@@ -662,7 +664,7 @@ class RsGateway {
                 const xhr = new XMLHttpRequest();
                 xhr.open(method, reqUrl, true);
                 xhr.withCredentials = true;
-                xhr.timeout = 4000;
+                xhr.timeout = 8000;
                 Object.keys(hdr).forEach(function(k) {
                   const lk = k.toLowerCase();
                   if (lk === 'referer' || lk === 'origin' || lk === 'host' || lk === 'cookie' || lk === 'user-agent') return;
@@ -686,7 +688,7 @@ class RsGateway {
             const opt = {method: method, credentials: 'include', redirect: 'follow', headers: hdr};
             if (body) opt.body = body;
             const ctrl = new AbortController();
-            const timer = setTimeout(function(){ ctrl.abort(); }, 4000);
+            const timer = setTimeout(function(){ ctrl.abort(); }, 8000);
             opt.signal = ctrl.signal;
             try {
               const resp = await fetch(url, opt);
@@ -697,7 +699,7 @@ class RsGateway {
             }
           };
           const mark = '$_tsMark';
-          const jq = await viaJquery();
+          const jq = jsonish ? null : await viaJquery();
           if (jq && jq.status && jq.status !== 412 && String(jq.body || '').indexOf(mark) < 0) return jq;
           const xhr = await viaXhr();
           if (xhr.status && xhr.status !== 412 && String(xhr.body || '').indexOf(mark) < 0) return xhr;
@@ -737,7 +739,7 @@ class RsGateway {
         );
       }
       throw Exception('WebView 无返回');
-    });
+    }, timeout: const Duration(seconds: 12));
   }
 
   Future<void> _pushHostCookies(String host) =>

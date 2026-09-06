@@ -231,13 +231,18 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
   Widget build(BuildContext context) {
     final status = '${_data['status'] ?? ''}';
     return Scaffold(
-      appBar: AppBar(title: const Text('课堂签到')),
+      appBar: AppBar(
+        title: const Text('课堂签到'),
+        actions: [
+          RefreshBusyButton(
+            busy: _loading,
+            onPressed: () => _reload(refresh: true),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: SwunLoader())
-          : RefreshIndicator(
-              color: kCrimson,
-              onRefresh: () => _reload(refresh: true),
-              child: ListView(
+          : ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
                   if (_error != null)
@@ -287,7 +292,6 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
                     ..._history.take(10).map(_historyTile),
                 ],
               ),
-            ),
     );
   }
 

@@ -131,15 +131,13 @@ class _VenuePageState extends State<VenuePage> {
       appBar: AppBar(
         title: const Text('预约场馆'),
         actions: [
+          RefreshBusyButton(busy: _loading, onPressed: _reload),
           TextButton(onPressed: _openOfficial, child: const Text('智慧场馆')),
         ],
       ),
       body: _loading
           ? const Center(child: SwunLoader())
-          : RefreshIndicator(
-              color: kCrimson,
-              onRefresh: _reload,
-              child: ListView(
+          : ListView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                 children: [
                   if (_error != null)
@@ -170,7 +168,6 @@ class _VenuePageState extends State<VenuePage> {
                     for (final f in _fields) _card(f),
                 ],
               ),
-            ),
     );
   }
 
@@ -327,13 +324,15 @@ class _VenueFieldPageState extends State<VenueFieldPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_fieldName.isEmpty ? '场地' : _fieldName)),
+      appBar: AppBar(
+        title: Text(_fieldName.isEmpty ? '场地' : _fieldName),
+        actions: [
+          RefreshBusyButton(busy: _loading, onPressed: _reload),
+        ],
+      ),
       body: _loading
           ? const Center(child: SwunLoader())
-          : RefreshIndicator(
-              color: kCrimson,
-              onRefresh: _reload,
-              child: ListView(
+          : ListView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                 children: [
                   if (_addr.isNotEmpty)
@@ -362,7 +361,6 @@ class _VenueFieldPageState extends State<VenueFieldPage> {
                     ),
                 ],
               ),
-            ),
     );
   }
 

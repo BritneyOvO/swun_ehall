@@ -20,6 +20,8 @@ class KtkqPage extends StatefulWidget {
 class _KtkqPageState extends State<KtkqPage> {
   Future<Map<String, dynamic>>? _future;
   var _started = false;
+  var _epoch = 0;
+  var _busy = false;
 
   @override
   void didChangeDependencies() {
@@ -35,11 +37,20 @@ class _KtkqPageState extends State<KtkqPage> {
     await s.ensureKtkq().timeout(const Duration(seconds: 50));
     return s.ktkq!
         .weekCourses(refresh: refresh)
-        .timeout(const Duration(seconds: 20));
+        .timeout(const Duration(seconds: 45));
   }
 
   void _reload() {
-    setState(() => _future = _load(refresh: true));
+    if (_busy) return;
+    final fut = _load(refresh: true);
+    setState(() {
+      _epoch++;
+      _busy = true;
+      _future = fut;
+    });
+    fut.whenComplete(() {
+      if (mounted) setState(() => _busy = false);
+    });
   }
 
   @override
@@ -49,16 +60,15 @@ class _KtkqPageState extends State<KtkqPage> {
       appBar: AppBar(
         title: const Text('课堂考勤'),
         actions: [
-          IconButton(
-            onPressed: _reload,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
+          RefreshBusyButton(busy: _busy, onPressed: _reload),
         ],
       ),
       body: future == null
           ? const Center(child: SwunLoader())
           : AsyncBody(
+              key: ValueKey(_epoch),
               future: future,
+              onRetry: _busy ? null : _reload,
               builder: (context, data) {
                 final meta = data['_meta'] is Map
                     ? Map<String, dynamic>.from(data['_meta'] as Map)

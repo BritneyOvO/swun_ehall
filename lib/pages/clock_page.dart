@@ -48,7 +48,7 @@ class _ClockPageState extends State<ClockPage> {
         _data = await s.gyglxt!.dashboard().timeout(const Duration(seconds: 25));
         final st = _data['status'];
         if (st is! Map || st.isEmpty) {
-          _error ??= '打卡状态未取到，下拉可重试';
+          _error ??= '打卡状态未取到，点右上角刷新可重试';
         }
       }
     } catch (e) {
@@ -201,13 +201,15 @@ class _ClockPageState extends State<ClockPage> {
     final done = _truthy(_back['isClock']);
     final near = _nearestMeters;
     return Scaffold(
-      appBar: AppBar(title: const Text('公寓打卡')),
+      appBar: AppBar(
+        title: const Text('公寓打卡'),
+        actions: [
+          RefreshBusyButton(busy: _loading, onPressed: _reload),
+        ],
+      ),
       body: _loading
           ? const Center(child: SwunLoader())
-          : RefreshIndicator(
-              color: kCrimson,
-              onRefresh: _reload,
-              child: ListView(
+          : ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
                   if (_error != null)
@@ -238,7 +240,6 @@ class _ClockPageState extends State<ClockPage> {
                     ..._records.take(8).map(_recordTile),
                 ],
               ),
-            ),
     );
   }
 
