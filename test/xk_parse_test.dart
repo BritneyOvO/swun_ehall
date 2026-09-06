@@ -54,8 +54,8 @@ void main() {
     expect(q['xkxnm'], '2026');
     expect(q['xkxqm'], '3');
     expect(q['kcmc'], '英语');
-    expect(q['kspage'], 2);
-    expect(q['jspage'], 11); // page*size - size + 1
+    expect(q['kspage'], 11); // (page-1)*size + 1
+    expect(q['jspage'], 10); // (page-1)*size
     expect(q['gnjkxdnj'], '');
   });
 

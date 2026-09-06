@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/credit.dart';
 import '../models/profile.dart';
@@ -529,6 +530,7 @@ class JwxtClient {
     if (html.contains('系统维护页面')) throw Exception('选课系统维护中');
     final rounds = parseXkRounds(html);
     final profile = extractXkProfile(html);
+    debugPrint('[xk] entry rounds=${rounds.length} profile=${profile.length}');
     return {'rounds': rounds, 'profile': profile};
   }
 
@@ -539,8 +541,11 @@ class JwxtClient {
       if ('$d'.contains('加密串错误')) throw Exception('选课加密串已过期，请刷新重试');
       final flag = '${d['flag'] ?? ''}';
       if (flag == '0') throw Exception('${d['msg'] ?? '选课查询失败'}');
-      return (d['tmpList'] as List?) ?? const [];
+      final rows = (d['tmpList'] as List?) ?? const [];
+      debugPrint('[xk] PartDisplay rows=${rows.length}');
+      return rows;
     }
+    debugPrint('[xk] PartDisplay raw ${d.runtimeType}');
     return d is List ? d : const [];
   }
 
@@ -832,7 +837,9 @@ Map<String, String> extractXkProfile(String html) {
   return out;
 }
 
-/// PartDisplay 查询体：轮次 + 画像 + 展开态字段 + 分页（kspage/jspage 从 1 开始）。
+/// PartDisplay 查询体：轮次 + 画像 + 展开态字段 + 分页。
+/// 校方口径（zzxkYzb.js）：kspage = jspage + 1，jspage = 已展示行数；
+/// 即 kspage 从 1 开始、jspage 从 0 开始，两者相差 1。
 Map<String, dynamic> buildXkQuery({
     required Map<String, dynamic> round,
     required Map<String, String> profile,
@@ -866,7 +873,8 @@ Map<String, dynamic> buildXkQuery({
       'bbhzxjxb': '', 'zxgbxkkg': '', 'xkzgbj': '0', 'rlkz': '0',
       'jxbzcxskg': '', 'zh': '', 'jxbzb': '',
       'kch_id': kchId, 'kcmc': kcmc,
-      'kspage': page, 'jspage': page * size - size + 1,
+      'kspage': (page - 1) * size + 1,
+      'jspage': (page - 1) * size,
     };
   }
 

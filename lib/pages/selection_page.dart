@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -19,12 +21,16 @@ class SelectionPage extends StatefulWidget {
 
 class _SelectionPageState extends State<SelectionPage> {
   Future<Map<String, dynamic>>? _entry;
+  Future<List<dynamic>>? _courses;
   var _busy = false;
   var _tab = 0;
   var _keyword = '';
   final _search = TextEditingController();
   final _choosed = <String>{}; // 已选 jxb_id（本轮）
   final _done = <String>{}; // 已完成目标 kch_id
+
+  Map<String, dynamic>? _round;
+  Map<String, String>? _profile;
 
   @override
   void didChangeDependencies() {
@@ -81,6 +87,36 @@ class _SelectionPageState extends State<SelectionPage> {
     if (_tab >= rounds.length) _tab = 0;
     final round = rounds[_tab];
     final profile = Map<String, String>.from(data['profile'] as Map? ?? {});
+    final roundChanged = _round?['xkkz_id'] != round['xkkz_id'] ||
+        _profile?['xkkz_xh'] != profile['xkkz_xh'] ||
+        _profile?['xkxnm'] != profile['xkxnm'];
+    if (roundChanged) {
+      _round = round;
+      _profile = profile;
+      _courses = null;
+    }
+    final courses = _courses ??= () {
+      // 复刻浏览器顺序：先打一次 Display 面板（xklc/rwlx 等在服务端落地），再拉课程列表。
+      final fut = context.read<Session>();
+      if (!fut.demoMode) {
+        unawaited(() async {
+          try {
+            await fut.ensureJwxt();
+            await fut.jwxt!.selectionIndex(
+              xkkzId: '${round['xkkz_id']}',
+              xkkzXh: '${round['xkkz_xh']}',
+              kklxdm: '${round['kklxdm']}',
+              njdmId: '${round['njdm_id']}',
+              zyhId: '${round['zyh_id']}',
+              profile: profile,
+            );
+          } catch (e) {
+            debugPrint('[xk] display warmup $e');
+          }
+        }());
+      }
+      return fut.loadSelectionCourses(round, profile, keyword: _keyword);
+    }();
     return Column(
       children: [
         if (rounds.length > 1)
@@ -106,13 +142,10 @@ class _SelectionPageState extends State<SelectionPage> {
         Expanded(
           child: RefreshIndicator(
             onRefresh: () async => _reload(),
-            child: _CourseList(
-              round: round,
-              profile: profile,
-              keyword: _keyword,
-              choosed: _choosed,
-              done: _done,
-              onSubmit: _submit,
+            child: AsyncBody<List<dynamic>>(
+              future: courses,
+              onRetry: () => setState(() => _courses = null),
+              builder: (context, rows) => _list(rows),
             ),
           ),
         ),
@@ -154,6 +187,126 @@ class _SelectionPageState extends State<SelectionPage> {
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: fg),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _list(List<dynamic> rows) {
+    if (rows.isEmpty) {
+      return ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(32),
+            child: Center(
+              child: Text('没有匹配的课程', style: TextStyle(color: context.muted, fontSize: 14)),
+            ),
+          ),
+        ],
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      itemCount: rows.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, i) =>
+          _courseCard(context, Map<String, dynamic>.from(rows[i] as Map)),
+    );
+  }
+
+  Widget _courseCard(BuildContext context, Map<String, dynamic> row) {
+    final remain = xkRemain(row);
+    final jxbId = '${row['jxb_id'] ?? ''}';
+    final picked = _choosed.contains(jxbId);
+    final full = remain <= 0 && !picked;
+    final accent = picked
+        ? const Color(0xFF2E9E5B)
+        : full
+            ? context.muted
+            : context.primary;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.panel,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.line.withValues(alpha: 0.7)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${row['kcmc'] ?? ''}',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.ink),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${row['kch_id'] ?? ''} · ${row['jxbmc'] ?? ''} · ${row['xf'] ?? '?'}学分',
+                        style: TextStyle(fontSize: 12, color: context.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _remainBadge(context, remain, picked),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    [
+                      if ('${row['jsmc'] ?? ''}'.isNotEmpty) '${row['jsmc']}',
+                      if ('${row['sksj'] ?? ''}'.isNotEmpty) '${row['sksj']}',
+                    ].join(' · '),
+                    style: TextStyle(fontSize: 12, color: context.muted, height: 1.35),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 30,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    onPressed: picked
+                        ? null
+                        : () => _submit(_round ?? const {}, _profile ?? const {}, row),
+                    child: Text(picked ? '已选' : '选课'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _remainBadge(BuildContext context, int remain, bool picked) {
+    final color = picked
+        ? const Color(0xFF2E9E5B)
+        : remain > 0
+            ? context.primary
+            : kCrimson;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        picked ? '已选上' : (remain > 0 ? '余 $remain' : '已满'),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
       ),
     );
   }
@@ -228,146 +381,3 @@ class _SelectionPageState extends State<SelectionPage> {
   }
 }
 
-class _CourseList extends StatelessWidget {
-  const _CourseList({
-    required this.round,
-    required this.profile,
-    required this.keyword,
-    required this.choosed,
-    required this.done,
-    required this.onSubmit,
-  });
-
-  final Map<String, dynamic> round;
-  final Map<String, String> profile;
-  final String keyword;
-  final Set<String> choosed;
-  final Set<String> done;
-  final Future<void> Function(Map<String, dynamic>, Map<String, String>, Map<String, dynamic>) onSubmit;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.read<Session>();
-    final fut = s.loadSelectionCourses(round, profile, keyword: keyword);
-    return AsyncBody<List<dynamic>>(
-      future: fut,
-      onRetry: () => s.invalidateSelection(),
-      builder: (context, rows) {
-        if (rows.isEmpty) {
-          return ListView(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(32),
-                child: Center(
-                  child: Text('没有匹配的课程', style: TextStyle(color: context.muted, fontSize: 14)),
-                ),
-              ),
-            ],
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          itemCount: rows.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, i) => _courseCard(context, Map<String, dynamic>.from(rows[i] as Map)),
-        );
-      },
-    );
-  }
-
-  Widget _courseCard(BuildContext context, Map<String, dynamic> row) {
-    final remain = xkRemain(row);
-    final jxbId = '${row['jxb_id'] ?? ''}';
-    final picked = choosed.contains(jxbId);
-    final full = remain <= 0 && !picked;
-    final accent = picked
-        ? const Color(0xFF2E9E5B)
-        : full
-            ? context.muted
-            : context.primary;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: context.panel,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: context.line.withValues(alpha: 0.7)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${row['kcmc'] ?? ''}',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.ink),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '${row['kch_id'] ?? ''} · ${row['jxbmc'] ?? ''} · ${row['xf'] ?? '?'}学分',
-                        style: TextStyle(fontSize: 12, color: context.muted),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _remainBadge(context, remain, picked),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    [
-                      if ('${row['jsmc'] ?? ''}'.isNotEmpty) '${row['jsmc']}',
-                      if ('${row['sksj'] ?? ''}'.isNotEmpty) '${row['sksj']}',
-                    ].join(' · '),
-                    style: TextStyle(fontSize: 12, color: context.muted, height: 1.35),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 30,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: accent,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                    ),
-                    onPressed: picked ? null : () => onSubmit(round, profile, row),
-                    child: Text(picked ? '已选' : '选课'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _remainBadge(BuildContext context, int remain, bool picked) {
-    final color = picked
-        ? const Color(0xFF2E9E5B)
-        : remain > 0
-            ? context.primary
-            : kCrimson;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        picked ? '已选上' : (remain > 0 ? '余 $remain' : '已满'),
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
-      ),
-    );
-  }
-}
