@@ -27,6 +27,33 @@ const demoExams = [
   {'kcmc': '计算机组成原理', 'kssj': '第17周 周一 09:00-11:00', 'cdmc': 'BW-107', 'zwh': '08'},
 ];
 
+const demoXkRounds = [
+  {'kklxdm': '01', 'kklxmc': '主修课程', 'xkkz_id': 'demo-01', 'njdm_id': '2024', 'zyh_id': '1106', 'xkkz_xh': 'demo'},
+  {'kklxdm': '10', 'kklxmc': '通识选修课', 'xkkz_id': 'demo-10', 'njdm_id': '2024', 'zyh_id': '1106', 'xkkz_xh': 'demo'},
+];
+
+const demoXkCourses = [
+  {
+    'kch_id': '56050556', 'kcmc': '网络舆情智能分析', 'xf': '2.0', 'jxb_id': 'demo-jxb-1',
+    'jxbmc': '(2026-2027-1)-56050556-01', 'yxzrs': '46', 'jxbrl': '50', 'jxbzls': '1',
+    'jsmc': '王老师', 'sksj': '星期三第5-6节{1-16周}',
+  },
+  {
+    'kch_id': '56050548', 'kcmc': '网络工程学期实训(网络开发)(上)', 'xf': '2.0', 'jxb_id': 'demo-jxb-2',
+    'jxbmc': '(2026-2027-1)-56050548-01', 'yxzrs': '50', 'jxbrl': '50', 'jxbzls': '1',
+    'jsmc': '李老师', 'sksj': '星期四第3-4节{1-16周}',
+  },
+  {
+    'kch_id': '11180500', 'kcmc': '专业英语（网络工程）', 'xf': '2.0', 'jxb_id': 'demo-jxb-3',
+    'jxbmc': '(2026-2027-1)-11180500-01', 'yxzrs': '44', 'jxbrl': '54', 'jxbzls': '1',
+    'jsmc': '张老师', 'sksj': '星期五第3-4节{1-16周}',
+  },
+];
+
+const demoXkProfile = <String, String>{
+  'xkxnm': '2026', 'xkxqm': '3', 'njdm_id': '2024', 'zyh_id': '1106', 'xqh_id': '2',
+};
+
 const demoProfile = {
   'name': '预览同学',
   'studentId': '202430000000',

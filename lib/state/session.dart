@@ -54,6 +54,8 @@ class Session extends ChangeNotifier {
   final _cjCache = <String, Future<Map<String, dynamic>>>{};
   Future<CreditProgress>? _xfFut;
   Future<Map<String, dynamic>>? _ksFut;
+  Future<Map<String, dynamic>>? _xkEntryFut;
+  Map<String, Future<List<dynamic>>> _xkCourses = {};
   Completer<void>? _casGate;
   Future<void>? _ensuringKtkq;
   String? _teacherPath;
@@ -122,6 +124,8 @@ class Session extends ChangeNotifier {
     _cjCache.clear();
     _xfFut = null;
     _ksFut = null;
+    _xkEntryFut = null;
+    _xkCourses = {};
     _teacherSlot.clear();
     _teacherName.clear();
     _profileAt = null;
@@ -475,6 +479,70 @@ class Session extends ChangeNotifier {
   void invalidateGrades() => _cjCache.clear();
 
   void invalidateExams() => _ksFut = null;
+
+  void invalidateSelection() {
+    _xkEntryFut = null;
+    _xkCourses = {};
+  }
+
+  /// 选课入口：轮次 + 学生画像（加密串 xkkz_xh 在轮次里）。
+  Future<Map<String, dynamic>> loadSelectionEntry({bool force = false}) {
+    if (demoMode) {
+      return Future.value({
+        'rounds': demoXkRounds,
+        'profile': demoXkProfile,
+      });
+    }
+    if (force) _xkEntryFut = null;
+    final hit = _xkEntryFut;
+    if (hit != null) return hit;
+    late final Future<Map<String, dynamic>> fut;
+    fut = () async {
+      try {
+        await ensureJwxt().timeout(const Duration(seconds: 25));
+        final entry = await jwxt!.selectionEntry();
+        if ((entry['rounds'] as List?)?.isEmpty ?? true) {
+          throw Exception('当前没有开放的选课轮次');
+        }
+        return entry;
+      } catch (e) {
+        if (identical(_xkEntryFut, fut)) _xkEntryFut = null;
+        rethrow;
+      }
+    }();
+    _xkEntryFut = fut;
+    return fut;
+  }
+
+  /// 某轮次的可选课程（含教学班行）。加密串会过期，失败自动刷一次入口。
+  Future<List<dynamic>> loadSelectionCourses(
+    Map<String, dynamic> round,
+    Map<String, String> profile, {
+    String keyword = '',
+  }) {
+    final key = '${round['xkkz_id']}|$keyword';
+    final hit = _xkCourses[key];
+    if (hit != null) return hit;
+    late final Future<List<dynamic>> fut;
+    fut = () async {
+      if (demoMode) {
+        return [
+          for (final c in demoXkCourses)
+            if (keyword.isEmpty || '${c['kcmc']}'.contains(keyword)) c,
+        ];
+      }
+      try {
+        await ensureJwxt().timeout(const Duration(seconds: 25));
+        final query = buildXkQuery(round: round, profile: profile, kcmc: keyword);
+        return await jwxt!.selectionCourses(query);
+      } catch (e) {
+        if (identical(_xkCourses[key], fut)) _xkCourses.remove(key);
+        rethrow;
+      }
+    }();
+    _xkCourses[key] = fut;
+    return fut;
+  }
 
   String _normKc(Object? s) => '$s'.replaceAll(RegExp(r'\s+'), '');
 

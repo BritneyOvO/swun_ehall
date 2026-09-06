@@ -14,6 +14,7 @@ import 'credits_page.dart';
 import 'exams_page.dart';
 import 'ktkq_page.dart';
 import 'ktkq_sign_page.dart';
+import 'selection_page.dart';
 import 'venue_page.dart';
 import 'ykt_page.dart';
 
@@ -85,6 +86,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ('svc.venue', '预约场馆', const VenuePage(), accents[3]),
       ('svc.ktkq', '课堂考勤', const KtkqPage(), accents[4]),
       ('svc.clock', '公寓打卡', const ClockPage(), accents[5]),
+      ('svc.xk', '选课', const SelectionPage(), accents[6]),
     ];
 
     return Scaffold(
@@ -156,7 +158,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           .toColor();
     }
 
-    return [context.primary, hue(42), hue(205), hue(155), hue(328), hue(268)];
+    return [context.primary, hue(42), hue(205), hue(155), hue(328), hue(268), hue(100)];
   }
 
   Color _wash(Color accent) {

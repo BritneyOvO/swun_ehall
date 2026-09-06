@@ -30,6 +30,7 @@
     <icon name="svc.ktkq" outlined="fingerprint_rounded"/>
     <icon name="svc.clock" outlined="location_on_rounded"/>
     <icon name="svc.venue" outlined="sports_rounded"/>
+    <icon name="svc.xk" outlined="school_rounded"/>
     <icon name="action.settings" outlined="settings_rounded"/>
   </icons>
 </theme>

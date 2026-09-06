@@ -11,6 +11,10 @@ import 'httpx.dart';
 const kJwxt = 'https://jwxt.swun.edu.cn';
 const kJwxtService = 'http://jwxt.swun.edu.cn/sso/jziotlogin';
 
+/// 自主选课功能码（jwglxt 所有 xsxk 请求都要带 ?gnmkdm=N253512）。
+const kXkGnmkdm = 'N253512';
+const kXkReferer = '$kJwxt/jwglxt/xsxk/zzxkyzb_cxZzxkYzbIndex.html?gnmkdm=$kXkGnmkdm';
+
 (int, String) currentTerm() {
   final now = DateTime.now();
   if (now.month >= 8 || now.month <= 1) return (now.year, '3');
@@ -455,6 +459,137 @@ class JwxtClient {
     );
   }
 
+  // ---------------- 自主选课 (xsxk, 逆向自 zzxkYzb.js) ----------------
+
+  Options get _xkForm => Options(
+        contentType: Headers.formUrlEncodedContentType,
+        headers: const {
+          'Referer': kXkReferer,
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json, text/javascript, */*; q=0.01',
+        },
+      );
+
+  Future<Object?> _xkPost(String path, Map<String, dynamic> data) async {
+    Object? last;
+    var relogged = false;
+    for (var i = 0; i < 3; i++) {
+      try {
+        final r = await dio.post(
+          '$kJwxt$path',
+          data: data,
+          queryParameters: const {'gnmkdm': kXkGnmkdm},
+          options: _xkForm,
+        );
+        if (r.statusCode == 403 || _looksClosed(r.statusCode, r.data)) {
+          portalClosed = true;
+          throw Exception(nightClosedMessage('教务'));
+        }
+        if (_looksLoggedOut(r) || isRedirect(r)) {
+          if (!relogged) {
+            relogged = true;
+            await ensureSession(force: true);
+            continue;
+          }
+          throw Exception('教务登录已过期，请重新登录');
+        }
+        // 910/911 = 选课模块自定义状态（会话/权限门槛），911 空壳可在重新进入口后恢复。
+        if (r.statusCode == 911 || r.statusCode == 910) {
+          throw Exception('选课会话已失效，请刷新重试');
+        }
+        if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+        return _asJson(r.data);
+      } catch (e) {
+        last = e;
+        final s = e.toString();
+        if (s.contains('夜间') || s.contains('过期') || s.contains('重新登录') || s.contains('刷新重试')) {
+          rethrow;
+        }
+        if (i < 2) await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+    }
+    throw Exception('选课请求失败 $path: $last');
+  }
+
+  /// 选课入口页：返回轮次列表（每轮含 xkkz_id/xkkz_xh 加密串）与学生画像字段。
+  /// 逆向：入口 GET zzxkyzb_cxZzxkYzbIndex.html?gnmkdm=N253512&layout=default，
+  /// 每个轮次 tab 的 onclick=queryCourse(this,kklxdm,xkkz_id,njdm_id,zyh_id,xkkz_xh)。
+  Future<Map<String, dynamic>> selectionEntry() async {
+    final r = await dio.get(
+      '$kJwxt/jwglxt/xsxk/zzxkyzb_cxZzxkYzbIndex.html',
+      queryParameters: const {'gnmkdm': kXkGnmkdm, 'layout': 'default'},
+      options: Options(headers: {'Referer': _referer}),
+    );
+    if (_looksLoggedOut(r) || isRedirect(r)) {
+      await ensureSession(force: true);
+      throw Exception('选课会话已刷新，请重试');
+    }
+    if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+    final html = r.data?.toString() ?? '';
+    if (html.contains('系统维护页面')) throw Exception('选课系统维护中');
+    final rounds = parseXkRounds(html);
+    final profile = extractXkProfile(html);
+    return {'rounds': rounds, 'profile': profile};
+  }
+
+  /// 可选课程列表（含教学班行）。[query] 由 [buildXkQuery] 构造。
+  Future<List<dynamic>> selectionCourses(Map<String, dynamic> query) async {
+    final d = await _xkPost('/jwglxt/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html', query);
+    if (d is Map) {
+      if ('$d'.contains('加密串错误')) throw Exception('选课加密串已过期，请刷新重试');
+      final flag = '${d['flag'] ?? ''}';
+      if (flag == '0') throw Exception('${d['msg'] ?? '选课查询失败'}');
+      return (d['tmpList'] as List?) ?? const [];
+    }
+    return d is List ? d : const [];
+  }
+
+  /// 某课程的教学班明细（含提交用的 do_jxb_id 加密串与实时余量）。
+  Future<List<dynamic>> selectionJxbs(Map<String, dynamic> query, String kchId, String kcmc) async {
+    final d = await _xkPost('/jwglxt/xsxk/zzxkyzbjk_cxJxbWithKchZzxkYzb.html', {
+      ...query,
+      'kch_id': kchId,
+      'kcmc': kcmc,
+    });
+    return d is List ? d : const [];
+  }
+
+  /// 提交选课。返回服务端应答（flag=1/6/3 成功，其余 msg 为失败原因）。
+  Future<Map<String, dynamic>> selectionSubmit(Map<String, dynamic> query) async {
+    final d = await _xkPost('/jwglxt/xsxk/zzxkyzb_xkZzxk.html', query);
+    if (d is Map<String, dynamic>) return d;
+    if (d is Map) return Map<String, dynamic>.from(d);
+    return {'flag': '-1', 'msg': '非 JSON 应答'};
+  }
+
+  /// 已选列表。选课会话门槛高，失败时返回空（页面按「暂无已选」处理）。
+  Future<List<dynamic>> selectionChoosed(Map<String, dynamic> query) async {
+    final d = await _xkPost('/jwglxt/xsxk/zzxkyzb_cxZzxkYzbChoosed.html', query);
+    if (d is Map) return (d['items'] as List?) ?? const [];
+    return d is List ? d : const [];
+  }
+
+  /// 教务全量已选课程（xklb=01 主修）；用于选课页展示本学期已选。
+  Future<Map<String, dynamic>> selectionIndex({
+    required String xkkzId,
+    required String xkkzXh,
+    required String kklxdm,
+    required String njdmId,
+    required String zyhId,
+    Map<String, String> profile = const {},
+  }) {
+    return _xkPost('/jwglxt/xsxk/zzxkyzb_cxZzxkYzbDisplay.html', {
+      'xkkz_id': xkkzId,
+      'kklxdm': kklxdm,
+      'xszxzt': '1',
+      'njdm_id': njdmId,
+      'zyh_id': zyhId,
+      'kspage': 0,
+      'jspage': 0,
+      'xkkz_xh': xkkzXh,
+    }).then((d) => d is Map<String, dynamic> ? d : <String, dynamic>{});
+  }
+
   Future<StudentProfile> profile() async {
     var p = const StudentProfile();
     p = p.merge(await _fromGrxx());
@@ -640,6 +775,125 @@ Object? _asJson(Object? data) {
     } catch (_) {}
   }
   return data;
+}
+
+// ---------------- 选课纯函数（可单测） ----------------
+
+String _xkAttr(String html, String name) {
+  final m = RegExp('name="$name"[^>]*value="([^"]*)"').firstMatch(html);
+  return m?.group(1) ?? '';
+}
+
+/// 从选课入口页 HTML 解析轮次列表。
+/// 每个 tab: `queryCourse(this,'01','<xkkz_id>','<njdm>','<zyh>','<xkkz_xh RSA串>')`
+List<Map<String, dynamic>> parseXkRounds(String html) {
+  final out = <Map<String, dynamic>>[];
+  final re = RegExp(
+    r"queryCourse\(this,'([^']+)','([^']+)','([^']+)','([^']+)','([^']*)'\)",
+  );
+  for (final m in re.allMatches(html)) {
+    out.add({
+      'kklxdm': m.group(1) ?? '',
+      'xkkz_id': m.group(2) ?? '',
+      'njdm_id': m.group(3) ?? '',
+      'zyh_id': m.group(4) ?? '',
+      'xkkz_xh': m.group(5) ?? '',
+      // tab 文本在同一个 <li> 里，向前找最近的 >xxx<
+      'kklxmc': _xkTabName(html, m.start),
+    });
+  }
+  return out;
+}
+
+String _xkTabName(String html, int at) {
+  // tab 文本在 onclick 所在 <a> 标签闭合与 </a> 之间：
+  // …queryCourse(…)"> 主修课程</a>
+  final open = html.indexOf('">', at);
+  final gt = open < 0 ? -1 : html.indexOf('>', open);
+  final stop = gt < 0 ? -1 : html.indexOf('</a>', gt);
+  if (gt < 0 || stop < 0) return '';
+  final name = html.substring(gt + 1, stop).trim();
+  if (name.isEmpty || name.contains('input')) return '';
+  return name;
+}
+
+/// 入口页学生画像隐藏字段（PartDisplay 必须原样回传）。
+Map<String, String> extractXkProfile(String html) {
+  const keys = [
+    'xh_id', 'xqh_id', 'jg_id_1', 'zyh_id', 'zyfx_id', 'njdm_id', 'bh_id',
+    'xbm', 'xslbdm', 'mzm', 'xz', 'ccdm', 'xsbj', 'njdm_id_1', 'zyh_id_1',
+    'xkxnm', 'xkxqm', 'xkkz_xh', 'jxbzbkg', 'jxbzhkg', 'qzz', 'xkxfqzfs',
+  ];
+  final out = <String, String>{};
+  for (final k in keys) {
+    final v = _xkAttr(html, k);
+    if (v.isNotEmpty) out[k] = v;
+  }
+  return out;
+}
+
+/// PartDisplay 查询体：轮次 + 画像 + 展开态字段 + 分页（kspage/jspage 从 1 开始）。
+Map<String, dynamic> buildXkQuery({
+    required Map<String, dynamic> round,
+    required Map<String, String> profile,
+    String kchId = '',
+    String kcmc = '',
+    int page = 1,
+    int size = 30,
+    Map<String, String> panel = const {},
+  }) {
+    return {
+      'xkkz_id': round['xkkz_id'],
+      'xkkz_xh': round['xkkz_xh'],
+      'kklxdm': round['kklxdm'],
+      'rwlx': panel['rwlx'] ?? '1',
+      'xklc': panel['xklc'] ?? '',
+      'xkly': panel['xkly'] ?? '0',
+      'bklx_id': '', 'sfkkjyxdnxq': '', 'sfkkjyxdxnxq': '', 'kzkcgs': '0',
+      'jg_id': '', 'gnjkxdnj': '', 'bjgkczxbbjwcx': '',
+      'njdm_id_1': round['njdm_id'], 'zyh_id_1': round['zyh_id'],
+      'zyh_id': round['zyh_id'], 'njdm_id': round['njdm_id'],
+      'zyfx_id': profile['zyfx_id'] ?? 'wfx',
+      'xqh_id': profile['xqh_id'] ?? '',
+      'bh_id': profile['bh_id'] ?? '',
+      'xbm': profile['xbm'] ?? '', 'xslbdm': profile['xslbdm'] ?? '',
+      'mzm': profile['mzm'] ?? '', 'xz': profile['xz'] ?? '',
+      'ccdm': profile['ccdm'] ?? '', 'xsbj': profile['xsbj'] ?? '',
+      'sfkknj': '', 'sfkkzy': '', 'kzybkxy': '', 'sfznkx': '', 'zdkxms': '',
+      'sfkxq': '', 'bhbcyxkjxb': '', 'sfkcfx': '', 'kkbk': '', 'kkbkdj': '',
+      'bklbkcj': '', 'sfkgbcx': '', 'sfrxtgkcxd': '', 'tykczgxdcs': '',
+      'xkxnm': profile['xkxnm'] ?? '', 'xkxqm': profile['xkxqm'] ?? '',
+      'bbhzxjxb': '', 'zxgbxkkg': '', 'xkzgbj': '0', 'rlkz': '0',
+      'jxbzcxskg': '', 'zh': '', 'jxbzb': '',
+      'kch_id': kchId, 'kcmc': kcmc,
+      'kspage': page, 'jspage': page * size - size + 1,
+    };
+  }
+
+/// 余量解析：blzyl(本轮余量) → blyxrs(补选余量) → jxbrl - yxzrs(容量-已选)。
+int xkRemain(Map<String, dynamic> row) {
+  var v = _xkInt(row['blzyl']) ?? _xkInt(row['blyxrs']);
+  if (v == null) {
+    final rl = _xkInt(row['jxbrl']);
+    final yx = _xkInt(row['yxzrs']);
+    if (rl != null && yx != null) v = rl - yx;
+  }
+  return v ?? 0;
+}
+
+int? _xkInt(Object? v) {
+  if (v == null) return null;
+  if (v is num) return v.toInt();
+  final parsed = int.tryParse('$v'.trim());
+  return parsed;
+}
+
+/// 已选教学班 id 集合（Choosed items / 本轮已选标记）。
+Set<String> xkChoosedIds(List<dynamic> items) {
+  return {
+    for (final it in items)
+      if (it is Map && '${it['jxb_id'] ?? ''}'.isNotEmpty) '${it['jxb_id']}',
+  };
 }
 
 class _XyqkNode {
