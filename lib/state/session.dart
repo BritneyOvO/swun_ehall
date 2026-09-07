@@ -802,16 +802,19 @@ class Session extends ChangeNotifier {
   }
 
   Future<void> _ensureKtkqBody() async {
+    await _waitCas();
+    ktkq!.attachCas(cas!);
     await ktkq!.restoreToken();
     if (ktkq!.token != null && ktkq!.token!.isNotEmpty) {
       try {
-        final info = await ktkq!.userInfo().timeout(const Duration(seconds: 8));
+        final info = await ktkq!
+            .userInfo(retry401: false)
+            .timeout(const Duration(seconds: 8));
         final code = info['code'];
         if (code == 200 || code == 0) return;
       } catch (_) {}
       ktkq!.token = null;
     }
-    await _waitCas();
     await ktkq!.loginWithCas(cas!).timeout(const Duration(seconds: 45));
   }
 

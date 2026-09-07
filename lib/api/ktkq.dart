@@ -29,6 +29,8 @@ class KtkqClient {
   bool nightClosed = false;
   Future<void>? _loggingIn;
 
+  void attachCas(CasClient cas) => _cas = cas;
+
   void _auth() {
     if (token != null && token!.isNotEmpty) {
       dio.options.headers['Authorization'] = token;
@@ -36,12 +38,14 @@ class KtkqClient {
   }
 
   Map<String, String> _headers({bool json = false}) {
+    final t = token ?? '';
     return {
       'Accept': 'application/json, text/plain, */*',
       'Referer': '$kKtkq/jwmobile/index',
       'X-Requested-With': 'XMLHttpRequest',
       if (json) 'Content-Type': 'application/json',
-      if (token != null && token!.isNotEmpty) 'Authorization': token!,
+      if (t.isNotEmpty) 'Authorization': t,
+      if (t.isNotEmpty) 'EM-TOKEN': t,
     };
   }
 
@@ -117,18 +121,68 @@ class KtkqClient {
           ? lastUrl
           : await cas.ticketFor(kKtkqService);
       token = await _tokenViaWebView(nav);
+      webTried = true;
     }
     if (token == null || token!.isEmpty) {
       throw Exception('未拿到课堂考勤 token');
     }
+    await _persistToken(token!);
+    // dio 换票后 WebView 还是未登录会话，后续 XHR 会认证失败。
+    if (!webTried) {
+      await _syncWebSession();
+    } else {
+      await _writeLsToken();
+    }
+  }
+
+  /// 金智 API 同时读 cookie 和请求头；不同 path 上的旧 Authorization 会盖过新 token。
+  Future<void> _persistToken(String t) async {
+    token = t;
     _auth();
-    await jar.saveFromResponse(Uri.parse('$kKtkq/jwmobile/'), [
-      Cookie('Authorization', token!)
-        ..domain = 'ktkq.swun.edu.cn'
-        ..path = '/jwmobile'
-        ..httpOnly = true
-        ..secure = true,
-    ]);
+    for (final path in [
+      '/',
+      '/jwmobile',
+      '/jwmobile/',
+      '/jwmobile/index',
+      '/jwmobile/auth/index',
+    ]) {
+      await jar.saveFromResponse(Uri.parse('$kKtkq$path'), [
+        Cookie('Authorization', t)
+          ..domain = 'ktkq.swun.edu.cn'
+          ..path = path
+          ..httpOnly = true
+          ..secure = true,
+      ]);
+    }
+  }
+
+  Future<void> _writeLsToken() async {
+    final t = token;
+    if (t == null || t.isEmpty) return;
+    try {
+      await rs.writeLocalStorage(
+        'Authorization',
+        t,
+        host: Uri.parse(kKtkq).host,
+      );
+      await rs.writeLocalStorage('EM_TOKEN', t, host: Uri.parse(kKtkq).host);
+    } catch (_) {}
+  }
+
+  Future<void> _syncWebSession() async {
+    final t = token;
+    if (t == null || t.isEmpty) return;
+    try {
+      final synced = await _tokenViaWebView(
+        '$kKtkq/jwmobile/index#/index/kb/course/list?token=$t',
+      );
+      if (synced != null && synced.isNotEmpty && synced != t) {
+        await _persistToken(synced);
+      }
+    } catch (e) {
+      debugPrint('[ktkq] webview sync $e');
+    }
+    await _writeLsToken();
   }
 
   Future<String?> _tokenViaWebView(String url) async {
@@ -143,10 +197,11 @@ class KtkqClient {
 
   Future<String?> _tokenFromJar() async {
     for (final path in [
-      '/jwmobile/auth/index',
-      '/jwmobile/',
-      '/jwmobile/index',
       '/',
+      '/jwmobile/',
+      '/jwmobile',
+      '/jwmobile/index',
+      '/jwmobile/auth/index',
     ]) {
       for (final c in await jar.loadForRequest(Uri.parse('$kKtkq$path'))) {
         if (c.name.toLowerCase() != 'authorization') continue;
@@ -201,9 +256,15 @@ class KtkqClient {
       throw Exception('$path 非 JSON');
     }
     nightClosed = false;
-    if (map['code'] == 401 && retry401 && _cas != null) {
-      await loginWithCas(_cas!);
-      return _api(method, path, params: params, data: data, retry401: false);
+    if (ktkqAuthFailed(map, httpStatus: hit.status)) {
+      debugPrint('[ktkq] auth $path code=${map['code']} msg=${map['msg']}');
+      if (retry401 && _cas != null) {
+        token = null;
+        _weekCache = null;
+        await loginWithCas(_cas!);
+        return _api(method, path, params: params, data: data, retry401: false);
+      }
+      throw Exception('${map['msg'] ?? '课堂考勤认证失败'}');
     }
     return map;
   }
@@ -218,13 +279,13 @@ class KtkqClient {
 
   Future<void> dispose() => rs.dispose();
 
-  Future<Map<String, dynamic>> userInfo() => _get('/jwmobile/biz/user/info');
+  Future<Map<String, dynamic>> userInfo({bool retry401 = true}) =>
+      _api('GET', '/jwmobile/biz/user/info', retry401: retry401);
 
   Future<void> restoreToken() async {
     final t = await _tokenFromJar();
     if (t == null) return;
-    token = t;
-    _auth();
+    await _persistToken(t);
   }
 
   Future<StudentProfile> profile() async {
@@ -322,9 +383,12 @@ class KtkqClient {
       {'xnxqdm': xnxqdm, 'skzc': skzc},
     );
     try {
-      out = _normalizeWeek(await pull());
+      final raw = await pull();
+      debugPrint('[ktkq] querySchedule code=${raw['code']} msg=${raw['msg']}');
+      out = _normalizeWeek(raw);
     } catch (e) {
       debugPrint('[ktkq] querySchedule $e');
+      if (ktkqLooksAuthError(e)) rethrow;
       await Future<void>.delayed(const Duration(milliseconds: 400));
       try {
         out = _normalizeWeek(await pull());
@@ -454,12 +518,14 @@ class KtkqClient {
       weekData = await weekCourses(week: week, refresh: refresh);
     } catch (e) {
       debugPrint('[ktkq] week for sign $e');
+      if (ktkqLooksAuthError(e)) rethrow;
     }
     if (_flattenWeek(weekData).isEmpty) {
       try {
         weekData = await weekCourses(week: week, refresh: true);
       } catch (e) {
         debugPrint('[ktkq] week retry $e');
+        if (ktkqLooksAuthError(e)) rethrow;
       }
     }
     final meta = _asMap(weekData['_meta']);
@@ -908,6 +974,28 @@ String _termCodeOf(Map<String, dynamic> m) {
     if (s.isNotEmpty) return s;
   }
   return '';
+}
+
+/// 课堂考勤认证失败：401/403，或 msg 认证失败 / 未登录。
+bool ktkqAuthFailed(Map<dynamic, dynamic> map, {int? httpStatus}) {
+  if (httpStatus == 401 || httpStatus == 403) return true;
+  final code = '${map['code'] ?? ''}';
+  if (code == '401' || code == '403') return true;
+  final msg = '${map['msg'] ?? map['message'] ?? ''}';
+  if (msg.contains('认证失败') || msg.contains('未登录') || msg.contains('登录过期')) {
+    return true;
+  }
+  final lower = msg.toLowerCase();
+  return lower.contains('token') &&
+      (msg.contains('失效') || msg.contains('过期'));
+}
+
+bool ktkqLooksAuthError(Object e) {
+  final s = e.toString();
+  return s.contains('认证失败') ||
+      s.contains('未登录') ||
+      s.contains('登录过期') ||
+      s.contains('课堂考勤认证失败');
 }
 
 /// 8 月–次年 1 月为第 1 学期，其余为第 2 学期。GET school/time 空时兜底。

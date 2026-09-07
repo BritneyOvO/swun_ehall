@@ -5,6 +5,16 @@ const _jwt =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzdHVkZW50Iiwicm9sZSI6InhzIn0.signaturepart';
 
 void main() {
+  test('ktkqAuthFailed matches 认证失败', () {
+    expect(ktkqAuthFailed({'code': 401}), isTrue);
+    expect(ktkqAuthFailed({'code': '401', 'msg': '认证失败'}), isTrue);
+    expect(ktkqAuthFailed({'code': 500, 'msg': '认证失败'}), isTrue);
+    expect(ktkqAuthFailed({'code': 200, 'msg': 'ok'}), isFalse);
+    expect(ktkqAuthFailed({}, httpStatus: 403), isTrue);
+    expect(ktkqLooksAuthError(Exception('认证失败')), isTrue);
+    expect(ktkqLooksAuthError(Exception('网络错误')), isFalse);
+  });
+
   test('calendar xnxqdm matches 金智 学年-学年-学期', () {
     expect(ktkqXnxqdmNow(DateTime(2026, 9, 7)), '2026-2027-1');
     expect(ktkqXnxqdmNow(DateTime(2026, 1, 10)), '2025-2026-1');
