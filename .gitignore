@@ -55,3 +55,6 @@ captures/
 android/key.properties
 android/*.jks
 android/*.keystore
+
+# Private classroom-location ingest
+/server/

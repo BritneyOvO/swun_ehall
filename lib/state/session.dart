@@ -13,6 +13,7 @@ import '../api/gyglxt.dart';
 import '../api/jwxt.dart';
 import '../api/ktkq.dart';
 import '../api/lantu.dart';
+import '../api/room_sync.dart';
 import '../api/ykt.dart';
 import '../api/zhcgm.dart';
 import '../demo/demo_data.dart';
@@ -280,7 +281,7 @@ class Session extends ChangeNotifier {
     String course = '',
   }) async {
     if (demoMode) return;
-    await rooms.record(
+    final fix = await rooms.record(
       room: room,
       latitude: latitude,
       longitude: longitude,
@@ -288,6 +289,9 @@ class Session extends ChangeNotifier {
       course: course,
     );
     notifyListeners();
+    if (fix != null) {
+      unawaited(pushRoomFix(fix));
+    }
   }
 
   Future<void> forgetRoom(RoomFix room) async {

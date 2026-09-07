@@ -88,7 +88,7 @@ class RoomStore {
     } catch (_) {}
   }
 
-  Future<void> record({
+  Future<RoomFix?> record({
     required String room,
     required double latitude,
     required double longitude,
@@ -96,7 +96,7 @@ class RoomStore {
     String course = '',
   }) async {
     final name = room.trim();
-    if (name.isEmpty || !latitude.isFinite || !longitude.isFinite) return;
+    if (name.isEmpty || !latitude.isFinite || !longitude.isFinite) return null;
     final at = DateTime.now();
     final next = RoomFix(
       id: '${at.microsecondsSinceEpoch}',
@@ -109,6 +109,7 @@ class RoomStore {
     );
     items = [next, ...items];
     await _save();
+    return next;
   }
 
   Future<void> remove(String id) async {
