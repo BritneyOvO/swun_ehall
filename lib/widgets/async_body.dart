@@ -53,13 +53,14 @@ class AsyncBody<T> extends StatelessWidget {
             ),
           );
         } else {
-          child = KeyedSubtree(key: const ValueKey('body'), child: builder(context, snap.data as T));
+          child = KeyedSubtree(
+            key: const ValueKey('body'),
+            child: builder(context, snap.data as T),
+          );
         }
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 280),
-          switchInCurve: Curves.easeOutCubic,
-          child: child,
-        );
+        // AnimatedSwitcher 会按子组件固有高度测量，Column+Expanded / ListView
+        // 固有高度是 0，课程卡片就被裁没了。这里占满父布局即可。
+        return SizedBox.expand(child: child);
       },
     );
   }

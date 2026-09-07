@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/gyglxt.dart';
 import '../api/locate.dart';
 import '../demo/demo_data.dart';
 import '../state/session.dart';
@@ -42,10 +43,18 @@ class _ClockPageState extends State<ClockPage> {
       if (s.demoMode) {
         _data = Map<String, dynamic>.from(demoClock);
       } else {
-        if (s.gyglxt?.token == null || s.gyglxt!.token!.isEmpty) {
-          await s.ensureGyglxt().timeout(const Duration(seconds: 25));
+        await s.ensureGyglxt().timeout(const Duration(seconds: 25));
+        try {
+          _data = await s.gyglxt!.dashboard().timeout(const Duration(seconds: 25));
+        } catch (e) {
+          final msg = e.toString();
+          if (msg.contains('失效') || msg.contains('过期') || msg.contains('重新登录')) {
+            await s.ensureGyglxt(force: true).timeout(const Duration(seconds: 25));
+            _data = await s.gyglxt!.dashboard().timeout(const Duration(seconds: 25));
+          } else {
+            rethrow;
+          }
         }
-        _data = await s.gyglxt!.dashboard().timeout(const Duration(seconds: 25));
         final st = _data['status'];
         if (st is! Map || st.isEmpty) {
           _error ??= '打卡状态未取到，点右上角刷新可重试';
@@ -169,12 +178,21 @@ class _ClockPageState extends State<ClockPage> {
         st['backMap'] = back;
         _data['status'] = st;
       } else {
-        final r = await s.gyglxt!.punch(
+        var r = await s.gyglxt!.punch(
           lat: _pos!.latitude,
           lng: _pos!.longitude,
           address: _address,
           taskId: _openTaskId,
         );
+        if (gyTokenExpired(r)) {
+          await s.ensureGyglxt(force: true).timeout(const Duration(seconds: 25));
+          r = await s.gyglxt!.punch(
+            lat: _pos!.latitude,
+            lng: _pos!.longitude,
+            address: _address,
+            taskId: _openTaskId,
+          );
+        }
         final code = r['code'];
         if (code == 0 || code == 200) {
           _toast('${r['msg'] ?? '打卡成功'}');

@@ -35,6 +35,7 @@ const demoXkRounds = [
 const demoXkCourses = [
   {
     'kch_id': '56050556', 'kcmc': '网络舆情智能分析', 'xf': '2.0', 'jxb_id': 'demo-jxb-1',
+    'do_jxb_id': 'demo-do-1',
     'jxbmc': '(2026-2027-1)-56050556-01', 'yxzrs': '46', 'jxbrl': '50', 'jxbzls': '1',
     'jsmc': '王老师', 'sksj': '星期三第5-6节{1-16周}',
   },
@@ -66,6 +67,12 @@ const demoProfile = {
   'campus': '武侯校区',
   'role': '学生',
 };
+
+const demoYktBills = [
+  {'title': '学生食堂', 'time': '2026-09-07 12:31', 'amountYuan': -8.0, 'balanceYuan': 10.7},
+  {'title': '校园超市', 'time': '2026-09-07 18:04', 'amountYuan': -2.5, 'balanceYuan': 18.7},
+  {'title': '圈存转入', 'time': '2026-09-06 09:12', 'amountYuan': 50.0, 'balanceYuan': 21.2},
+];
 
 const demoClock = {
   'status': {

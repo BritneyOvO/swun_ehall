@@ -5,6 +5,12 @@ const _jwt =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzdHVkZW50Iiwicm9sZSI6InhzIn0.signaturepart';
 
 void main() {
+  test('calendar xnxqdm matches 金智 学年-学年-学期', () {
+    expect(ktkqXnxqdmNow(DateTime(2026, 9, 7)), '2026-2027-1');
+    expect(ktkqXnxqdmNow(DateTime(2026, 1, 10)), '2025-2026-1');
+    expect(ktkqXnxqdmNow(DateTime(2026, 3, 1)), '2025-2026-2');
+  });
+
   test('picks xnxqdm from termCode / sfdq like Python client', () {
     expect(
       pickKtkqXnxqdm({'termCode': '2026-2027-1'}, const []),

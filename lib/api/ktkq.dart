@@ -179,7 +179,7 @@ class KtkqClient {
           url: '$kKtkq$path',
           query: params,
           data: data,
-          headers: _headers(json: method.toUpperCase() == 'POST'),
+          headers: _headers(json: true),
         )
         .timeout(
           const Duration(seconds: 25),
@@ -270,6 +270,9 @@ class KtkqClient {
     var xnxqdm = '';
     try {
       final st = await schoolTime();
+      debugPrint(
+        '[ktkq] schoolTime code=${st['code']} keys=${st.keys.toList()} data=${_dataOf(st).keys.toList()}',
+      );
       data = _dataOf(st);
       xnxqdm = pickKtkqXnxqdm(data, const []);
     } catch (e) {
@@ -295,8 +298,17 @@ class KtkqClient {
       }
     }
     if (xnxqdm.isEmpty) {
-      debugPrint('[ktkq] no xnxqdm schoolTime=${data.keys.toList()}');
-      throw Exception('未能确定当前学期');
+      xnxqdm = ktkqXnxqdmNow();
+      debugPrint(
+        '[ktkq] calendar xnxqdm=$xnxqdm schoolTime=${data.keys.toList()}',
+      );
+    }
+    if (data.isEmpty && xnxqdm.isNotEmpty) {
+      try {
+        data = _dataOf(await schoolTime(xnxqdm: xnxqdm));
+      } catch (e) {
+        debugPrint('[ktkq] schoolTime($xnxqdm) $e');
+      }
     }
     final skzc =
         week ?? _asInt(data['todayWeekNum'], _asInt(data['skzc'], 1));
@@ -896,6 +908,14 @@ String _termCodeOf(Map<String, dynamic> m) {
     if (s.isNotEmpty) return s;
   }
   return '';
+}
+
+/// 8 月–次年 1 月为第 1 学期，其余为第 2 学期。GET school/time 空时兜底。
+String ktkqXnxqdmNow([DateTime? now]) {
+  final n = now ?? DateTime.now();
+  if (n.month >= 8) return '${n.year}-${n.year + 1}-1';
+  if (n.month == 1) return '${n.year - 1}-${n.year}-1';
+  return '${n.year - 1}-${n.year}-2';
 }
 
 /// 学年学期代码：school/time 优先，否则 termList 当前项（currentFlag / sfdq），再否则第一项。

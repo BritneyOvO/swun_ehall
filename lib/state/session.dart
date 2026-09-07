@@ -493,7 +493,10 @@ class Session extends ChangeNotifier {
         'profile': demoXkProfile,
       });
     }
-    if (force) _xkEntryFut = null;
+    if (force) {
+      _xkEntryFut = null;
+      _xkCourses = {};
+    }
     final hit = _xkEntryFut;
     if (hit != null) return hit;
     late final Future<Map<String, dynamic>> fut;
@@ -514,13 +517,34 @@ class Session extends ChangeNotifier {
     return fut;
   }
 
-  /// 某轮次的可选课程（含教学班行）。加密串会过期，失败自动刷一次入口。
+  /// 点轮次后官网先 load Display.html，拿到 rwlx/xklc。
+  Future<Map<String, String>> loadSelectionPanel(
+    Map<String, dynamic> round,
+    Map<String, String> profile,
+  ) async {
+    if (demoMode) {
+      return {'rwlx': '1', 'xklc': '1', 'xkly': '0'};
+    }
+    await ensureJwxt().timeout(const Duration(seconds: 25));
+    return jwxt!.selectionDisplay(
+      xkkzId: '${round['xkkz_id'] ?? ''}',
+      xkkzXh: '${round['xkkz_xh'] ?? ''}',
+      kklxdm: '${round['kklxdm'] ?? ''}',
+      njdmId: '${round['njdm_id'] ?? profile['njdm_id'] ?? ''}',
+      zyhId: '${round['zyh_id'] ?? profile['zyh_id'] ?? ''}',
+    );
+  }
+
+  /// 某轮次的可选课程。必须先 await [loadSelectionPanel]。
   Future<List<dynamic>> loadSelectionCourses(
     Map<String, dynamic> round,
     Map<String, String> profile, {
     String keyword = '',
+    Map<String, String> panel = const {},
+    bool force = false,
   }) {
-    final key = '${round['xkkz_id']}|$keyword';
+    final key = '${round['xkkz_id']}|$keyword|${panel['xklc'] ?? ''}';
+    if (force) _xkCourses.remove(key);
     final hit = _xkCourses[key];
     if (hit != null) return hit;
     late final Future<List<dynamic>> fut;
@@ -533,7 +557,12 @@ class Session extends ChangeNotifier {
       }
       try {
         await ensureJwxt().timeout(const Duration(seconds: 25));
-        final query = buildXkQuery(round: round, profile: profile, kcmc: keyword);
+        final query = buildXkQuery(
+          round: round,
+          profile: profile,
+          kcmc: keyword,
+          panel: panel,
+        );
         return await jwxt!.selectionCourses(query);
       } catch (e) {
         if (identical(_xkCourses[key], fut)) _xkCourses.remove(key);
@@ -786,18 +815,19 @@ class Session extends ChangeNotifier {
     await ktkq!.loginWithCas(cas!).timeout(const Duration(seconds: 45));
   }
 
-  Future<void> ensureGyglxt() async {
+  Future<void> ensureGyglxt({bool force = false}) async {
     if (demoMode) return;
     if (gyglxt == null) return;
     if (studentId.isNotEmpty) {
       gyglxt!.username ??= studentId;
     }
-    if (gyglxt!.token == null || gyglxt!.token!.isEmpty) {
+    await _waitCas();
+    gyglxt!.attachCas(cas!);
+    if (!force && (gyglxt!.token == null || gyglxt!.token!.isEmpty)) {
       await gyglxt!.restoreToken();
     }
-    if (gyglxt!.token == null || gyglxt!.token!.isEmpty) {
-      await _waitCas();
-      await gyglxt!.loginWithCas(cas!).timeout(const Duration(seconds: 20));
+    if (force || gyglxt!.token == null || gyglxt!.token!.isEmpty) {
+      await gyglxt!.loginWithCas(cas!).timeout(const Duration(seconds: 25));
     }
     if ((gyglxt!.username == null || gyglxt!.username!.isEmpty) &&
         studentId.isNotEmpty) {

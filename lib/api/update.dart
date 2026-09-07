@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 
 import 'httpx.dart';
 
-const kAppVersion = '1.0.1';
+const kAppVersion = '1.0.2';
 const kGithubRepo = 'BritneyOvO/swun_ehall';
 const kGithubReleasesApi =
     'https://api.github.com/repos/$kGithubRepo/releases';

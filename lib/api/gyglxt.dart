@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:pointycastle/export.dart';
 
 import 'cas.dart';
@@ -25,6 +26,9 @@ class GyglxtClient {
   CasClient? _cas;
   String? token;
   String? username;
+  Future<void>? _loggingIn;
+
+  void attachCas(CasClient cas) => _cas = cas;
 
   Map<String, String> _headers({bool json = false}) {
     return {
@@ -45,6 +49,26 @@ class GyglxtClient {
 
   Future<void> loginWithCas(CasClient cas) async {
     _cas = cas;
+    while (_loggingIn != null) {
+      try {
+        await _loggingIn!;
+      } catch (_) {}
+      if (token != null && token!.isNotEmpty) return;
+    }
+    final done = Completer<void>();
+    _loggingIn = done.future;
+    try {
+      await _loginOnce(cas);
+      if (!done.isCompleted) done.complete();
+    } catch (e, st) {
+      if (!done.isCompleted) done.completeError(e, st);
+      rethrow;
+    } finally {
+      if (identical(_loggingIn, done.future)) _loggingIn = null;
+    }
+  }
+
+  Future<void> _loginOnce(CasClient cas) async {
     var url = await cas.ticketFor(kGyService);
     String? fromResp;
     for (var i = 0; i < 12; i++) {
@@ -70,13 +94,11 @@ class GyglxtClient {
     if (token == null || token!.isEmpty) {
       throw Exception('未拿到公寓系统 token');
     }
+    debugPrint('[gy] login token len=${token!.length}');
     await rs.writeLocalStorage('token', token!);
     await jar.saveFromResponse(Uri.parse(kGy), [
       Cookie('token', token!)..domain = 'gyglxt.swun.edu.cn',
     ]);
-    try {
-      await userInfo();
-    } catch (_) {}
   }
 
   String? _tokenFromText(String raw) {
@@ -100,7 +122,7 @@ class GyglxtClient {
           url: '$kGy$path',
           query: q,
           data: data,
-          headers: _headers(json: method.toUpperCase() == 'POST' && data != null),
+          headers: _headers(json: true),
         )
         .timeout(const Duration(seconds: 15), onTimeout: () {
           throw Exception('公寓系统请求超时');
@@ -114,10 +136,14 @@ class GyglxtClient {
       }
       throw Exception('$path 非 JSON');
     }
-    final code = map['code'];
-    if ((code == 401 || code == '401') && retry401 && _cas != null) {
-      await loginWithCas(_cas!);
-      return _api(method, path, query: query, data: data, retry401: false);
+    if (gyTokenExpired(map, httpStatus: hit.status)) {
+      debugPrint('[gy] expired $path code=${map['code']} msg=${map['msg']}');
+      if (retry401 && _cas != null) {
+        token = null;
+        await loginWithCas(_cas!);
+        return _api(method, path, query: query, data: data, retry401: false);
+      }
+      throw Exception('${map['msg'] ?? '公寓登录已过期，请重试'}');
     }
     return map;
   }
@@ -236,7 +262,11 @@ class GyglxtClient {
   Future<Map<String, dynamic>> _safe(Future<Map<String, dynamic>> fn) async {
     try {
       return await fn.timeout(const Duration(seconds: 10));
-    } catch (_) {
+    } catch (e) {
+      final s = e.toString();
+      if (s.contains('过期') || s.contains('失效') || s.contains('重新登录')) {
+        rethrow;
+      }
       return const {};
     }
   }
@@ -255,4 +285,18 @@ class GyglxtClient {
       'records': parts[3],
     };
   }
+}
+
+/// 公寓接口过期：HTTP 401/403，或 body 里 token失效 / 请重新登录。
+bool gyTokenExpired(Map<dynamic, dynamic> map, {int? httpStatus}) {
+  if (httpStatus == 401 || httpStatus == 403) return true;
+  final code = '${map['code'] ?? ''}';
+  if (code == '401' || code == '403') return true;
+  final msg = '${map['msg'] ?? map['message'] ?? ''}';
+  if (msg.isEmpty) return false;
+  final lower = msg.toLowerCase();
+  if (msg.contains('请重新登录') || msg.contains('未登录')) return true;
+  if (msg.contains('登录失效') || msg.contains('登录过期')) return true;
+  return (lower.contains('token') || msg.contains('令牌')) &&
+      (msg.contains('失效') || msg.contains('过期'));
 }
