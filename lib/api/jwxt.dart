@@ -800,8 +800,40 @@ class JwxtClient {
     return {'flag': '-1', 'msg': '非 JSON 应答'};
   }
 
-  /// 已选列表。官网 `.load` 的是 HTML 片段，不是 JSON。
-  Future<List<dynamic>> selectionChoosed(Map<String, dynamic> query) async {
+  /// 已选列表。官网右侧栏走 ChoosedDisplay JSON（kch_id / jxb_id / t_kch_id）。
+  Future<List<dynamic>> selectionChoosed({
+    Map<String, String> profile = const {},
+    Map<String, String> panel = const {},
+  }) async {
+    try {
+      final d = await _xkPost(
+        '/jwglxt/xsxk/zzxkyzb_cxZzxkYzbChoosedDisplay.html',
+        {
+          'jg_id': panel['jg_id'] ?? profile['jg_id'] ?? profile['jg_id_1'] ?? '',
+          'zyh_id': profile['zyh_id'] ?? panel['zyh_id'] ?? '',
+          'njdm_id': profile['njdm_id'] ?? panel['njdm_id'] ?? '',
+          'zyfx_id': profile['zyfx_id'] ?? panel['zyfx_id'] ?? '',
+          'bh_id': profile['bh_id'] ?? panel['bh_id'] ?? '',
+          'xz': profile['xz'] ?? panel['xz'] ?? '',
+          'ccdm': profile['ccdm'] ?? panel['ccdm'] ?? '',
+          'xqh_id': profile['xqh_id'] ?? panel['xqh_id'] ?? '',
+          'xkxnm': profile['xkxnm'] ?? '',
+          'xkxqm': profile['xkxqm'] ?? '',
+          'xkly': panel['xkly'] ?? '',
+        },
+      );
+      if (d is List) {
+        _xkTrace('ChoosedDisplay n=${d.length}');
+        return d;
+      }
+      final rows = xkRowsOf(d);
+      if (rows.isNotEmpty) {
+        _xkTrace('ChoosedDisplay n=${rows.length}');
+        return rows;
+      }
+    } catch (e) {
+      _xkTrace('ChoosedDisplay $e');
+    }
     try {
       final html = await _xkHtml(
         '/jwglxt/xsxk/zzxkyzb_cxZzxkYzbChoosed.html',
@@ -1182,30 +1214,61 @@ bool xkPartDisplayDone(List<dynamic> rows, int size) {
   return (kcs.last - kcs.first + 1) < size;
 }
 
-/// PartDisplay 按教学班展开；列表页按课程去重，教学班交给 JxbWithKch。
+/// PartDisplay 按教学班展开；列表页按课程去重，记下全部 jxb_id，余量取各班最大。
 List<dynamic> xkCollapseByCourse(List<dynamic> rows) {
-  final seen = <String>{};
-  final out = <dynamic>[];
+  final seen = <String, Map<String, dynamic>>{};
+  final order = <String>[];
+  final extra = <Map<String, dynamic>>[];
   for (final r in rows) {
     if (r is! Map) {
-      out.add(r);
       continue;
     }
-    final id = '${r['kch_id'] ?? ''}';
-    if (id.isEmpty || seen.add(id)) out.add(r);
+    final m = Map<String, dynamic>.from(r);
+    final id = '${m['kch_id'] ?? ''}';
+    if (id.isEmpty) {
+      extra.add(m);
+      continue;
+    }
+    final jxb = '${m['jxb_id'] ?? ''}';
+    if (!seen.containsKey(id)) {
+      m['jxb_ids'] = <String>[if (jxb.isNotEmpty) jxb];
+      seen[id] = m;
+      order.add(id);
+      continue;
+    }
+    final g = seen[id]!;
+    final ids = g['jxb_ids'];
+    if (jxb.isNotEmpty && ids is List && !ids.contains(jxb)) ids.add(jxb);
+    if (_xkRemainBetter(m, g)) {
+      m['jxb_ids'] = ids;
+      seen[id] = m;
+    }
   }
-  return out;
+  return [...[for (final id in order) seen[id]!], ...extra];
 }
 
-/// 余量解析：blzyl(本轮余量) → blyxrs(补选余量) → jxbrl - yxzrs(容量-已选)。
+bool _xkRemainBetter(Map<String, dynamic> next, Map<String, dynamic> cur) {
+  final a = xkRemain(next);
+  final b = xkRemain(cur);
+  if (b < 0 && a >= 0) return true;
+  return a > b;
+}
+
+/// 官网 `setRlxxAddZzxk`：已满是 `yxzrs >= jxbrl`。PartDisplay 的 blzyl 常年是 0，
+/// 不能当成真实余量；容量未知时返回 -1，列表不要标已满。
 int xkRemain(Map<String, dynamic> row) {
-  var v = _xkInt(row['blzyl']) ?? _xkInt(row['blyxrs']);
-  if (v == null) {
-    final rl = _xkInt(row['jxbrl']);
-    final yx = _xkInt(row['yxzrs']);
-    if (rl != null && yx != null) v = rl - yx;
+  final cap = _xkInt(row['jxbrl']) ?? _xkInt(row['jxbrs']);
+  final used = _xkInt(row['yxzrs']);
+  if (cap != null && cap > 0 && used != null) {
+    final n = cap - used;
+    return n < 0 ? 0 : n;
   }
-  return v ?? 0;
+  final bl = _xkInt(row['blzyl']);
+  if (bl != null && bl > 0) return bl;
+  final bx = _xkInt(row['blyxrs']);
+  if (bx != null && bx > 0) return bx;
+  if (cap != null && cap > 0) return cap;
+  return -1;
 }
 
 int? _xkInt(Object? v) {
@@ -1305,15 +1368,37 @@ Map<String, String> xkSaveCourseBody({
   };
 }
 
-/// 已选教学班 id 集合（Choosed items / 本轮已选标记）。
+/// 已选教学班 id 集合（ChoosedDisplay JSON / Choosed.html hidden）。
 Set<String> xkChoosedIds(List<dynamic> items) {
+  const keys = [
+    'jxb_id',
+    'kch_id',
+    't_kch_id',
+    'right_jxb_id',
+    'right_sub_kchid',
+    'right_kchid',
+  ];
   return {
     for (final it in items)
-      if (it is Map) ...[
-        if ('${it['jxb_id'] ?? ''}'.isNotEmpty) '${it['jxb_id']}',
-        if ('${it['kch_id'] ?? ''}'.isNotEmpty) '${it['kch_id']}',
-      ],
+      if (it is Map)
+        for (final k in keys)
+          if ('${it[k] ?? ''}'.isNotEmpty) '${it[k]}',
   };
+}
+
+bool xkRowPicked(Map<String, dynamic> row, Set<String> choosed) {
+  if (choosed.isEmpty) return false;
+  for (final k in const ['jxb_id', 'kch_id', 't_kch_id']) {
+    final v = '${row[k] ?? ''}';
+    if (v.isNotEmpty && choosed.contains(v)) return true;
+  }
+  final extra = row['jxb_ids'];
+  if (extra is Iterable) {
+    for (final id in extra) {
+      if (choosed.contains('$id')) return true;
+    }
+  }
+  return false;
 }
 
 List<dynamic> xkRowsOf(Object? d) {

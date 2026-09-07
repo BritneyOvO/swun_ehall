@@ -122,12 +122,26 @@ void main() {
     expect(p['xkly'], '0');
   });
 
-  test('xkRemain prefers blzyl then blyxrs then capacity-used', () {
-    expect(xkRemain({'blzyl': '3'}), 3);
-    expect(xkRemain({'blzyl': null, 'blyxrs': 5}), 5);
+  test('xkRemain uses jxbrl-yxzrs like official setRlxxAddZzxk', () {
     expect(xkRemain({'jxbrl': '54', 'yxzrs': '44'}), 10);
     expect(xkRemain({'jxbrl': '50', 'yxzrs': '50'}), 0);
-    expect(xkRemain({}), 0);
+    expect(xkRemain({'blzyl': '0', 'blyxrs': '0', 'jxbrl': '50', 'yxzrs': '46'}), 4);
+    expect(xkRemain({'blzyl': '0', 'blyxrs': '0'}), -1);
+    expect(xkRemain({'blzyl': '3'}), 3);
+    expect(xkRemain({'blyxrs': 5}), 5);
+    expect(xkRemain({}), -1);
+  });
+
+  test('xkRowPicked matches course id even when jxb differs', () {
+    expect(
+      xkRowPicked({'jxb_id': 'J1', 'kch_id': 'C1'}, {'C1'}),
+      isTrue,
+    );
+    expect(
+      xkRowPicked({'jxb_id': 'J1', 'kch_id': 'C1', 'jxb_ids': ['J2']}, {'J2'}),
+      isTrue,
+    );
+    expect(xkRowPicked({'jxb_id': 'J1', 'kch_id': 'C1'}, {'X'}), isFalse);
   });
 
   test('xkChoosedIds collects non-empty jxb ids', () {
@@ -138,6 +152,7 @@ void main() {
       {'jxb_id': 'B2'},
     ]);
     expect(ids, {'A1', 'B2'});
+    expect(xkChoosedIds([{'t_kch_id': 'C1', 'kch_id': 'C1', 'jxb_id': 'J1'}]), {'C1', 'J1'});
   });
 
   test('xkRowsOf reads tmpList then items', () {

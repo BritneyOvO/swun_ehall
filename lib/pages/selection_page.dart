@@ -259,7 +259,7 @@ class _XkBoardState extends State<_XkBoard> {
           force: true,
         );
         if (!mounted) return;
-        _loadChoosed();
+        await _loadChoosed();
       }
       if (!mounted) return;
       setState(() {
@@ -279,13 +279,21 @@ class _XkBoardState extends State<_XkBoard> {
     final s = context.read<Session>();
     if (s.demoMode || s.jwxt == null) return;
     try {
-      final chosen = await s.jwxt!.selectionChoosed(const {});
+      final profile = <String, String>{
+        ...widget.profile,
+        if ('${widget.round['zyh_id'] ?? ''}'.isNotEmpty)
+          'zyh_id': '${widget.round['zyh_id']}',
+        if ('${widget.round['njdm_id'] ?? ''}'.isNotEmpty)
+          'njdm_id': '${widget.round['njdm_id']}',
+      };
+      final chosen = await s.jwxt!.selectionChoosed(
+        profile: profile,
+        panel: _panel,
+      );
       if (!mounted) return;
-      setState(() {
-        _choosed
-          ..clear()
-          ..addAll(xkChoosedIds(chosen));
-      });
+      _choosed
+        ..clear()
+        ..addAll(xkChoosedIds(chosen));
     } catch (e) {
       debugPrint('[xk] choosed $e');
     }
@@ -341,11 +349,8 @@ class _XkBoardState extends State<_XkBoard> {
 
   Widget _courseTile(Map<String, dynamic> row) {
     final remain = xkRemain(row);
-    final jxbId = '${row['jxb_id'] ?? ''}';
     final kchId = '${row['kch_id'] ?? ''}';
-    final picked =
-        (jxbId.isNotEmpty && _choosed.contains(jxbId)) ||
-        (jxbId.isEmpty && kchId.isNotEmpty && _choosed.contains(kchId));
+    final picked = xkRowPicked(row, _choosed);
     final accent = picked
         ? const Color(0xFF2E9E5B)
         : remain > 0
@@ -371,7 +376,12 @@ class _XkBoardState extends State<_XkBoard> {
             else if (kchId.isNotEmpty && kchId.length <= 16)
               kchId,
             '${row['xf'] ?? '?'}学分',
-            picked ? '已选上' : (remain > 0 ? '余 $remain' : '已满'),
+            if (picked)
+              '已选上'
+            else if (remain > 0)
+              '余 $remain'
+            else if (remain == 0)
+              '已满',
           ].join('  '),
           style: TextStyle(color: context.muted),
         ),
@@ -583,9 +593,12 @@ class _XkBoardState extends State<_XkBoard> {
                         [
                           if ('${j['sksj'] ?? ''}'.isNotEmpty) '${j['sksj']}',
                           if ('${j['jxdd'] ?? ''}'.isNotEmpty) '${j['jxdd']}',
-                          remain > 0
-                              ? '余 $remain / $rl'
-                              : '已满 ${j['yxzrs'] ?? '?'} / $rl',
+                          if (remain > 0)
+                            '余 $remain / $rl'
+                          else if (remain == 0)
+                            '已满 ${j['yxzrs'] ?? '?'} / $rl'
+                          else if ('${j['yxzrs'] ?? ''}'.isNotEmpty)
+                            '${j['yxzrs']} / $rl',
                         ].join(' · '),
                       ),
                       onTap: () => Navigator.pop(ctx, j),
