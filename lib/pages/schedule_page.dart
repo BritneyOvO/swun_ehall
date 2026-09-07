@@ -210,12 +210,15 @@ class _WeekBar extends StatelessWidget {
             icon: const Icon(Icons.chevron_right_rounded),
             color: kCrimson,
           ),
-          Text('/ $maxWeek', style: const TextStyle(color: Colors.black45, fontSize: 12)),
+          Text(
+            '/ $maxWeek',
+            style: TextStyle(color: context.muted, fontSize: 12),
+          ),
           const Spacer(),
           if (!isCurrent)
             TextButton(onPressed: onCurrent, child: const Text('回本周'))
           else
-            const Text('本周', style: TextStyle(color: Colors.black45, fontSize: 13)),
+            Text('本周', style: TextStyle(color: context.muted, fontSize: 13)),
         ],
       ),
     );

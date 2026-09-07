@@ -156,7 +156,7 @@ class _GradesPageState extends State<GradesPage> {
                                 style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
                             ),
-                            const Icon(Icons.chevron_right_rounded, color: Colors.black26),
+                            Icon(Icons.chevron_right_rounded, color: context.muted),
                           ],
                         ),
                       ),
@@ -257,7 +257,7 @@ class _SummaryBar extends StatelessWidget {
         alignment: Alignment.centerLeft,
         child: Text(
           '共 ${items.length} 门 · $creditText 学分 · 平均绩点 $gpaText',
-          style: const TextStyle(color: Colors.black54),
+          style: TextStyle(color: context.muted),
         ),
       ),
     );

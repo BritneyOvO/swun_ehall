@@ -352,16 +352,16 @@ class _XkBoardState extends State<_XkBoard> {
         ? context.primary
         : context.muted;
     return Material(
-      color: Colors.white,
-      elevation: 1,
+      color: context.panel,
+      elevation: 0,
       borderRadius: BorderRadius.circular(12),
       child: ListTile(
         title: Text(
           '${row['kcmc'] ?? ''}',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Colors.black,
+            color: context.ink,
           ),
         ),
         subtitle: Text(
@@ -373,7 +373,7 @@ class _XkBoardState extends State<_XkBoard> {
             '${row['xf'] ?? '?'}学分',
             picked ? '已选上' : (remain > 0 ? '余 $remain' : '已满'),
           ].join('  '),
-          style: const TextStyle(color: Colors.black54),
+          style: TextStyle(color: context.muted),
         ),
         trailing: Text(
           picked ? '已选' : '选课',

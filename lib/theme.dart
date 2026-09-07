@@ -107,6 +107,20 @@ ThemeData buildThemeFromPack(ThemePack pack) {
       style: TextButton.styleFrom(foregroundColor: muted),
     ),
     listTileTheme: ListTileThemeData(iconColor: ink, textColor: ink),
+    iconTheme: IconThemeData(color: ink, size: 22),
+    textTheme: (dark
+            ? Typography.material2021().white
+            : Typography.material2021().black)
+        .apply(bodyColor: ink, displayColor: ink),
+    dialogTheme: DialogThemeData(
+      backgroundColor: card,
+      titleTextStyle: TextStyle(
+        color: ink,
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+      ),
+      contentTextStyle: TextStyle(color: ink, fontSize: 14, height: 1.4),
+    ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: dark ? const Color(0xFF2A2724) : ink,

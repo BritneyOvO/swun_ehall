@@ -153,11 +153,11 @@ class _YktPageState extends State<YktPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 6),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
                 child: Text(
                   '余额',
-                  style: TextStyle(color: kMuted, fontSize: 13),
+                  style: TextStyle(color: context.muted, fontSize: 13),
                 ),
               ),
               const Spacer(),
@@ -180,10 +180,10 @@ class _YktPageState extends State<YktPage> {
           const SizedBox(height: 12),
           _billsCard(),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             '温馨提示：二维码显示异常时请切换校园网后点右上角刷新。付款码走一卡通瑞数网关，请勿截图长时间外传。',
             style: TextStyle(
-              color: Colors.black45,
+              color: context.muted,
               fontSize: 12,
               height: 1.4,
             ),
@@ -216,7 +216,7 @@ class _YktPageState extends State<YktPage> {
                   _qrError ?? '暂无二维码',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: _qrError == null ? Colors.black54 : kCrimson,
+                    color: _qrError == null ? context.muted : kCrimson,
                   ),
                 ),
               )
@@ -249,13 +249,13 @@ class _YktPageState extends State<YktPage> {
               Text(
                 _payload!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.black45, fontSize: 12),
+                style: TextStyle(color: context.muted, fontSize: 12),
               ),
             ],
             const SizedBox(height: 8),
-            const Text(
+            Text(
               '每分钟自动刷新',
-              style: TextStyle(color: Colors.black54, fontSize: 13),
+              style: TextStyle(color: context.muted, fontSize: 13),
             ),
             if (_qrError != null && _payload != null) ...[
               const SizedBox(height: 8),
@@ -291,17 +291,17 @@ class _YktPageState extends State<YktPage> {
                   child: Text(
                     _billsError!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: kMuted, fontSize: 13),
+                    style: TextStyle(color: context.muted, fontSize: 13),
                   ),
                 ),
               )
             else if (_bills.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Center(
                   child: Text(
                     '暂无明细',
-                    style: TextStyle(color: kMuted, fontSize: 13),
+                    style: TextStyle(color: context.muted, fontSize: 13),
                   ),
                 ),
               )
@@ -333,7 +333,7 @@ class _YktPageState extends State<YktPage> {
           if (b.balanceYuan != null)
             '余额 ¥ ${b.balanceYuan!.toStringAsFixed(2)}',
         ].join('  '),
-        style: const TextStyle(color: Colors.black54, fontSize: 12),
+        style: TextStyle(color: context.muted, fontSize: 12),
       ),
       trailing: Text(
         '$sign¥ ${b.amountYuan.abs().toStringAsFixed(2)}',

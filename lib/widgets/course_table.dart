@@ -81,6 +81,7 @@ class CourseTable extends StatelessWidget {
                       byDay: byDay,
                       periods: n,
                       periodH: _periodH,
+                      line: context.ink.withValues(alpha: 0.14),
                       onTap: onLessonTap,
                     ),
                   ),
@@ -122,12 +123,14 @@ class _Grid extends StatelessWidget {
     required this.byDay,
     required this.periods,
     required this.periodH,
+    required this.line,
     this.onTap,
   });
 
   final Map<int, List<_Placed>> byDay;
   final int periods;
   final double periodH;
+  final Color line;
   final ValueChanged<Lesson>? onTap;
 
   static const _days = 7;
@@ -136,7 +139,12 @@ class _Grid extends StatelessWidget {
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: CustomPaint(
-        painter: _GridPainter(days: _days, periods: periods, periodH: periodH),
+        painter: _GridPainter(
+          days: _days,
+          periods: periods,
+          periodH: periodH,
+          line: line,
+        ),
         child: LayoutBuilder(
           builder: (context, box) {
             final colW = box.maxWidth / _days;
@@ -162,21 +170,23 @@ class _Grid extends StatelessWidget {
 }
 
 class _GridPainter extends CustomPainter {
-  const _GridPainter({required this.days, required this.periods, required this.periodH});
+  const _GridPainter({
+    required this.days,
+    required this.periods,
+    required this.periodH,
+    required this.line,
+  });
 
   final int days;
   final int periods;
   final double periodH;
-
-  static const _h = Color(0x0F000000);
-  static const _h0 = Color(0x0A000000);
-  static const _v = Color(0x0D000000);
+  final Color line;
 
   @override
   void paint(Canvas canvas, Size size) {
     final hp = Paint()..strokeWidth = 1;
     final vp = Paint()
-      ..color = _v
+      ..color = line
       ..strokeWidth = 1;
     final colW = size.width / days;
     for (var d = 1; d <= days; d++) {
@@ -184,7 +194,7 @@ class _GridPainter extends CustomPainter {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), vp);
     }
     for (var p = 0; p <= periods; p++) {
-      hp.color = p == 0 ? _h0 : _h;
+      hp.color = p == 0 ? line.withValues(alpha: line.a * 0.7) : line;
       final y = p * periodH;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), hp);
     }
@@ -192,7 +202,10 @@ class _GridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _GridPainter old) =>
-      old.days != days || old.periods != periods || old.periodH != periodH;
+      old.days != days ||
+      old.periods != periods ||
+      old.periodH != periodH ||
+      old.line != line;
 }
 
 class _DayHead extends StatelessWidget {
@@ -203,7 +216,7 @@ class _DayHead extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? kCrimson : kMuted;
+    final color = active ? context.primary : context.muted;
     final weight = active ? FontWeight.w600 : FontWeight.w400;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -235,11 +248,24 @@ class _TimeCell extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('$index', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: kInk)),
+          Text(
+            '$index',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              color: context.ink,
+            ),
+          ),
           if (t != null && t.start.isNotEmpty)
-            Text(t.start, style: const TextStyle(fontSize: 9, color: Colors.black45, height: 1.05)),
+            Text(
+              t.start,
+              style: TextStyle(fontSize: 9, color: context.muted, height: 1.05),
+            ),
           if (t != null && t.end.isNotEmpty)
-            Text(t.end, style: const TextStyle(fontSize: 9, color: Colors.black45, height: 1.05)),
+            Text(
+              t.end,
+              style: TextStyle(fontSize: 9, color: context.muted, height: 1.05),
+            ),
         ],
       ),
     );
