@@ -15,7 +15,6 @@ import 'exams_page.dart';
 import 'ktkq_page.dart';
 import 'ktkq_sign_page.dart';
 import 'selection_page.dart';
-import 'venue_page.dart';
 import 'ykt_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -83,7 +82,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ('svc.ykt', '一卡通', const YktPage(), accents[0]),
       ('svc.credits', '学分', const CreditsPage(), accents[1]),
       ('svc.exams', '考试', const ExamsPage(), accents[2]),
-      ('svc.venue', '预约场馆', const VenuePage(), accents[3]),
       ('svc.ktkq', '课堂考勤', const KtkqPage(), accents[4]),
       ('svc.clock', '公寓打卡', const ClockPage(), accents[5]),
       ('svc.xk', '选课', const SelectionPage(), accents[6]),
