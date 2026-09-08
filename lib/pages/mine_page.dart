@@ -6,13 +6,7 @@ import '../state/session.dart';
 import '../theme.dart';
 import '../widgets/loader.dart';
 import '../widgets/motion.dart';
-import 'clock_page.dart';
-import 'credits_page.dart';
-import 'exams_page.dart';
-import 'ktkq_page.dart';
 import 'settings_page.dart';
-import 'venue_page.dart';
-import 'ykt_page.dart';
 
 class MinePage extends StatefulWidget {
   const MinePage({super.key});
@@ -66,62 +60,6 @@ class _MinePageState extends State<MinePage> {
             ),
           ),
           const SizedBox(height: 16),
-          FadeSlideIn(
-            delay: const Duration(milliseconds: 80),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: context.panel,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: context.line.withValues(alpha: 0.7)),
-              ),
-              child: Column(
-                children: [
-                  _item(
-                    context,
-                    Icons.qr_code_2_rounded,
-                    '一卡通付款码',
-                    const YktPage(),
-                  ),
-                  Divider(height: 1, indent: 52, color: context.line),
-                  _item(
-                    context,
-                    Icons.pie_chart_rounded,
-                    '共修学分',
-                    const CreditsPage(),
-                  ),
-                  Divider(height: 1, indent: 52, color: context.line),
-                  _item(
-                    context,
-                    Icons.edit_calendar_rounded,
-                    '考试安排',
-                    const ExamsPage(),
-                  ),
-                  Divider(height: 1, indent: 52, color: context.line),
-                  _item(
-                    context,
-                    Icons.sports_rounded,
-                    '预约场馆',
-                    const VenuePage(),
-                  ),
-                  Divider(height: 1, indent: 52, color: context.line),
-                  _item(
-                    context,
-                    Icons.fingerprint_rounded,
-                    '课堂考勤',
-                    const KtkqPage(),
-                  ),
-                  Divider(height: 1, indent: 52, color: context.line),
-                  _item(
-                    context,
-                    Icons.location_on_rounded,
-                    '公寓打卡',
-                    const ClockPage(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
           FadeSlideIn(
             delay: const Duration(milliseconds: 120),
             child: DecoratedBox(
