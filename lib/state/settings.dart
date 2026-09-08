@@ -11,6 +11,7 @@ class AppSettings extends ChangeNotifier {
   bool ready = false;
   bool followSystem = true;
   bool checkUpdateOnLaunch = true;
+  bool developerMode = false;
   String packId = 'light';
   List<ThemePack> packs = [ThemePack.fallbackLight];
   String? _path;
@@ -67,6 +68,9 @@ class AppSettings extends ChangeNotifier {
           if (m['checkUpdateOnLaunch'] is bool) {
             checkUpdateOnLaunch = m['checkUpdateOnLaunch'] as bool;
           }
+          if (m['developerMode'] is bool) {
+            developerMode = m['developerMode'] as bool;
+          }
         }
       }
     } catch (_) {}
@@ -83,6 +87,12 @@ class AppSettings extends ChangeNotifier {
 
   Future<void> setCheckUpdateOnLaunch(bool v) async {
     checkUpdateOnLaunch = v;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> setDeveloperMode(bool v) async {
+    developerMode = v;
     notifyListeners();
     await _save();
   }
@@ -127,6 +137,7 @@ class AppSettings extends ChangeNotifier {
         'followSystem': followSystem,
         'pack': packId,
         'checkUpdateOnLaunch': checkUpdateOnLaunch,
+        'developerMode': developerMode,
       }));
     } catch (_) {}
   }

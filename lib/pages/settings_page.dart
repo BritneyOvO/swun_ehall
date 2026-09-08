@@ -388,6 +388,8 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
   static const _repoUrl = 'https://github.com/$kGithubRepo';
 
   bool _checking = false;
+  var _devTaps = 0;
+  DateTime? _devTapAt;
 
   Future<void> _check() async {
     if (_checking) return;
@@ -399,8 +401,40 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
     }
   }
 
+  void _tapIcon() {
+    HapticFeedback.selectionClick();
+    final now = DateTime.now();
+    if (_devTapAt == null || now.difference(_devTapAt!) > const Duration(seconds: 3)) {
+      _devTaps = 0;
+    }
+    _devTapAt = now;
+    _devTaps++;
+    final settings = context.read<AppSettings>();
+    if (settings.developerMode) {
+      if (_devTaps >= 6) {
+        _devTaps = 0;
+        _toast('已是开发者模式');
+      }
+      return;
+    }
+    final left = 6 - _devTaps;
+    if (left > 0) {
+      if (_devTaps >= 3) _toast('再点 $left 次开启开发者模式');
+      return;
+    }
+    _devTaps = 0;
+    settings.setDeveloperMode(true);
+    _toast('已开启开发者模式');
+  }
+
+  void _toast(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final settings = context.watch<AppSettings>();
     return Scaffold(
       appBar: AppBar(title: const Text('关于')),
       body: ListView(
@@ -408,7 +442,22 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
         children: [
           const SizedBox(height: 12),
           Center(
-            child: Image.asset('assets/icon/splash.png', width: 72, height: 72, filterQuality: FilterQuality.medium),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _tapIcon,
+              child: SizedBox(
+                width: 88,
+                height: 88,
+                child: Center(
+                  child: Image.asset(
+                    'assets/icon/splash.png',
+                    width: 72,
+                    height: 72,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 14),
           Text(
@@ -439,6 +488,21 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
               ],
             ),
           ),
+          if (settings.developerMode) ...[
+            const SizedBox(height: 16),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: context.panel,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.line),
+              ),
+              child: SwitchListTile(
+                title: const Text('开发者模式'),
+                value: settings.developerMode,
+                onChanged: (v) => settings.setDeveloperMode(v),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           FilledButton.tonal(
             onPressed: _checking ? null : _check,

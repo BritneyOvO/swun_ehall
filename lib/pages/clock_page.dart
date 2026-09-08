@@ -7,6 +7,7 @@ import '../api/gyglxt.dart';
 import '../api/locate.dart';
 import '../demo/demo_data.dart';
 import '../state/session.dart';
+import '../state/settings.dart';
 import '../theme.dart';
 import '../widgets/loader.dart';
 
@@ -158,20 +159,45 @@ class _ClockPageState extends State<ClockPage> {
     return null;
   }
 
-  Future<void> _punch() async {
+  ({double lat, double lng, String address}) _campusFix() {
+    for (final f in _fences) {
+      final lat = double.tryParse('${f['lat'] ?? ''}');
+      final lng = double.tryParse('${f['lng'] ?? ''}');
+      if (lat == null || lng == null) continue;
+      if (!lat.isFinite || !lng.isFinite) continue;
+      return (lat: lat, lng: lng, address: '西南民族大学（校内）');
+    }
+    const demo = AppLocator.demoFix;
+    return (lat: demo.latitude, lng: demo.longitude, address: '西南民族大学（校内）');
+  }
+
+  Future<void> _punch({bool campus = false}) async {
     final s = context.read<Session>();
-    if (_pos == null) {
-      await _locate();
+    late double lat;
+    late double lng;
+    late String address;
+    if (campus) {
+      final fix = _campusFix();
+      lat = fix.lat;
+      lng = fix.lng;
+      address = fix.address;
+    } else {
       if (_pos == null) {
-        _toast(_locError ?? '还没有定位');
-        return;
+        await _locate();
+        if (_pos == null) {
+          _toast(_locError ?? '还没有定位');
+          return;
+        }
       }
+      lat = _pos!.latitude;
+      lng = _pos!.longitude;
+      address = _address;
     }
     setState(() => _punching = true);
     try {
       if (s.demoMode) {
         await Future<void>.delayed(const Duration(milliseconds: 600));
-        _toast('示例模式：已模拟打卡成功');
+        _toast(campus ? '示例模式：已模拟校内打卡' : '示例模式：已模拟打卡成功');
         final st = Map<String, dynamic>.from(_data['status'] as Map? ?? {});
         final back = Map<String, dynamic>.from(st['backMap'] as Map? ?? {});
         back['isClock'] = true;
@@ -179,17 +205,17 @@ class _ClockPageState extends State<ClockPage> {
         _data['status'] = st;
       } else {
         var r = await s.gyglxt!.punch(
-          lat: _pos!.latitude,
-          lng: _pos!.longitude,
-          address: _address,
+          lat: lat,
+          lng: lng,
+          address: address,
           taskId: _openTaskId,
         );
         if (gyTokenExpired(r)) {
           await s.ensureGyglxt(force: true).timeout(const Duration(seconds: 25));
           r = await s.gyglxt!.punch(
-            lat: _pos!.latitude,
-            lng: _pos!.longitude,
-            address: _address,
+            lat: lat,
+            lng: lng,
+            address: address,
             taskId: _openTaskId,
           );
         }
@@ -249,6 +275,13 @@ class _ClockPageState extends State<ClockPage> {
                         ? const SwunBusyDots(color: Colors.white, size: 5)
                         : Text(done ? '再次打卡' : '立即打卡'),
                   ),
+                  if (context.watch<AppSettings>().developerMode) ...[
+                    const SizedBox(height: 8),
+                    FilledButton.tonal(
+                      onPressed: _punching ? null : () => _punch(campus: true),
+                      child: const Text('一键校内打卡'),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   const Text('最近记录', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
