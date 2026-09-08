@@ -39,12 +39,10 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _pickSaved(Session session, String id) async {
     if (session.busy) return;
-    final ok = await session.switchTo(id);
-    if (ok || !mounted) return;
     _user.text = id;
     final pwd = await session.accounts.passwordOf(id);
     if (!mounted) return;
-    if (pwd != null && pwd.isNotEmpty) _pass.text = pwd;
+    _pass.text = pwd ?? '';
   }
 
   @override
