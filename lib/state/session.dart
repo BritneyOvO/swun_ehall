@@ -58,6 +58,7 @@ class Session extends ChangeNotifier {
   Future<Map<String, dynamic>>? _xkEntryFut;
   Map<String, Future<List<dynamic>>> _xkCourses = {};
   Completer<void>? _casGate;
+  Future<void>? _casRelogin;
   Future<void>? _ensuringKtkq;
   String? _teacherPath;
   final _teacherSlot = <String, String>{};
@@ -343,11 +344,36 @@ class Session extends ChangeNotifier {
     final g = _casGate;
     if (g != null) {
       try {
-        await g.future.timeout(const Duration(seconds: 20));
+        await g.future.timeout(const Duration(seconds: 45));
       } catch (_) {}
       if (cas != null && await cas!.hasTgt()) return;
     }
-    throw Exception('尚未登录统一身份');
+    await _reloginCas();
+    if (cas != null && await cas!.hasTgt()) return;
+    throw Exception('统一身份已过期，请重新登录');
+  }
+
+  Future<void> _reloginCas() async {
+    if (demoMode || cas == null) return;
+    while (_casRelogin != null) {
+      try {
+        await _casRelogin;
+      } catch (_) {}
+      if (await cas!.hasTgt()) return;
+    }
+    final id = studentId.isNotEmpty ? studentId : accounts.currentId;
+    if (id == null || id.isEmpty) return;
+    final pwd = await accounts.passwordOf(id);
+    if (pwd == null || pwd.isEmpty) return;
+    final done = cas!.login(id, pwd);
+    _casRelogin = done;
+    try {
+      await done.timeout(const Duration(seconds: 45));
+    } catch (e) {
+      debugPrint('[cas] relogin $e');
+    } finally {
+      if (identical(_casRelogin, done)) _casRelogin = null;
+    }
   }
 
   void enterDemo() {

@@ -45,13 +45,22 @@ class CasClient {
   final CookieJar jar;
   final Dio dio;
 
-  Future<void> _dropTgt() async {
-    for (final origin in ['https://authserver.swun.edu.cn', 'http://authserver.swun.edu.cn']) {
-      final uri = Uri.parse('$origin/authserver/login');
-      final cookies = await jar.loadForRequest(uri);
-      final expired = <Cookie>[];
-      for (final c in cookies) {
-        if (c.name == 'CASTGC' || c.name == 'TGC') {
+  Future<void>? _loggingIn;
+
+  Future<void> _dropAuthCookies({bool sessionToo = false}) async {
+    final names = sessionToo
+        ? const {'CASTGC', 'TGC', 'JSESSIONID', 'SESSION'}
+        : const {'CASTGC', 'TGC'};
+    for (final origin in [
+      'https://authserver.swun.edu.cn',
+      'http://authserver.swun.edu.cn',
+    ]) {
+      for (final path in ['/authserver/login', '/authserver/', '/']) {
+        final uri = Uri.parse('$origin$path');
+        final cookies = await jar.loadForRequest(uri);
+        final expired = <Cookie>[];
+        for (final c in cookies) {
+          if (!names.contains(c.name)) continue;
           expired.add(
             Cookie(c.name, '')
               ..domain = c.domain
@@ -60,8 +69,8 @@ class CasClient {
               ..maxAge = 0,
           );
         }
+        if (expired.isNotEmpty) await jar.saveFromResponse(uri, expired);
       }
-      if (expired.isNotEmpty) await jar.saveFromResponse(uri, expired);
     }
   }
 
@@ -96,15 +105,38 @@ class CasClient {
   }
 
   Future<void> login(String username, String password) async {
-    await _dropTgt();
+    if (_loggingIn != null) {
+      try {
+        await _loggingIn;
+      } catch (_) {}
+      if (await hasTgt()) return;
+    }
+    final fut = _loginOnce(username, password);
+    _loggingIn = fut;
+    try {
+      await fut;
+    } finally {
+      if (identical(_loggingIn, fut)) _loggingIn = null;
+    }
+  }
+
+  Future<void> _loginOnce(String username, String password) async {
+    await _dropAuthCookies();
     var page = await _loginPage();
     if (isRedirect(page) && loc(page).contains('ticket=')) {
-      await _dropTgt();
+      await _dropAuthCookies(sessionToo: true);
       page = await _loginPage();
     }
     if (isRedirect(page) && loc(page).contains('ticket=')) {
       await _consumeService(loc(page));
-      return;
+      if (await hasTgt()) return;
+      await _dropAuthCookies(sessionToo: true);
+      page = await _loginPage();
+    }
+    if (isRedirect(page) && loc(page).contains('ticket=')) {
+      await _consumeService(loc(page));
+      if (await hasTgt()) return;
+      throw Exception('统一身份未拿到登录凭证');
     }
     if (page.statusCode != 200) {
       throw Exception('登录页 HTTP ${page.statusCode}');
@@ -156,11 +188,19 @@ class CasClient {
       throw Exception('登录异常: 未拿到 ticket');
     }
     await _consumeService(loc(r));
+    if (!await hasTgt()) {
+      throw Exception('统一身份未拿到登录凭证');
+    }
   }
 
   Future<bool> hasTgt() async {
-    final cookies = await jar.loadForRequest(Uri.parse('$kAuthBase/login'));
-    return cookies.any((c) => c.name == 'CASTGC' && c.value.isNotEmpty);
+    for (final path in ['/authserver/login', '/authserver/', '/authserver']) {
+      final cookies = await jar.loadForRequest(
+        Uri.parse('https://authserver.swun.edu.cn$path'),
+      );
+      if (cookies.any(casCookieIsTgt)) return true;
+    }
+    return false;
   }
 
   Future<bool> tgtAlive() async {
@@ -198,4 +238,9 @@ class CasClient {
     }
     throw Exception('未能换到 ticket (会话可能已过期)');
   }
+}
+
+bool casCookieIsTgt(Cookie c) {
+  final n = c.name.toUpperCase();
+  return (n == 'CASTGC' || n == 'TGC') && c.value.isNotEmpty;
 }
