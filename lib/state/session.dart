@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:cookie_jar/cookie_jar.dart';
@@ -18,12 +17,14 @@ import '../api/ykt.dart';
 import '../api/zhcgm.dart';
 import '../demo/demo_data.dart';
 import '../models/credit.dart';
-import '../models/lesson.dart';
 import '../models/profile.dart';
-import '../models/term.dart';
+import 'academic_store.dart';
 import 'accounts.dart';
 import 'rooms.dart';
+import 'schedule_store.dart';
+import 'selection_store.dart';
 
+/// 账号会话：登录 / CAS / 各站点客户端。课表、教务、选课缓存见三个 Store。
 class Session extends ChangeNotifier {
   PersistCookieJar? _jar;
   CasClient? cas;
@@ -36,6 +37,9 @@ class Session extends ChangeNotifier {
   ZhcgmClient? zhcgm;
   final accounts = AccountStore();
   final rooms = RoomStore();
+  late final schedule = ScheduleStore(onChange: notifyListeners);
+  final academic = AcademicStore();
+  final selection = SelectionStore();
   Directory? _support;
 
   bool ready = false;
@@ -51,18 +55,9 @@ class Session extends ChangeNotifier {
 
   DateTime? _profileAt;
   bool _profileBusy = false;
-  Future<Map<String, dynamic>>? _kbFut;
-  final _cjCache = <String, Future<Map<String, dynamic>>>{};
-  Future<CreditProgress>? _xfFut;
-  Future<Map<String, dynamic>>? _ksFut;
-  Future<Map<String, dynamic>>? _xkEntryFut;
-  Map<String, Future<List<dynamic>>> _xkCourses = {};
   Completer<void>? _casGate;
   Future<void>? _casRelogin;
   Future<void>? _ensuringKtkq;
-  String? _teacherPath;
-  final _teacherSlot = <String, String>{};
-  final _teacherName = <String, String>{};
 
   Future<void> init() async {
     _support = await getApplicationSupportDirectory();
@@ -71,7 +66,10 @@ class Session extends ChangeNotifier {
     if (current != null && current.isNotEmpty) {
       await _attachAccount(current, restore: true);
       loggedIn = lantu!.isLoggedIn || await cas!.hasTgt();
-      if (loggedIn) _applyIdentity();
+      if (loggedIn) {
+        _applyIdentity();
+        _wireStores();
+      }
     } else {
       await _attachAccount('_scratch', restore: false);
     }
@@ -104,9 +102,9 @@ class Session extends ChangeNotifier {
     ykt = YktClient(_jar!, gateway: ktkq!.rs);
     lantu = LantuClient(persistPath: '${dir.path}/lantu.json');
     zhcgm = ZhcgmClient(persistPath: '${dir.path}/zhcgm.json');
-    _teacherPath = '${dir.path}/kb_teachers.json';
     await rooms.bind('${dir.path}/rooms.json');
     _clearCaches();
+    _wireStores(teacherPath: '${dir.path}/kb_teachers.json');
     ktkq?.token = null;
     gyglxt?.token = null;
     zhcgm?.token = null;
@@ -116,20 +114,29 @@ class Session extends ChangeNotifier {
     }
     await lantu!.restore();
     await zhcgm!.restore();
-    await _loadTeachers();
+    await schedule.loadTeachers();
     await ktkq!.restoreToken();
     await gyglxt!.restoreToken();
   }
 
+  void _wireStores({String? teacherPath}) {
+    schedule.demoMode = demoMode;
+    schedule.lantu = lantu;
+    schedule.jwxt = jwxt;
+    schedule.studentId = studentId;
+    if (teacherPath != null) schedule.teacherPath = teacherPath;
+    academic.demoMode = demoMode;
+    academic.jwxt = jwxt;
+    academic.ensureJwxt = ensureJwxt;
+    selection.demoMode = demoMode;
+    selection.jwxt = jwxt;
+    selection.ensureJwxt = ensureJwxt;
+  }
+
   void _clearCaches() {
-    _kbFut = null;
-    _cjCache.clear();
-    _xfFut = null;
-    _ksFut = null;
-    _xkEntryFut = null;
-    _xkCourses = {};
-    _teacherSlot.clear();
-    _teacherName.clear();
+    schedule.clear();
+    academic.clear();
+    selection.clear();
     _profileAt = null;
     _casGate = null;
     profileError = null;
@@ -157,6 +164,7 @@ class Session extends ChangeNotifier {
       loggedIn = lantu!.isLoggedIn || await cas!.hasTgt();
       if (loggedIn) {
         _applyIdentity();
+        _wireStores();
         warmupGateways();
       }
     } catch (e) {
@@ -201,7 +209,7 @@ class Session extends ChangeNotifier {
       if (profile.studentId.isNotEmpty) studentId = profile.studentId;
       displayName = profile.hasName ? profile.name : studentId;
       _clearCaches();
-      await _loadTeachers();
+      await schedule.loadTeachers();
       jwxt!.attachCas(cas!);
       await accounts.upsert(
         id: studentId,
@@ -209,6 +217,7 @@ class Session extends ChangeNotifier {
         password: password,
       );
       gyglxt?.username = studentId;
+      _wireStores();
       unawaited(() async {
         try {
           await jwxt!.ensureSession(force: true);
@@ -250,6 +259,7 @@ class Session extends ChangeNotifier {
         await accounts.setCurrent(sid);
         studentId = sid;
         _applyIdentity();
+        _wireStores();
         warmupGateways();
         unawaited(refreshProfile(force: true));
         return true;
@@ -396,6 +406,7 @@ class Session extends ChangeNotifier {
     profileLoading = false;
     profileError = null;
     error = null;
+    _wireStores();
     notifyListeners();
   }
 
@@ -456,6 +467,7 @@ class Session extends ChangeNotifier {
         profileError = null;
       }
       _profileAt = DateTime.now();
+      _wireStores();
     } finally {
       _profileBusy = false;
       profileLoading = false;
@@ -486,6 +498,7 @@ class Session extends ChangeNotifier {
     } else {
       studentId = id ?? '';
     }
+    _wireStores();
     notifyListeners();
   }
 
@@ -504,307 +517,52 @@ class Session extends ChangeNotifier {
     throw Exception('统一身份已过期，请重新登录');
   }
 
-  void invalidateSchedule() => _kbFut = null;
+  void invalidateSchedule() => schedule.invalidate();
 
-  void invalidateGrades() => _cjCache.clear();
+  void invalidateGrades() => academic.invalidateGrades();
 
-  void invalidateExams() => _ksFut = null;
+  void invalidateCredits() => academic.invalidateCredits();
 
-  void invalidateSelection() {
-    _xkEntryFut = null;
-    _xkCourses = {};
-  }
+  void invalidateExams() => academic.invalidateExams();
 
-  /// 选课入口：轮次 + 学生画像（加密串 xkkz_xh 在轮次里）。
-  Future<Map<String, dynamic>> loadSelectionEntry({bool force = false}) {
-    if (demoMode) {
-      return Future.value({
-        'rounds': demoXkRounds,
-        'profile': demoXkProfile,
-      });
-    }
-    if (force) {
-      _xkEntryFut = null;
-      _xkCourses = {};
-    }
-    final hit = _xkEntryFut;
-    if (hit != null) return hit;
-    late final Future<Map<String, dynamic>> fut;
-    fut = () async {
-      try {
-        await ensureJwxt().timeout(const Duration(seconds: 25));
-        final entry = await jwxt!.selectionEntry();
-        if ((entry['rounds'] as List?)?.isEmpty ?? true) {
-          throw Exception('当前没有开放的选课轮次');
-        }
-        return entry;
-      } catch (e) {
-        if (identical(_xkEntryFut, fut)) _xkEntryFut = null;
-        rethrow;
-      }
-    }();
-    _xkEntryFut = fut;
-    return fut;
-  }
+  void invalidateSelection() => selection.invalidate();
 
-  /// 点轮次后官网先 load Display.html，拿到 rwlx/xklc。
+  Future<Map<String, dynamic>> loadSelectionEntry({bool force = false}) =>
+      selection.loadEntry(force: force);
+
   Future<Map<String, String>> loadSelectionPanel(
     Map<String, dynamic> round,
     Map<String, String> profile,
-  ) async {
-    if (demoMode) {
-      return {'rwlx': '1', 'xklc': '1', 'xkly': '0'};
-    }
-    await ensureJwxt().timeout(const Duration(seconds: 25));
-    return jwxt!.selectionDisplay(
-      xkkzId: '${round['xkkz_id'] ?? ''}',
-      xkkzXh: '${round['xkkz_xh'] ?? ''}',
-      kklxdm: '${round['kklxdm'] ?? ''}',
-      njdmId: '${round['njdm_id'] ?? profile['njdm_id'] ?? ''}',
-      zyhId: '${round['zyh_id'] ?? profile['zyh_id'] ?? ''}',
-    );
-  }
+  ) => selection.loadPanel(round, profile);
 
-  /// 某轮次的可选课程。必须先 await [loadSelectionPanel]。
   Future<List<dynamic>> loadSelectionCourses(
     Map<String, dynamic> round,
     Map<String, String> profile, {
     String keyword = '',
     Map<String, String> panel = const {},
     bool force = false,
-  }) {
-    final key = '${round['xkkz_id']}|$keyword|${panel['xklc'] ?? ''}';
-    if (force) _xkCourses.remove(key);
-    final hit = _xkCourses[key];
-    if (hit != null) return hit;
-    late final Future<List<dynamic>> fut;
-    fut = () async {
-      if (demoMode) {
-        return [
-          for (final c in demoXkCourses)
-            if (keyword.isEmpty || '${c['kcmc']}'.contains(keyword)) c,
-        ];
-      }
-      try {
-        await ensureJwxt().timeout(const Duration(seconds: 25));
-        final query = buildXkQuery(
-          round: round,
-          profile: profile,
-          kcmc: keyword,
-          panel: panel,
-        );
-        return await jwxt!.selectionCourses(query);
-      } catch (e) {
-        if (identical(_xkCourses[key], fut)) _xkCourses.remove(key);
-        rethrow;
-      }
-    }();
-    _xkCourses[key] = fut;
-    return fut;
-  }
+  }) => selection.loadCourses(
+    round,
+    profile,
+    keyword: keyword,
+    panel: panel,
+    force: force,
+  );
 
-  String _normKc(Object? s) => '$s'.replaceAll(RegExp(r'\s+'), '');
-
-  String _startOf(Map<String, dynamic> m) {
-    final sk = '${m['skjc'] ?? ''}';
-    if (sk.isNotEmpty && sk != 'null') return sk;
-    final jcs = '${m['jcs'] ?? ''}';
-    return jcs.split(RegExp(r'[-~]')).first;
-  }
-
-  Future<void> _loadTeachers() async {
-    final path = _teacherPath;
-    if (path == null) return;
-    try {
-      final f = File(path);
-      if (!await f.exists()) return;
-      final raw = jsonDecode(await f.readAsString());
-      if (raw is! Map) return;
-      final xh = '${raw['xh'] ?? ''}';
-      if (xh.isNotEmpty && studentId.isNotEmpty && xh != studentId) return;
-      final slot = raw['slot'];
-      final name = raw['name'];
-      if (slot is Map) {
-        slot.forEach((k, v) {
-          final s = '$v'.trim();
-          if (s.isNotEmpty) _teacherSlot['$k'] = s;
-        });
-      }
-      if (name is Map) {
-        name.forEach((k, v) {
-          final s = '$v'.trim();
-          if (s.isNotEmpty) _teacherName['$k'] = s;
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _saveTeachers() async {
-    final path = _teacherPath;
-    if (path == null) return;
-    try {
-      await File(path).writeAsString(
-        jsonEncode({
-          'xh': studentId,
-          'slot': _teacherSlot,
-          'name': _teacherName,
-        }),
-      );
-    } catch (_) {}
-  }
-
-  void _applyKbTeachers(List<Map<String, dynamic>> kb) {
-    for (final row in kb) {
-      final cur = '${row['xm'] ?? ''}'.trim();
-      if (cur.isNotEmpty && cur != '—') continue;
-      final name = _normKc(row['kcmc']);
-      row['xm'] =
-          _teacherSlot['$name|${row['xqj'] ?? row['skxq']}|${_startOf(row)}'] ??
-          _teacherName[name] ??
-          '';
-    }
-  }
-
-  void _fillKbTeachers(List<Map<String, dynamic>> kb, Object? jwList) {
-    if (jwList is List) {
-      for (final e in jwList) {
-        if (e is! Map) continue;
-        final m = Map<String, dynamic>.from(e);
-        final xm = '${m['xm'] ?? m['jsxm'] ?? ''}'.trim();
-        if (xm.isEmpty || xm == '—') continue;
-        final name = _normKc(m['kcmc']);
-        _teacherSlot['$name|${m['xqj']}|${_startOf(m)}'] = xm;
-        _teacherName.putIfAbsent(name, () => xm);
-      }
-      unawaited(_saveTeachers());
-    }
-    _applyKbTeachers(kb);
-  }
-
-  Future<Map<String, dynamic>> loadSchedule({bool force = false}) {
-    if (demoMode) {
-      return Future.value({
-        'kbList': demoSchedule,
-        'curWeek': 1,
-        'totalWeek': 16,
-        'times': kDefaultPeriodTimes,
-      });
-    }
-    if (force) _kbFut = null;
-    final hit = _kbFut;
-    if (hit != null) return hit;
-    late final Future<Map<String, dynamic>> fut;
-    fut = () async {
-      try {
-        if (lantu == null || !lantu!.isLoggedIn) {
-          throw Exception('请重新登录后再看课表');
-        }
-        final raw = await lantu!.getCourse().timeout(
-          const Duration(seconds: 12),
-        );
-        const times = kDefaultPeriodTimes;
-        final kb = lantu!.mapKbList(raw);
-        _applyKbTeachers(kb);
-        unawaited(() async {
-          try {
-            final jw = await jwxt!.schedule().timeout(
-              const Duration(seconds: 8),
-            );
-            _fillKbTeachers(kb, jw['kbList']);
-            notifyListeners();
-          } catch (_) {}
-        }());
-        debugPrint('[kb] lantu ${kb.length} lessons week=${raw['curWeek']}');
-        return {
-          'kbList': kb,
-          'curWeek': raw['curWeek'] ?? lantu!.curWeek,
-          'totalWeek': raw['totalWeek'] ?? 16,
-          'times': times,
-        };
-      } catch (e) {
-        debugPrint('[kb] $e');
-        if (identical(_kbFut, fut)) _kbFut = null;
-        rethrow;
-      }
-    }();
-    _kbFut = fut;
-    return fut;
-  }
+  Future<Map<String, dynamic>> loadSchedule({bool force = false}) =>
+      schedule.load(force: force);
 
   Future<Map<String, dynamic>> loadGrades({
     String xnm = '',
     String xqm = '',
     bool force = false,
-  }) {
-    if (demoMode) {
-      return Future.value({
-        'items': [
-          for (final e in demoGrades)
-            if (matchesTerm(e, SchoolTerm(xnm: xnm, xqm: xqm))) e,
-        ],
-      });
-    }
-    final key = '$xnm|$xqm';
-    if (force) _cjCache.remove(key);
-    final hit = _cjCache[key];
-    if (hit != null) return hit;
-    late final Future<Map<String, dynamic>> fut;
-    fut = () async {
-      try {
-        await ensureJwxt().timeout(const Duration(seconds: 20));
-        return await jwxt!
-            .grades(xnm: xnm, xqm: xqm)
-            .timeout(const Duration(seconds: 25));
-      } catch (e) {
-        if (identical(_cjCache[key], fut)) _cjCache.remove(key);
-        rethrow;
-      }
-    }();
-    _cjCache[key] = fut;
-    return fut;
-  }
+  }) => academic.loadGrades(xnm: xnm, xqm: xqm, force: force);
 
-  void invalidateCredits() => _xfFut = null;
+  Future<CreditProgress> loadCredits({bool force = false}) =>
+      academic.loadCredits(force: force);
 
-  Future<CreditProgress> loadCredits({bool force = false}) {
-    if (demoMode) return Future.value(demoCreditProgress);
-    if (force) _xfFut = null;
-    final hit = _xfFut;
-    if (hit != null) return hit;
-    late final Future<CreditProgress> fut;
-    fut = () async {
-      try {
-        await ensureJwxt().timeout(const Duration(seconds: 20));
-        return await jwxt!.creditProgress().timeout(
-          const Duration(seconds: 45),
-        );
-      } catch (e) {
-        if (identical(_xfFut, fut)) _xfFut = null;
-        rethrow;
-      }
-    }();
-    _xfFut = fut;
-    return fut;
-  }
-
-  Future<Map<String, dynamic>> loadExams({bool force = false}) {
-    if (demoMode) return Future.value({'items': demoExams});
-    if (force) _ksFut = null;
-    final hit = _ksFut;
-    if (hit != null) return hit;
-    late final Future<Map<String, dynamic>> fut;
-    fut = () async {
-      try {
-        await ensureJwxt();
-        return await jwxt!.exams();
-      } catch (e) {
-        if (identical(_ksFut, fut)) _ksFut = null;
-        rethrow;
-      }
-    }();
-    _ksFut = fut;
-    return fut;
-  }
+  Future<Map<String, dynamic>> loadExams({bool force = false}) =>
+      academic.loadExams(force: force);
 
   Future<void> ensureZhcgm() async {
     if (demoMode) return;
