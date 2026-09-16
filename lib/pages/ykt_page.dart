@@ -43,7 +43,12 @@ class _YktPageState extends State<YktPage> {
 
   Future<void> _reload({bool first = false}) async {
     await _loadQr(showSpinner: first && _payload == null);
-    unawaited(_loadBills());
+    unawaited(_loadBalanceThenBills());
+  }
+
+  Future<void> _loadBalanceThenBills() async {
+    await _loadBalance();
+    await _loadBills();
   }
 
   Future<void> _loadQr({bool showSpinner = false}) async {
@@ -63,6 +68,7 @@ class _YktPageState extends State<YktPage> {
               'SWUN-DEMO-YKT-${s.studentId.isEmpty ? '202430000000' : s.studentId}';
           _qrError = null;
           _qrLoading = false;
+          _balanceYuan ??= 18.7;
         });
         return;
       }
@@ -90,6 +96,23 @@ class _YktPageState extends State<YktPage> {
     }
   }
 
+  Future<void> _loadBalance() async {
+    final s = context.read<Session>();
+    try {
+      if (s.demoMode) {
+        if (!mounted) return;
+        setState(() => _balanceYuan ??= 18.7);
+        return;
+      }
+      final yuan = await s.ykt!.fetchBalance(
+        studentId: s.studentId,
+        schoolId: '${s.lantu?.schoolId ?? 187}',
+      );
+      if (!mounted || yuan == null) return;
+      setState(() => _balanceYuan = yuan);
+    } catch (_) {}
+  }
+
   Future<void> _loadBills() async {
     final s = context.read<Session>();
     setState(() {
@@ -101,7 +124,6 @@ class _YktPageState extends State<YktPage> {
         await Future<void>.delayed(const Duration(milliseconds: 700));
         if (!mounted) return;
         setState(() {
-          _balanceYuan = 18.7;
           _bills = [
             for (final m in demoYktBills)
               YktBill(
@@ -122,7 +144,7 @@ class _YktPageState extends State<YktPage> {
       if (!mounted) return;
       setState(() {
         _bills = led.items;
-        _balanceYuan = led.balanceYuan ?? _balanceYuan;
+        _balanceYuan = _balanceYuan ?? led.balanceYuan;
         _billsError = null;
         _billsLoading = false;
       });
@@ -275,7 +297,7 @@ class _YktPageState extends State<YktPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '余额使用明细',
+              '今日余额使用明细',
               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
             ),
             const SizedBox(height: 8),

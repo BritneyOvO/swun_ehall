@@ -83,6 +83,16 @@ class YktClient {
     );
   }
 
+  Future<double?> fetchBalance({
+    required String studentId,
+    String schoolId = '187',
+  }) {
+    return _fetchBalance(studentId: studentId, schoolId: schoolId).timeout(
+      const Duration(seconds: 25),
+      onTimeout: () => throw Exception('一卡通余额超时'),
+    );
+  }
+
   Future<String> _openFunction({
     required String studentId,
     required String schoolId,
@@ -201,16 +211,29 @@ class YktClient {
     final items = parseYktBills(hit.body);
     _yktTrace('bills n=${items.length}');
     double? balance;
-    try {
-      await _openFunction(
-        studentId: studentId,
-        schoolId: schoolId,
-        menu: 'data',
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      balance = await _readBalanceYuan();
-    } catch (_) {}
+    for (final b in items) {
+      if (b.balanceYuan != null) {
+        balance = b.balanceYuan;
+        break;
+      }
+    }
     return YktLedger(balanceYuan: balance, items: items);
+  }
+
+  Future<double?> _fetchBalance({
+    required String studentId,
+    String schoolId = '187',
+  }) async {
+    if (studentId.trim().isEmpty) throw Exception('没有学号，无法打开一卡通');
+    final host = Uri.parse(kYktH5).host;
+    rs.remember(host);
+    await _openFunction(
+      studentId: studentId,
+      schoolId: schoolId,
+      menu: 'data',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    return _readBalanceYuan();
   }
 
   String? _payloadOf(String body) {

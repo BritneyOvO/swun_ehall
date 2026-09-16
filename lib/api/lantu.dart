@@ -269,7 +269,6 @@ class LantuClient {
       grade: _label(b['sznj']),
       phone: '${b['tel'] ?? ''}',
       role: '学生',
-      avatar: '${b['headImage'] ?? ''}',
     );
   }
 

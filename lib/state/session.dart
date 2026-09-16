@@ -53,6 +53,9 @@ class Session extends ChangeNotifier {
   String displayName = '同学';
   String studentId = '';
   StudentProfile profile = const StudentProfile();
+  String? localAvatarPath;
+  int localAvatarEpoch = 0;
+  Directory? _accountDir;
 
   DateTime? _profileAt;
   bool _profileBusy = false;
@@ -91,6 +94,8 @@ class Session extends ChangeNotifier {
         ? Directory('${support.path}/.scratch')
         : await accounts.ensureDir(id);
     if (!await dir.exists()) await dir.create(recursive: true);
+    _accountDir = dir;
+    await _loadLocalAvatar();
     _jar = PersistCookieJar(
       storage: FileStorage('${dir.path}/cookies'),
       ignoreExpires: true,
@@ -157,6 +162,44 @@ class Session extends ChangeNotifier {
     }
     gyglxt?.username = studentId.isEmpty ? null : studentId;
     unawaited(Bugly.setUserId(studentId));
+  }
+
+  File? get _avatarFile {
+    final dir = _accountDir;
+    if (dir == null) return null;
+    return File('${dir.path}/avatar.png');
+  }
+
+  Future<void> _loadLocalAvatar() async {
+    final f = _avatarFile;
+    if (f != null && await f.exists()) {
+      localAvatarPath = f.path;
+    } else {
+      localAvatarPath = null;
+    }
+    localAvatarEpoch++;
+  }
+
+  Future<void> setLocalAvatar(List<int> bytes) async {
+    final f = _avatarFile;
+    if (f == null) throw Exception('还没有账号目录');
+    await f.parent.create(recursive: true);
+    await f.writeAsBytes(bytes, flush: true);
+    localAvatarPath = f.path;
+    localAvatarEpoch++;
+    notifyListeners();
+  }
+
+  Future<void> clearLocalAvatar() async {
+    final f = _avatarFile;
+    if (f != null && await f.exists()) {
+      try {
+        await f.delete();
+      } catch (_) {}
+    }
+    localAvatarPath = null;
+    localAvatarEpoch++;
+    notifyListeners();
   }
 
   Future<void> _restorePrevious(String? prev) async {
@@ -444,11 +487,13 @@ class Session extends ChangeNotifier {
           }
         } catch (_) {}
       }
-      if (!next.hasName) {
+      if (!next.hasName || next.avatar.isEmpty) {
         try {
           next = next.merge(await ehall!.profile(cas!));
         } catch (e) {
-          profileError = e.toString().replaceFirst('Exception: ', '');
+          if (!next.hasName) {
+            profileError = e.toString().replaceFirst('Exception: ', '');
+          }
         }
       }
       if (next.klass.isEmpty || StudentProfile.looksLikeCode(next.klass)) {

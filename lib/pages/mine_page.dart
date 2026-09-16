@@ -1,3 +1,7 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +10,8 @@ import '../state/session.dart';
 import '../theme.dart';
 import '../widgets/loader.dart';
 import '../widgets/motion.dart';
+import '../widgets/toast.dart';
+import 'avatar_crop_page.dart';
 import 'settings_page.dart';
 
 class MinePage extends StatefulWidget {
@@ -37,25 +43,21 @@ class _MinePageState extends State<MinePage> {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           FadeSlideIn(
-            child: Pressable(
-              radius: 20,
-              onTap: () => pushPage(context, const ProfileSettingsPage()),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Color.alphaBlend(
-                    context.primary.withValues(
-                      alpha: Theme.of(context).brightness == Brightness.dark
-                          ? 0.22
-                          : 0.12,
-                    ),
-                    context.panel,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color.alphaBlend(
+                  context.primary.withValues(
+                    alpha: Theme.of(context).brightness == Brightness.dark
+                        ? 0.22
+                        : 0.12,
                   ),
-                  borderRadius: BorderRadius.circular(20),
+                  context.panel,
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 12, 18),
-                  child: _header(s, p, title),
-                ),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 12, 18),
+                child: _header(s, p, title),
               ),
             ),
           ),
@@ -117,42 +119,76 @@ class _MinePageState extends State<MinePage> {
               ? '正在读取…'
               : (p.role.isEmpty ? '已登录' : p.role));
     ImageProvider? avatar;
-    if (p.avatar.startsWith('http')) avatar = NetworkImage(p.avatar);
+    final local = s.localAvatarPath;
+    if (local != null && local.isNotEmpty) {
+      avatar = FileImage(File(local));
+    } else if (p.avatar.startsWith('http')) {
+      avatar = NetworkImage(p.avatar);
+    }
     return Row(
       children: [
-        CircleAvatar(
-          radius: 26,
-          backgroundColor: context.line,
-          backgroundImage: avatar,
-          child: avatar == null
-              ? Text(
-                  title.isEmpty ? '同' : title.substring(0, 1),
-                  style: TextStyle(
-                    color: context.ink,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
+        GestureDetector(
+          onTap: () => _pickAvatar(s),
+          onLongPress: local == null ? null : () => _resetAvatar(s),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              CircleAvatar(
+                key: ValueKey('avatar-${s.localAvatarEpoch}'),
+                radius: 26,
+                backgroundColor: context.line,
+                backgroundImage: avatar,
+                child: avatar == null
+                    ? Text(
+                        title.isEmpty ? '同' : title.substring(0, 1),
+                        style: TextStyle(
+                          color: context.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      )
+                    : null,
+              ),
+              Positioned(
+                right: -1,
+                bottom: -1,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: context.panel,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: context.line),
                   ),
-                )
-              : null,
+                  child: const Padding(
+                    padding: EdgeInsets.all(3),
+                    child: Icon(Icons.camera_alt_rounded, size: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
+          child: Pressable(
+            radius: 8,
+            onTap: () => pushPage(context, const ProfileSettingsPage()),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: TextStyle(color: context.muted, fontSize: 13),
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: context.muted, fontSize: 13),
+                ),
+              ],
+            ),
           ),
         ),
         Icon(Icons.chevron_right_rounded, color: context.muted, size: 18),
@@ -163,6 +199,39 @@ class _MinePageState extends State<MinePage> {
           ),
       ],
     );
+  }
+
+  Future<void> _pickAvatar(Session s) async {
+    try {
+      final file = await FilePicker.pickFile(type: FileType.image);
+      if (!mounted) return;
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) {
+        if (!mounted) return;
+        showToast(context, '读不了这张图');
+        return;
+      }
+      if (!mounted) return;
+      final cropped = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(builder: (_) => AvatarCropPage(bytes: bytes)),
+      );
+      if (!mounted || cropped == null || cropped.isEmpty) return;
+      await s.setLocalAvatar(cropped);
+      final path = s.localAvatarPath;
+      if (path != null) await FileImage(File(path)).evict();
+      if (!mounted) return;
+      showToast(context, '头像已更新');
+    } catch (e) {
+      if (!mounted) return;
+      showToast(context, e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _resetAvatar(Session s) async {
+    await s.clearLocalAvatar();
+    if (!mounted) return;
+    showToast(context, '已恢复默认头像');
   }
 
   Widget _item(BuildContext context, IconData icon, String title, Widget page) {
