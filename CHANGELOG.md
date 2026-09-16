@@ -1,5 +1,23 @@
 # 更新说明 | Changelog
 
+## 1.0.5
+
+### 更新内容
+
+- 更新：关于页检查到新版本后应用内下载 APK 并安装，不再跳转浏览器。
+- 课堂签到：连续采集高德定位、丢掉缓存点；活动时间按东八区显示。
+- 一卡通：余额不再等明细；明细标题改为「今日余额使用明细」。
+- 我的：头像可从相册选择并裁剪；不再使用蓝图 headImage。
+- 崩溃 / ANR 上报到 Bugly，便于定位无响应问题。
+
+### What's New
+
+- In-app APK download and install from About when a new release is found.
+- Classroom check-in: sample Amap continuously instead of the first cached fix; show activity times in UTC+8.
+- Campus card: show balance without waiting for the ledger; title is “today’s transactions”.
+- Mine: pick and crop a custom avatar; stop using Lantu headImage.
+- Report crashes and ANRs to Bugly.
+
 ## 1.0.4
 
 ### 更新内容
