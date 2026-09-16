@@ -123,7 +123,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
       var fix = await AppLocator.current(
         demo: context.read<Session>().demoMode,
         force: force,
-        timeout: force ? const Duration(seconds: 10) : const Duration(seconds: 8),
+        timeout: force ? const Duration(seconds: 12) : const Duration(seconds: 8),
         onUpdate: (f) {
           if (!mounted) return;
           setState(() => _applyPos(f));
@@ -163,7 +163,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     final known = _rememberedRoom();
     if (known == null) return null;
     final d = geoMeters(fix.latitude, fix.longitude, known.latitude, known.longitude);
-    if (d <= 120) return null;
+    if (d <= 80) return null;
     debugPrint('[ktkq] drop ${fix.source} ${d.toStringAsFixed(0)}m from ${known.room}');
     try {
       final again = await AppLocator.current(
@@ -462,10 +462,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     final type = '${act['signType'] ?? ''}';
     final pending = status == 'pending_signin';
     final punching = _punchingId == id;
-    final range = [
-      '${act['startTime'] ?? ''}',
-      '${act['endTime'] ?? ''}',
-    ].where((e) => e.isNotEmpty).join(' ~ ');
+    final range = formatKtkqCstRange(act['startTime'], act['endTime']);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -531,7 +528,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        title: Text('${e['time'] ?? ''}'),
+        title: Text(formatKtkqCst(e['time'])),
         subtitle: Text('${e['course'] ?? ''}'),
         trailing: Text('${e['status'] ?? ''}'),
       ),

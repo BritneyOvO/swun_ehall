@@ -60,7 +60,7 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
                 result.success(true)
             }
             "getFix" -> {
-                val timeout = ((call.argument<Number>("timeoutMs")?.toLong()) ?: 8000L).coerceIn(1500L, 15000L)
+                val timeout = ((call.argument<Number>("timeoutMs")?.toLong()) ?: 8000L).coerceIn(1500L, 20000L)
                 val force = call.argument<Boolean>("force") == true
                 getFix(timeout, force, result)
             }
@@ -81,7 +81,7 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
     private fun warmup() {
         if (!hasLocationPermission()) return
         tryAmapLast(maxAgeMs = 20_000L)?.let { return }
-        startAmapOnce { }
+        startAmap(continuous = false) { }
         val last = systemLast()
         if (last != null) return
         requestSystem(object : LocationListener {
@@ -114,20 +114,14 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
         private var systemListener: LocationListener? = null
         private var amapClient: AMapLocationClient? = null
         private var amapHeard = false
-        private val maxLastAge = if (force) 8_000L else 20_000L
+        private val samples = ArrayList<HashMap<String, Any>>()
 
         fun start() {
-            val lastAmap = tryAmapLast(maxAgeMs = maxLastAge)
-            if (lastAmap != null) offer(lastAmap)
-            val lastSys = systemLast()
-            if (lastSys != null && ageMs(lastSys.time) <= maxLastAge) {
-                offer(pack(lastSys, sourceOf(lastSys), lastSys.time))
+            if (!force) {
+                val lastAmap = tryAmapLast(maxAgeMs = 6_000L)
+                if (lastAmap != null) offer(lastAmap)
             }
-            if (!force && best != null && score(best!!) <= 50.0 && ageMs(best!!) <= 12_000) {
-                finish(best)
-                return
-            }
-            startAmapOnce(useCache = !force) { loc ->
+            startAmap(continuous = force) { loc ->
                 if (loc.errorCode == 0 && loc.latitude != 0.0) {
                     amapHeard = true
                     offer(packAmap(loc))
@@ -150,32 +144,73 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
             val waitAmap = !amapDisabled && amapKey.isNotEmpty()
             main.postDelayed({
                 if (done) return@postDelayed
-                val row = best ?: return@postDelayed
-                if (waitAmap && !amapHeard && force) return@postDelayed
-                if (score(row) <= 90.0) finish(row)
-            }, if (force) 3500L else 2200L)
-            main.postDelayed({ finish(best) }, timeoutMs)
+                if (force && waitAmap && amapCount() < 2) return@postDelayed
+                pickStable()?.let { finish(it) }
+            }, if (force) 4500L else 2200L)
+            main.postDelayed({ finish(pickStable()) }, timeoutMs)
         }
 
         private fun offer(row: HashMap<String, Any>) {
             main.post {
                 if (done) return@post
+                samples.add(row)
                 val prev = best
                 if (prev == null || score(row) < score(prev)) {
                     best = row
                 }
+                if (force) {
+                    if (amapCount() >= 2 && clusterTight() && score(row) <= 40.0) {
+                        finish(pickStable())
+                    }
+                    return@post
+                }
                 val src = row["source"] as String
                 val acc = row["accuracy"] as Double
-                val waitAmap = force && !amapDisabled && amapKey.isNotEmpty() && !amapHeard
-                if (waitAmap && src != "amap") return@post
-                if (src == "amap" && acc in 0.1..80.0 && ageMs(row) <= 12_000) {
+                if (src == "amap" && acc in 0.1..35.0 && ageMs(row) <= 6_000) {
                     finish(row)
                     return@post
                 }
-                if (!waitAmap && acc in 0.1..35.0 && ageMs(row) <= 8_000 && src != "last") {
+                if (acc in 0.1..25.0 && ageMs(row) <= 5_000 && src != "last" && src != "gps") {
                     finish(row)
                 }
             }
+        }
+
+        private fun amapCount(): Int = samples.count { it["source"] == "amap" }
+
+        private fun clusterTight(): Boolean {
+            val amap = samples.filter { it["source"] == "amap" }
+            if (amap.size < 2) return false
+            val last = amap.takeLast(3)
+            for (i in last.indices) {
+                for (j in i + 1 until last.size) {
+                    if (meters(last[i], last[j]) > 40.0) return false
+                }
+            }
+            return true
+        }
+
+        private fun pickStable(): HashMap<String, Any>? {
+            val fresh = samples.filter { ageMs(it) <= 10_000 }
+            val amap = fresh.filter { it["source"] == "amap" }
+            val pool = when {
+                amap.size >= 2 -> amap
+                fresh.isNotEmpty() -> fresh
+                else -> samples
+            }
+            if (pool.isEmpty()) return best
+            var winner = pool.last()
+            var bestSum = Double.POSITIVE_INFINITY
+            for (p in pool) {
+                var sum = 0.0
+                for (q in pool) sum += meters(p, q)
+                sum += score(p)
+                if (sum < bestSum) {
+                    bestSum = sum
+                    winner = p
+                }
+            }
+            return winner
         }
 
         /** 越小越好。室内 GPS 精度数字常虚报，高德 Wi‑Fi 更接近校方围栏。 */
@@ -186,10 +221,11 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
             var s = acc
             when (src) {
                 "amap" -> s -= 12.0
-                "gps" -> s += 28.0
-                "last" -> s += 45.0
+                "network" -> s += 8.0
+                "gps" -> s += 32.0
+                "last" -> s += 55.0
             }
-            if (age > 8_000) s += (age - 8_000) / 400.0
+            if (age > 4_000) s += (age - 4_000) / 250.0
             return s
         }
 
@@ -202,26 +238,33 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
                 amapClient?.stopLocation()
             } catch (_: Exception) {
             }
+            val out = row ?: pickStable() ?: best
             main.post {
-                if (row != null) result.success(row)
+                if (out != null) result.success(out)
                 else result.error("NO_FIX", "无法获取定位", null)
             }
         }
     }
 
-    private fun startAmapOnce(useCache: Boolean = true, onLoc: (AMapLocation) -> Unit): AMapLocationClient? {
+    private fun startAmap(continuous: Boolean, onLoc: (AMapLocation) -> Unit): AMapLocationClient? {
         if (amapDisabled || amapKey.isEmpty() || !hasLocationPermission()) return null
         return try {
             ensurePrivacy()
             AMapLocationClient.setApiKey(amapKey)
             val client = AMapLocationClient(app)
             val opt = AMapLocationClientOption().apply {
-                locationPurpose = AMapLocationClientOption.AMapLocationPurpose.SignIn
-                isOnceLocation = true
-                isOnceLocationLatest = useCache
-                httpTimeOut = 5000
+                if (continuous) {
+                    isOnceLocation = false
+                    interval = 800
+                    httpTimeOut = 8000
+                } else {
+                    locationPurpose = AMapLocationClientOption.AMapLocationPurpose.SignIn
+                    isOnceLocation = true
+                    isOnceLocationLatest = false
+                    httpTimeOut = 5000
+                }
                 isNeedAddress = false
-                isLocationCacheEnable = useCache
+                isLocationCacheEnable = false
                 isWifiScan = true
                 isMockEnable = false
                 locationMode = AMapLocationClientOption.AMapLocationMode.Hight_Accuracy
@@ -376,6 +419,16 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
         ret += (20.0 * sin(x * PI) + 40.0 * sin(x / 3.0 * PI)) * 2.0 / 3.0
         ret += (150.0 * sin(x / 12.0 * PI) + 300.0 * sin(x / 30.0 * PI)) * 2.0 / 3.0
         return ret
+    }
+
+    private fun meters(a: HashMap<String, Any>, b: HashMap<String, Any>): Double {
+        val lat1 = Math.toRadians(a["latitude"] as Double)
+        val lat2 = Math.toRadians(b["latitude"] as Double)
+        val dLat = lat2 - lat1
+        val dLng = Math.toRadians((b["longitude"] as Double) - (a["longitude"] as Double))
+        val h = sin(dLat / 2) * sin(dLat / 2) +
+            cos(lat1) * cos(lat2) * sin(dLng / 2) * sin(dLng / 2)
+        return 6371000.0 * 2 * kotlin.math.atan2(sqrt(h), sqrt(1 - h))
     }
 
     private fun pack(lat: Double, lng: Double, acc: Double, source: String, time: Long): HashMap<String, Any> {

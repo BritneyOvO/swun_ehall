@@ -1058,16 +1058,63 @@ int _asInt(Object? v, [int fallback = 0]) {
 
 bool _truthyKq(Object? v) => v == true || v == 1 || v == '1' || v == 'true';
 
-DateTime? _parseDt(Object? v) {
-  var s = '${v ?? ''}'.trim();
-  if (s.isEmpty) return null;
-  s = s.replaceAll('/', '-');
-  final sp = s.indexOf(' ');
-  if (sp > 0 && !s.contains('T')) {
-    s = '${s.substring(0, sp)}T${s.substring(sp + 1)}';
+/// 金智时间：ISO/`Z`/时间戳按 UTC 读；`yyyy-MM-dd HH:mm` 当作东八区。返回 UTC 瞬间。
+DateTime? parseKtkqDateTime(Object? v) {
+  if (v == null) return null;
+  if (v is num) {
+    final n = v.toInt();
+    if (n <= 0) return null;
+    final ms = n > 100000000000 ? n : n * 1000;
+    return DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
   }
-  return DateTime.tryParse(s);
+  final orig = '$v'.trim();
+  if (orig.isEmpty || orig == 'null') return null;
+  final asInt = int.tryParse(orig);
+  if (asInt != null && orig.length >= 10) {
+    final ms = asInt > 100000000000 ? asInt : asInt * 1000;
+    return DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+  }
+  var s = orig.replaceAll('/', '-');
+  final hasOffset =
+      s.endsWith('Z') ||
+      s.endsWith('z') ||
+      RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(s);
+  final looksIso = hasOffset || orig.contains('T');
+  if (!s.contains('T')) {
+    final sp = s.indexOf(' ');
+    if (sp > 0) s = '${s.substring(0, sp)}T${s.substring(sp + 1)}';
+  }
+  if (!s.contains('T')) return null;
+  if (!hasOffset) s = '${s}Z';
+  final utc = DateTime.tryParse(s)?.toUtc();
+  if (utc == null) return null;
+  if (!looksIso) return utc.subtract(const Duration(hours: 8));
+  return utc;
 }
+
+String formatKtkqCst(Object? v) {
+  final dt = parseKtkqDateTime(v);
+  if (dt == null) {
+    final s = '${v ?? ''}'.trim();
+    return s == 'null' ? '' : s;
+  }
+  final cst = dt.add(const Duration(hours: 8));
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${cst.year}-${two(cst.month)}-${two(cst.day)} ${two(cst.hour)}:${two(cst.minute)}';
+}
+
+String formatKtkqCstRange(Object? start, Object? end) {
+  final a = formatKtkqCst(start);
+  final b = formatKtkqCst(end);
+  if (a.isEmpty) return b;
+  if (b.isEmpty) return a;
+  if (a.length >= 16 && b.length >= 16 && a.substring(0, 10) == b.substring(0, 10)) {
+    return '$a ~ ${b.substring(11)}';
+  }
+  return '$a ~ $b';
+}
+
+DateTime? _parseDt(Object? v) => parseKtkqDateTime(v);
 
 bool _alreadySigned(Map<String, dynamic> m) =>
     '${m['signStatus'] ?? ''}' == '1';

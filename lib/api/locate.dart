@@ -45,8 +45,8 @@ class GeoFix {
 
 class AppLocator {
   static const _ch = MethodChannel('cn.edu.swun.swun_ehall/locate');
-  static const _ttl = Duration(seconds: 8);
-  static const _fresh = Duration(seconds: 5);
+  static const _ttl = Duration(seconds: 3);
+  static const _fresh = Duration(seconds: 2);
 
   static GeoFix? cache;
   static DateTime? _cacheAt;
@@ -92,6 +92,11 @@ class AppLocator {
     return perm != LocationPermission.denied && perm != LocationPermission.deniedForever;
   }
 
+  static void invalidate() {
+    cache = null;
+    _cacheAt = null;
+  }
+
   static Future<GeoFix> current({
     bool demo = false,
     bool force = false,
@@ -102,6 +107,7 @@ class AppLocator {
       onUpdate?.call(demoFix);
       return demoFix;
     }
+    if (force) invalidate();
     final now = DateTime.now();
     final hit = cache;
     final at = _cacheAt;

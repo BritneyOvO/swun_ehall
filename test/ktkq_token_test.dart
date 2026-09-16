@@ -94,6 +94,17 @@ void main() {
     expect(parseKtkqToken(body: 'var cfg = {"token": "$_jwt"};'), _jwt);
   });
 
+  test('formats sign-in times in UTC+8', () {
+    expect(formatKtkqCst('2026-09-16T08:00:00.000Z'), '2026-09-16 16:00');
+    expect(formatKtkqCst('2026-09-16T08:00:00+00:00'), '2026-09-16 16:00');
+    expect(formatKtkqCst('2026-09-16T08:00:00+08:00'), '2026-09-16 08:00');
+    expect(formatKtkqCst('2026-09-16 08:00:00'), '2026-09-16 08:00');
+    expect(
+      formatKtkqCstRange('2026-09-16T08:00:00Z', '2026-09-16T09:40:00Z'),
+      '2026-09-16 16:00 ~ 17:40',
+    );
+  });
+
   test('cleans encoding, quotes and bearer', () {
     expect(cleanKtkqToken('Bearer $_jwt'), _jwt);
     expect(cleanKtkqToken('"$_jwt"'), _jwt);
