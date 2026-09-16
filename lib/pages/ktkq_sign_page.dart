@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/geo.dart';
 import '../api/httpx.dart';
 import '../api/ktkq.dart';
 import '../api/locate.dart';
 import '../demo/demo_data.dart';
 import '../models/lesson.dart';
+import '../state/rooms.dart';
 import '../state/session.dart';
 import '../theme.dart';
 import '../widgets/loader.dart';
@@ -117,14 +119,19 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
   Future<void> _locate({bool force = false}) async {
     setState(() => _locating = true);
     try {
-      final fix = await AppLocator.current(
+      var fix = await AppLocator.current(
         demo: context.read<Session>().demoMode,
         force: force,
+        timeout: force ? const Duration(seconds: 10) : const Duration(seconds: 8),
         onUpdate: (f) {
           if (!mounted) return;
           setState(() => _applyPos(f));
         },
       );
+      if (force) {
+        final better = await _rejectIfFarFromRoom(fix);
+        if (better != null) fix = better;
+      }
       if (mounted) setState(() => _applyPos(fix));
     } on LocateException catch (e) {
       _locError = e.message;
@@ -135,6 +142,39 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     }
   }
 
+  RoomFix? _rememberedRoom() {
+    final room = '${_data['classroom'] ?? _lesson.room}'.trim();
+    if (room.isEmpty) return null;
+    final items = context.read<Session>().rooms.items;
+    for (final r in items) {
+      if (r.room == room) return r;
+    }
+    return null;
+  }
+
+  /// 进教室前走廊/上一栋的缓存点，会离本课上次成功签到很远。丢掉再取一次。
+  Future<GeoFix?> _rejectIfFarFromRoom(GeoFix fix) async {
+    final known = _rememberedRoom();
+    if (known == null) return null;
+    final d = geoMeters(fix.latitude, fix.longitude, known.latitude, known.longitude);
+    if (d <= 120) return null;
+    debugPrint('[ktkq] drop ${fix.source} ${d.toStringAsFixed(0)}m from ${known.room}');
+    try {
+      final again = await AppLocator.current(
+        demo: context.read<Session>().demoMode,
+        force: true,
+        timeout: const Duration(seconds: 10),
+        onUpdate: (f) {
+          if (!mounted) return;
+          setState(() => _applyPos(f));
+        },
+      );
+      final d2 = geoMeters(again.latitude, again.longitude, known.latitude, known.longitude);
+      if (d2 < d) return again;
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _punch(Map<String, dynamic> act) async {
     final s = context.read<Session>();
     final activityId = '${act['activityId'] ?? ''}';
@@ -142,12 +182,10 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
       _toast('没有签到活动');
       return;
     }
+    await _locate(force: true);
     if (_pos == null) {
-      await _locate();
-      if (_pos == null) {
-        _toast(_locError ?? '还没有定位');
-        return;
-      }
+      _toast(_locError ?? '还没有定位');
+      return;
     }
     final type = '${act['signType'] ?? _data['signType'] ?? ''}';
     var code = _codeOf(activityId, '${act['signCode'] ?? ''}').text.trim();
@@ -405,6 +443,14 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
                 '${_pos!.sourceLabel} · 精度 ${_pos!.accuracy.toStringAsFixed(0)} 米 · 签到会提交当前经纬度',
                 style: TextStyle(color: context.muted, fontSize: 12),
               ),
+              if (_pos!.accuracy > 80)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    '精度偏大，教室里建议打开 Wi‑Fi 后再点重新定位。',
+                    style: TextStyle(color: kCrimson, fontSize: 12),
+                  ),
+                ),
             ],
           ],
         ),

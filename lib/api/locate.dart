@@ -45,8 +45,8 @@ class GeoFix {
 
 class AppLocator {
   static const _ch = MethodChannel('cn.edu.swun.swun_ehall/locate');
-  static const _ttl = Duration(seconds: 25);
-  static const _fresh = Duration(seconds: 12);
+  static const _ttl = Duration(seconds: 8);
+  static const _fresh = Duration(seconds: 5);
 
   static GeoFix? cache;
   static DateTime? _cacheAt;
@@ -107,10 +107,13 @@ class AppLocator {
     final at = _cacheAt;
     if (!force && hit != null && at != null && now.difference(at) < _ttl) {
       onUpdate?.call(hit);
-      if (now.difference(at) < _fresh && hit.accuracy > 0 && hit.accuracy <= 80) {
+      if (now.difference(at) < _fresh &&
+          hit.accuracy > 0 &&
+          hit.accuracy <= 50 &&
+          hit.source == 'amap') {
         return hit;
       }
-    } else if (hit != null) {
+    } else if (!force && hit != null) {
       onUpdate?.call(hit);
     }
 
