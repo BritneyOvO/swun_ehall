@@ -11,6 +11,7 @@ import '../state/session.dart';
 import '../theme.dart';
 import '../widgets/loader.dart';
 import '../widgets/motion.dart';
+import '../widgets/toast.dart';
 
 class VenuePage extends StatefulWidget {
   const VenuePage({super.key});
@@ -121,7 +122,7 @@ class _VenuePageState extends State<VenuePage> {
   Future<void> _openOfficial() async {
     final ok = await launchUrl(Uri.parse(kZhcgmHost), mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('无法打开智慧场馆')));
+      showToast(context, '无法打开智慧场馆');
     }
   }
 
@@ -311,11 +312,11 @@ class _VenueFieldPageState extends State<VenueFieldPage> {
         sessionIds: ['${slot['id']}'],
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${r['msg'] ?? '预约成功'}')));
+      showToast(context, '${r['msg'] ?? '预约成功'}');
       await _reload();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(publicError(e))));
+      showToast(context, publicError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

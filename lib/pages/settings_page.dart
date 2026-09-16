@@ -12,6 +12,7 @@ import '../theme.dart';
 import '../theme/catalog.dart';
 import '../widgets/loader.dart';
 import '../widgets/motion.dart';
+import '../widgets/toast.dart';
 import '../widgets/update_prompt.dart';
 import 'accounts_page.dart';
 import 'room_locations_page.dart';
@@ -21,7 +22,6 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final settings = context.watch<AppSettings>();
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
@@ -81,25 +81,6 @@ class SettingsPage extends StatelessWidget {
                   page: const AboutSettingsPage(),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: context.panel,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.line),
-            ),
-            child: SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              title: const Text('启动时检查更新', style: TextStyle(fontSize: 15)),
-              subtitle: Text(
-                '打开应用时查询 GitHub 是否有新版本',
-                style: TextStyle(color: context.muted, fontSize: 12),
-              ),
-              value: settings.checkUpdateOnLaunch,
-              activeThumbColor: Theme.of(context).colorScheme.primary,
-              onChanged: settings.setCheckUpdateOnLaunch,
             ),
           ),
         ],
@@ -250,12 +231,10 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
     try {
       final id = await context.read<AppSettings>().importPack(path);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已导入主题包 $id')));
+      showToast(context, '已导入主题包 $id');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-      );
+      showToast(context, e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -429,7 +408,7 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
 
   void _toast(String m) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    showToast(context, m);
   }
 
   @override
@@ -504,6 +483,25 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
             ),
           ],
           const SizedBox(height: 16),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: context.panel,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.line),
+            ),
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              title: const Text('启动时检查更新', style: TextStyle(fontSize: 15)),
+              subtitle: Text(
+                '打开应用时查询 GitHub 是否有新版本',
+                style: TextStyle(color: context.muted, fontSize: 12),
+              ),
+              value: settings.checkUpdateOnLaunch,
+              activeThumbColor: Theme.of(context).colorScheme.primary,
+              onChanged: settings.setCheckUpdateOnLaunch,
+            ),
+          ),
+          const SizedBox(height: 12),
           FilledButton.tonal(
             onPressed: _checking ? null : _check,
             child: _checking
@@ -568,6 +566,6 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
   Future<void> _copy(BuildContext context, String url) async {
     await Clipboard.setData(ClipboardData(text: url));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制链接')));
+    showToast(context, '已复制链接');
   }
 }

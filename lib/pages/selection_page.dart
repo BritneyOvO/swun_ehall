@@ -8,6 +8,7 @@ import '../state/session.dart';
 import '../theme.dart';
 import '../widgets/loader.dart';
 import '../widgets/motion.dart';
+import '../widgets/toast.dart';
 
 /// 自主选课：轮次 tab + 课程列表 + 教学班确认后提交。
 class SelectionPage extends StatefulWidget {
@@ -509,19 +510,7 @@ class _XkBoardState extends State<_XkBoard> {
       }
     } catch (e) {
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('选课失败'),
-          content: Text(publicError(e)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('知道了'),
-            ),
-          ],
-        ),
-      );
+      showToast(context, publicError(e));
       return;
     }
     if (!mounted) return;
@@ -532,12 +521,7 @@ class _XkBoardState extends State<_XkBoard> {
       if (jxbId.isNotEmpty) _choosed.add(jxbId);
       if (kchId.isNotEmpty) _choosed.add(kchId);
     });
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(
-        content: Text('「$name」选课成功'),
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    showToast(context, '「$name」选课成功');
   }
 
   String _jxbTitle(Map<String, dynamic> j) {

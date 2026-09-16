@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api/update.dart';
 import '../theme.dart';
+import 'toast.dart';
 
 Future<void> showUpdateDialog(BuildContext context, AppRelease rel) {
   final notes = rel.notes.replaceAll('\r\n', '\n').trim();
@@ -99,18 +100,14 @@ Future<void> checkForUpdate(
     if (!context.mounted) return;
     if (rel == null || !rel.isNewer) {
       if (!silent) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已是最新版本 $kAppVersion')),
-        );
+        showToast(context, '已是最新版本 $kAppVersion');
       }
       return;
     }
     await showUpdateDialog(context, rel);
   } catch (_) {
     if (!silent && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('检查更新失败')),
-      );
+      showToast(context, '检查更新失败');
     }
   }
 }

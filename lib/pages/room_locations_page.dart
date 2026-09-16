@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../state/rooms.dart';
 import '../state/session.dart';
 import '../theme.dart';
+import '../widgets/toast.dart';
 
 class RoomLocationsPage extends StatelessWidget {
   const RoomLocationsPage({super.key});
@@ -54,8 +55,7 @@ class RoomLocationsPage extends StatelessWidget {
     if (text.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: text));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('已复制 ${rooms.length} 条教室位置')));
+    showToast(context, '已复制 ${rooms.length} 条教室位置');
   }
 
   String _timeOf(RoomFix room) {
@@ -92,8 +92,7 @@ class RoomLocationsPage extends StatelessWidget {
                 onTap: () async {
                   await Clipboard.setData(ClipboardData(text: _line(room)));
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(const SnackBar(content: Text('已复制教室和坐标')));
+                  showToast(context, '已复制教室和坐标');
                 },
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

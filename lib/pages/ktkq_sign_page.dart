@@ -13,6 +13,7 @@ import '../state/rooms.dart';
 import '../state/session.dart';
 import '../theme.dart';
 import '../widgets/loader.dart';
+import '../widgets/toast.dart';
 
 class KtkqSignPage extends StatefulWidget {
   const KtkqSignPage({super.key, required this.lesson, this.week, this.slot});
@@ -132,7 +133,12 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
         final better = await _rejectIfFarFromRoom(fix);
         if (better != null) fix = better;
       }
-      if (mounted) setState(() => _applyPos(fix));
+      if (mounted) {
+        setState(() => _applyPos(fix));
+        if (fix.accuracy > 80) {
+          _toast('精度偏大，教室里建议打开 Wi‑Fi 后再定位');
+        }
+      }
     } on LocateException catch (e) {
       _locError = e.message;
     } catch (_) {
@@ -250,7 +256,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
 
   void _toast(String m) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    showToast(context, m);
   }
 
   Color _statusColor(String status) {
@@ -443,14 +449,6 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
                 '${_pos!.sourceLabel} · 精度 ${_pos!.accuracy.toStringAsFixed(0)} 米 · 签到会提交当前经纬度',
                 style: TextStyle(color: context.muted, fontSize: 12),
               ),
-              if (_pos!.accuracy > 80)
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Text(
-                    '精度偏大，教室里建议打开 Wi‑Fi 后再点重新定位。',
-                    style: TextStyle(color: kCrimson, fontSize: 12),
-                  ),
-                ),
             ],
           ],
         ),

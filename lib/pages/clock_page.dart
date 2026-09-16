@@ -10,6 +10,7 @@ import '../state/session.dart';
 import '../state/settings.dart';
 import '../theme.dart';
 import '../widgets/loader.dart';
+import '../widgets/toast.dart';
 
 class ClockPage extends StatefulWidget {
   const ClockPage({super.key});
@@ -236,7 +237,7 @@ class _ClockPageState extends State<ClockPage> {
 
   void _toast(String m) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    showToast(context, m);
   }
 
   @override
