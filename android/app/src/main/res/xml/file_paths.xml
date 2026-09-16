@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="update" path="update/" />
+    <files-path name="files_update" path="update/" />
+</paths>

@@ -9,5 +9,6 @@ class MainActivity : FlutterActivity() {
         LocatePlugin.registerWith(flutterEngine, this)
         VaultPlugin.registerWith(flutterEngine)
         BuglyPlugin.registerWith(flutterEngine)
+        InstallPlugin.registerWith(flutterEngine, this)
     }
 }
