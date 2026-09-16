@@ -1,12 +1,22 @@
-# 更新说明
+# 更新说明 | Changelog
 
 ## 1.0.4
+
+### 更新内容
 
 - 课堂签到：GPS 转成校方围栏用的 GCJ-02，优先高德并在提交前刷新定位，减少人在教室却提示位置不对。
 - 提示：签到、选课、复制等改为短 toast，不再挡住页面。
 - 关于：启动时检查更新开关收到关于页。
 
+### What's New
+
+- Classroom check-in: convert GPS to GCJ-02, prefer Amap, and refresh the fix before punch so in-room signs fail less often.
+- Prompts use short toasts instead of blocking the page.
+- Move the launch update-check toggle into About.
+
 ## 1.0.3
+
+### 更新内容
 
 - 课堂签到：CAS 换票后同步课堂考勤会话，避免「认证失败」。
 - 选课：已满按官网容量判断；已选课与官网已选列表对齐。
@@ -15,20 +25,53 @@
 - 教室位置：签到成功后本机保存。
 - 开发者模式：关于页连点图标开启。
 
+### What's New
+
+- Classroom attendance: sync the ktkq session after a CAS ticket so sign-in no longer fails with auth errors.
+- Course selection: treat full classes by official capacity; align selected courses with the registrar list.
+- Login: saved accounts only fill student id and password; finish CAS when Lantu is already signed in.
+- Mine / Home: drop duplicate entries and venue booking.
+- Remember classroom coordinates after a successful sign-in.
+- Developer mode: tap the About icon repeatedly to enable.
+
 ## 1.0.2
+
+### 更新内容
 
 - 自主选课：按官网分页拉课、选上课班级后提交；满员显示「已无余量」，不再弹出一串数字。
 - 一卡通：付款码好了就显示；卡片下方单独加载余额使用明细；消费为支出、充值/圈存为收入。
 - 课堂考勤：学期接口空返回时按日期落到当前学年学期，避免「未能确定当前学期」。
 - 公寓打卡：识别 token 失效并自动重新登录后再请求。
 
+### What's New
+
+- Self-service selection: paginate like the official site, pick a teaching class, then submit; full classes show “no seats left”.
+- Campus card: show the payment QR as soon as it is ready; load the ledger under the card; spend vs top-up signs.
+- Attendance: if the term API is empty, fall back to the current school year/term.
+- Dorm check-in: detect an expired token and log in again before retrying.
+
 ## 1.0.1
+
+### 更新内容
 
 - 修复登录 HTTPS 400。
 - 个人信息班级显示教务班级名。
 - 启动检查更新，关于页可手动检查。
 - 登录已存账号改为学号后缀下拉。
 
+### What's New
+
+- Fix HTTPS 400 on login.
+- Show the registrar class name on the profile.
+- Check for updates on launch; About can check manually.
+- Saved accounts use a student-id suffix dropdown.
+
 ## 1.0.0
 
+### 更新内容
+
 - 首个公开发布：课表、成绩、学分、考试、课堂考勤、一卡通、场馆预约、公寓打卡。
+
+### What's New
+
+- First public release: schedule, grades, credits, exams, classroom attendance, campus card, venues, and dorm check-in.

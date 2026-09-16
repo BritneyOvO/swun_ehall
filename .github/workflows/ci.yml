@@ -87,6 +87,46 @@ jobs:
             fi
           fi
           ls -lh dist
+      - name: Release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          ver = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+          start = next((i for i, l in enumerate(lines) if l.strip() == f"## {ver}"), None)
+          notes = ""
+          if start is not None:
+              chunk = []
+              for line in lines[start + 1 :]:
+                  if line.startswith("## "):
+                      break
+                  chunk.append(line)
+              notes = "\n".join(chunk).strip()
+          parts = [
+              f"# 民大助手 / MinDa ZhuShou v{ver}",
+              "",
+              "Android arm64-v8a",
+              "",
+          ]
+          if notes:
+              parts.extend([notes, ""])
+          parts.extend(
+              [
+                  "## 下载 | Downloads",
+                  "",
+                  f"- `swun_ehall-{ver}-arm64-release.apk` — 正式包 / Release",
+                  f"- `swun_ehall-{ver}-arm64-debug.apk` — 调试包 / Debug",
+                  "",
+                  "仅学生账号 · Student accounts only",
+                  "非官方应用 · Unofficial app",
+              ]
+          )
+          Path("dist").mkdir(exist_ok=True)
+          Path("dist/RELEASE_NOTES.md").write_text("\n".join(parts) + "\n", encoding="utf-8")
+          print(Path("dist/RELEASE_NOTES.md").read_text(encoding="utf-8"))
+          PY
       - uses: actions/upload-artifact@v5
         with:
           name: apk
@@ -97,10 +137,4 @@ jobs:
         with:
           generate_release_notes: true
           files: dist/*.apk
-          body: |
-            MinDa ZhuShou ${{ github.ref_name }} (Android arm64-v8a)
-
-            - `*-arm64-debug.apk`: debug build for logs
-            - `*-arm64-release.apk`: release build
-
-            Student accounts only. Unofficial app.
+          body_path: dist/RELEASE_NOTES.md
