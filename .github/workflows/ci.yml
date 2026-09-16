@@ -37,6 +37,7 @@ jobs:
       contents: write
     env:
       GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g
+      AMAP_KEY: ${{ secrets.AMAP_KEY }}
       BUGLY_APP_ID: ${{ secrets.BUGLY_APP_ID }}
     steps:
       - uses: actions/checkout@v5
@@ -61,7 +62,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "No upload keystore secret; release APK will use debug signing."
+            echo "No upload keystore secret; APKs will use the default debug key."
             exit 0
           fi
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/upload-keystore.jks

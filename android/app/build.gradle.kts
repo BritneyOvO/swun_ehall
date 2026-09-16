@@ -77,14 +77,14 @@ android {
     }
 
     buildTypes {
+        val upload = signingConfigs.getByName("release")
+        val useUpload = upload.storeFile != null && upload.storeFile!!.exists()
+        debug {
+            if (useUpload) signingConfig = upload
+        }
         release {
-            val releaseStore = signingConfigs.getByName("release").storeFile
             signingConfig =
-                if (releaseStore != null && releaseStore.exists()) {
-                    signingConfigs.getByName("release")
-                } else {
-                    signingConfigs.getByName("debug")
-                }
+                if (useUpload) upload else signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
