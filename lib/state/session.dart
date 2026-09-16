@@ -5,6 +5,7 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../api/bugly.dart';
 import '../api/cas.dart';
 import '../api/locate.dart';
 import '../api/ehall.dart';
@@ -155,6 +156,7 @@ class Session extends ChangeNotifier {
           accounts.current?.label ?? (studentId.isEmpty ? '同学' : studentId);
     }
     gyglxt?.username = studentId.isEmpty ? null : studentId;
+    unawaited(Bugly.setUserId(studentId));
   }
 
   Future<void> _restorePrevious(String? prev) async {
@@ -407,6 +409,7 @@ class Session extends ChangeNotifier {
     profileError = null;
     error = null;
     _wireStores();
+    unawaited(Bugly.setUserId('demo'));
     notifyListeners();
   }
 
@@ -499,6 +502,7 @@ class Session extends ChangeNotifier {
       studentId = id ?? '';
     }
     _wireStores();
+    unawaited(Bugly.setUserId(''));
     notifyListeners();
   }
 

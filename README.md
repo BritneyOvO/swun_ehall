@@ -59,13 +59,16 @@ flutter install --debug
 
 发布包需要 `android/key.properties` 和 `android/upload-keystore.jks`（已 gitignore）。没有密钥时 release 会回退到 debug 签名。
 
-高德定位 key 若需要，写在 `android/local.properties`（已 gitignore）：
+高德定位 key 和 Bugly App ID 写在 `android/local.properties`（已 gitignore）：
 
 ```
 amap.key=你的Key
+bugly.appId=你的Bugly App ID
 ```
 
-不配 key 时，定位相关能力会降级，不影响课表、成绩等。
+不配高德 key 时，定位相关能力会降级，不影响课表、成绩等。
+
+崩溃 / ANR 上报走 [Bugly](https://bugly.qq.com)。在控制台新建 Android 应用（包名 `cn.edu.swun.swun_ehall`），把 App ID 写入 `bugly.appId`。CI 发布可用仓库 Secret `BUGLY_APP_ID`。不配则跳过初始化。
 
 ## 使用
 

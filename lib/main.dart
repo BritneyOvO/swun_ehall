@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'api/bugly.dart';
 import 'pages/login_page.dart';
 import 'pages/shell.dart';
 import 'state/session.dart';
@@ -12,6 +13,7 @@ import 'widgets/update_prompt.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  Bugly.installHooks();
   runApp(const SwunApp());
 }
 

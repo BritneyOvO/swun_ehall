@@ -37,6 +37,7 @@ jobs:
       contents: write
     env:
       GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g
+      BUGLY_APP_ID: ${{ secrets.BUGLY_APP_ID }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5

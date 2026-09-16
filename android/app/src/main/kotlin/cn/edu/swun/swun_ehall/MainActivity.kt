@@ -8,5 +8,6 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         LocatePlugin.registerWith(flutterEngine, this)
         VaultPlugin.registerWith(flutterEngine)
+        BuglyPlugin.registerWith(flutterEngine)
     }
 }

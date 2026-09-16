@@ -12,16 +12,21 @@ if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 }
 
-val amapKey = run {
+fun localOrEnv(fileKey: String, envKey: String): String {
+    val fromEnv = System.getenv(envKey)?.trim().orEmpty()
+    if (fromEnv.isNotEmpty()) return fromEnv
     val f = rootProject.file("local.properties")
-    if (!f.exists()) return@run ""
-    f.readLines()
-        .firstOrNull { it.trim().startsWith("amap.key=") }
+    if (!f.exists()) return ""
+    return f.readLines()
+        .firstOrNull { it.trim().startsWith("$fileKey=") }
         ?.substringAfter("=")
         ?.trim()
         ?.trim('"')
         ?: ""
 }
+
+val amapKey = localOrEnv("amap.key", "AMAP_KEY")
+val buglyAppId = localOrEnv("bugly.appId", "BUGLY_APP_ID")
 
 android {
     namespace = "cn.edu.swun.swun_ehall"
@@ -51,6 +56,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         buildConfigField("String", "AMAP_KEY", "\"$amapKey\"")
+        buildConfigField("String", "BUGLY_APP_ID", "\"$buglyAppId\"")
         manifestPlaceholders["AMAP_KEY"] = amapKey
         ndk {
             abiFilters.clear()
@@ -79,6 +85,10 @@ android {
                 } else {
                     signingConfigs.getByName("debug")
                 }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
@@ -95,4 +105,6 @@ flutter {
 
 dependencies {
     implementation("com.amap.api:location:6.5.1")
+    implementation("com.tencent.bugly:crashreport:4.1.9")
+    implementation("com.tencent.bugly:nativecrashreport:3.9.2")
 }
