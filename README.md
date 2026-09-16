@@ -68,8 +68,6 @@ bugly.appId=你的Bugly App ID
 
 不配高德 key 时，定位相关能力会降级，不影响课表、成绩等。
 
-CI 用仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_PASSWORD`、`ANDROID_KEY_ALIAS`、`AMAP_KEY`、`BUGLY_APP_ID`。值不会出现在仓库里。
-
 崩溃 / ANR 上报走 [Bugly](https://bugly.qq.com)。在控制台新建 Android 应用（包名 `cn.edu.swun.swun_ehall`），把 App ID 写入 `bugly.appId`。不配则跳过初始化。
 
 ## 使用
