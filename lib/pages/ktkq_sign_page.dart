@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/campus_fences.dart';
 import '../api/geo.dart';
 import '../api/httpx.dart';
 import '../api/ktkq.dart';
@@ -11,6 +12,7 @@ import '../demo/demo_data.dart';
 import '../models/lesson.dart';
 import '../state/rooms.dart';
 import '../state/session.dart';
+import '../state/settings.dart';
 import '../theme.dart';
 import '../widgets/loader.dart';
 import '../widgets/toast.dart';
@@ -182,7 +184,6 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
   }
 
   Future<void> _punch(Map<String, dynamic> act) async {
-    final s = context.read<Session>();
     final activityId = '${act['activityId'] ?? ''}';
     if (activityId.isEmpty) {
       _toast('没有签到活动');
@@ -191,6 +192,38 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     await _locate(force: true);
     if (_pos == null) {
       _toast(_locError ?? '还没有定位');
+      return;
+    }
+    await _submitSign(act, lat: _pos!.campus.latitude, lng: _pos!.campus.longitude, acc: _pos!.campus.accuracy);
+  }
+
+  Future<void> _punchBuildingCenter(Map<String, dynamic> act) async {
+    final room = '${_data['classroom'] ?? _lesson.room}'.trim();
+    final fence = campusFenceForRoom(room);
+    if (fence == null) {
+      _toast('未识别教室楼栋：$room');
+      return;
+    }
+    await _submitSign(
+      act,
+      lat: fence.centerLat,
+      lng: fence.centerLng,
+      acc: 8,
+      building: fence.name,
+    );
+  }
+
+  Future<void> _submitSign(
+    Map<String, dynamic> act, {
+    required double lat,
+    required double lng,
+    required double acc,
+    String? building,
+  }) async {
+    final s = context.read<Session>();
+    final activityId = '${act['activityId'] ?? ''}';
+    if (activityId.isEmpty) {
+      _toast('没有签到活动');
       return;
     }
     final type = '${act['signType'] ?? _data['signType'] ?? ''}';
@@ -209,16 +242,16 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
         act['message'] = '已签到';
         _data['status'] = 'already_signed';
         _data['message'] = '已签到';
-        _toast('示例模式：已模拟签到成功');
+        _toast(
+          building == null ? '示例模式：已模拟签到成功' : '示例模式：已用 $building 楼中心签到',
+        );
         return;
       }
-      final lat = _pos!.latitude;
-      final lng = _pos!.longitude;
-      final acc = _pos!.accuracy.isFinite ? _pos!.accuracy.round() : 0;
+      final accM = acc.isFinite ? acc.round() : 8;
       final r = await s.ktkq!.submitSign(
         activityId: activityId,
         code: code,
-        accuracy: acc,
+        accuracy: accM,
         latitude: lat,
         longitude: lng,
       );
@@ -238,11 +271,17 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
             room: room,
             latitude: lat,
             longitude: lng,
-            accuracy: acc.toDouble(),
+            accuracy: accM.toDouble(),
             course: _lesson.name,
           );
         }
-        _toast(msg.isEmpty || msg == 'success' ? '签到成功' : msg);
+        _toast(
+          building == null
+              ? (msg.isEmpty || msg == 'success' ? '签到成功' : msg)
+              : (msg.isEmpty || msg == 'success'
+                    ? '已用 $building 楼中心签到'
+                    : msg),
+        );
         await _reload(refresh: true);
         return;
       }
@@ -446,7 +485,7 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
             if (_pos != null) ...[
               Text(_address),
               Text(
-                '${_pos!.sourceLabel} · 精度 ${_pos!.accuracy.toStringAsFixed(0)} 米 · 签到会提交当前经纬度',
+                '${_pos!.sourceLabel} · 精度 ${_pos!.accuracy.toStringAsFixed(0)} 米 · 提交 GCJ-02 ${ _pos!.campus.coordText}',
                 style: TextStyle(color: context.muted, fontSize: 12),
               ),
             ],
@@ -463,6 +502,9 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
     final pending = status == 'pending_signin';
     final punching = _punchingId == id;
     final range = formatKtkqCstRange(act['startTime'], act['endTime']);
+    final fence = campusFenceForRoom(
+      '${_data['classroom'] ?? _lesson.room}'.trim(),
+    );
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -517,6 +559,17 @@ class _KtkqSignPageState extends State<KtkqSignPage> {
                       )
                     : const Text('立即签到'),
               ),
+              if (context.watch<AppSettings>().developerMode) ...[
+                const SizedBox(height: 8),
+                FilledButton.tonal(
+                  onPressed: punching ? null : () => _punchBuildingCenter(act),
+                  child: Text(
+                    fence == null
+                        ? '楼中心签到（未识别楼栋）'
+                        : '用 ${fence.name} 楼中心签到',
+                  ),
+                ),
+              ],
             ],
           ],
         ),

@@ -15,6 +15,7 @@ import '../widgets/motion.dart';
 import '../widgets/toast.dart';
 import '../widgets/update_prompt.dart';
 import 'accounts_page.dart';
+import 'locate_test_page.dart';
 import 'room_locations_page.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -475,10 +476,24 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: context.line),
               ),
-              child: SwitchListTile(
-                title: const Text('开发者模式'),
-                value: settings.developerMode,
-                onChanged: (v) => settings.setDeveloperMode(v),
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    title: const Text('开发者模式'),
+                    value: settings.developerMode,
+                    onChanged: (v) => settings.setDeveloperMode(v),
+                  ),
+                  Divider(height: 1, indent: 16, endIndent: 16, color: context.line),
+                  ListTile(
+                    title: const Text('测试定位'),
+                    subtitle: Text(
+                      '按教室模拟坐标，打官网围栏预检，不记签到',
+                      style: TextStyle(color: context.muted, fontSize: 12),
+                    ),
+                    trailing: Icon(Icons.chevron_right_rounded, color: context.muted),
+                    onTap: () => pushPage(context, const LocateTestPage()),
+                  ),
+                ],
               ),
             ),
           ],

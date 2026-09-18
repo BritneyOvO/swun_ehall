@@ -145,7 +145,8 @@ class _ClockPageState extends State<ClockPage> {
       final lat = double.tryParse('${f['lat'] ?? ''}');
       final lng = double.tryParse('${f['lng'] ?? ''}');
       if (lat == null || lng == null) continue;
-      final d = _haversine(_pos!.latitude, _pos!.longitude, lat, lng);
+      final g = _pos!.campus;
+      final d = _haversine(g.latitude, g.longitude, lat, lng);
       if (best == null || d < best) best = d;
     }
     return best;
@@ -190,8 +191,9 @@ class _ClockPageState extends State<ClockPage> {
           return;
         }
       }
-      lat = _pos!.latitude;
-      lng = _pos!.longitude;
+      final g = _pos!.campus;
+      lat = g.latitude;
+      lng = g.longitude;
       address = _address;
     }
     setState(() => _punching = true);

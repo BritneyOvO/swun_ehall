@@ -222,7 +222,8 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
             when (src) {
                 "amap" -> s -= 12.0
                 "network" -> s += 8.0
-                "gps" -> s += 32.0
+                "fused" -> s += 10.0
+                "gps", "fused" -> s += 32.0
                 "last" -> s += 55.0
             }
             if (age > 4_000) s += (age - 4_000) / 250.0
@@ -315,21 +316,32 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
 
     private fun requestSystem(listener: LocationListener, timeoutMs: Long) {
         val looper = Looper.getMainLooper()
-        try {
-            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0L, 0f, listener, looper)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "network $e")
-        }
-        try {
-            if (hasFine() && lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, listener, looper)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "gps $e")
+        requestProvider(LocationManager.NETWORK_PROVIDER, listener, looper, needFine = false)
+        if (hasFine()) {
+            requestProvider(LocationManager.GPS_PROVIDER, listener, looper, needFine = true)
+            requestProvider(fusedProvider(), listener, looper, needFine = true)
         }
         main.postDelayed({ stopSystem(listener) }, timeoutMs + 200)
+    }
+
+    private fun requestProvider(
+        name: String,
+        listener: LocationListener,
+        looper: Looper,
+        needFine: Boolean,
+    ) {
+        if (needFine && !hasFine()) return
+        try {
+            if (lm.isProviderEnabled(name)) {
+                lm.requestLocationUpdates(name, 0L, 0f, listener, looper)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "$name $e")
+        }
+    }
+
+    private fun fusedProvider(): String {
+        return if (Build.VERSION.SDK_INT >= 31) LocationManager.FUSED_PROVIDER else "fused"
     }
 
     private fun stopSystem(listener: LocationListener) {
@@ -343,6 +355,7 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
         val names = listOf(
             LocationManager.NETWORK_PROVIDER,
             LocationManager.GPS_PROVIDER,
+            fusedProvider(),
             LocationManager.PASSIVE_PROVIDER,
         )
         var best: Location? = null
@@ -373,19 +386,29 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
             AMapLocation.LOCATION_TYPE_FAST -> "last"
             else -> "amap"
         }
-        return pack(loc.latitude, loc.longitude, loc.accuracy.toDouble(), source, loc.time)
+        return pack(loc.latitude, loc.longitude, loc.accuracy.toDouble(), source, loc.time, "gcj02", "amap")
     }
 
     private fun pack(loc: Location, source: String, time: Long): HashMap<String, Any> {
         var lat = loc.latitude
         var lng = loc.longitude
-        // 系统 GPS 是 WGS-84；校方围栏是 GCJ-02。网络定位在国产 ROM 上已经是 GCJ-02。
-        if (loc.provider == LocationManager.GPS_PROVIDER) {
+        val provider = loc.provider.orEmpty()
+        // 聚类前转到 GCJ-02。GPS / fused / 空白 provider 当 WGS-84；network 在国产 ROM 上已是 GCJ。
+        if (isWgs84Provider(provider)) {
             val gcj = wgs84ToGcj02(lat, lng)
             lat = gcj.first
             lng = gcj.second
         }
-        return pack(lat, lng, loc.accuracy.toDouble(), source, time)
+        return pack(lat, lng, loc.accuracy.toDouble(), source, time, "gcj02", provider)
+    }
+
+    /** GPS、fused、passive 是 WGS-84。国产 ROM 的 network 已是 GCJ-02。 */
+    private fun isWgs84Provider(provider: String?): Boolean {
+        if (provider.isNullOrBlank()) return true
+        if (provider == LocationManager.NETWORK_PROVIDER) return false
+        val p = provider.lowercase()
+        if (p == "network") return false
+        return true
     }
 
     private fun wgs84ToGcj02(lat: Double, lng: Double): Pair<Double, Double> {
@@ -431,20 +454,32 @@ class LocatePlugin(private val app: Context) : MethodChannel.MethodCallHandler {
         return 6371000.0 * 2 * kotlin.math.atan2(sqrt(h), sqrt(1 - h))
     }
 
-    private fun pack(lat: Double, lng: Double, acc: Double, source: String, time: Long): HashMap<String, Any> {
+    private fun pack(
+        lat: Double,
+        lng: Double,
+        acc: Double,
+        source: String,
+        time: Long,
+        datum: String = "gcj02",
+        provider: String = "",
+    ): HashMap<String, Any> {
         return hashMapOf(
             "latitude" to lat,
             "longitude" to lng,
             "accuracy" to if (acc.isFinite()) acc else 0.0,
             "source" to source,
             "time" to time,
+            "datum" to datum,
+            "provider" to provider,
         )
     }
 
     private fun sourceOf(loc: Location): String {
-        return when (loc.provider) {
-            LocationManager.NETWORK_PROVIDER -> "network"
-            LocationManager.GPS_PROVIDER -> "gps"
+        val p = loc.provider.orEmpty()
+        return when {
+            p == LocationManager.NETWORK_PROVIDER -> "network"
+            p == LocationManager.GPS_PROVIDER -> "gps"
+            p.equals("fused", ignoreCase = true) || p.contains("fused", ignoreCase = true) -> "fused"
             else -> "last"
         }
     }

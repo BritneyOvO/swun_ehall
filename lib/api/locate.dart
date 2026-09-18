@@ -1,5 +1,9 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+
+import 'geo.dart';
 
 class LocateException implements Exception {
   LocateException(this.message);
@@ -14,6 +18,7 @@ class GeoFix {
     required this.longitude,
     this.accuracy = 0,
     this.source = '',
+    this.datum = '',
     this.at,
   });
 
@@ -21,7 +26,27 @@ class GeoFix {
   final double longitude;
   final double accuracy;
   final String source;
+  final String datum;
   final DateTime? at;
+
+  /// 和测试定位同一套：WGS 转 GCJ，已经是 GCJ 的不再转。
+  GeoFix get campus {
+    final g = campusGcj02(
+      latitude,
+      longitude,
+      source: source,
+      datum: datum.isEmpty ? null : datum,
+    );
+    if (g.$1 == latitude && g.$2 == longitude && datum == 'gcj02') return this;
+    return GeoFix(
+      latitude: g.$1,
+      longitude: g.$2,
+      accuracy: accuracy,
+      source: source,
+      datum: 'gcj02',
+      at: at,
+    );
+  }
 
   String get sourceLabel {
     switch (source) {
@@ -31,6 +56,8 @@ class GeoFix {
         return '网络';
       case 'gps':
         return 'GPS';
+      case 'fused':
+        return '融合';
       case 'last':
         return '缓存';
       case 'demo':
@@ -40,7 +67,8 @@ class GeoFix {
     }
   }
 
-  String get coordText => '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}';
+  String get coordText =>
+      '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}';
 }
 
 class AppLocator {
@@ -55,6 +83,7 @@ class AppLocator {
     longitude: 103.97048,
     accuracy: 12,
     source: 'demo',
+    datum: 'gcj02',
   );
 
   static Future<void> setKey(String key) async {
@@ -89,7 +118,8 @@ class AppLocator {
     if (perm == LocationPermission.denied && request) {
       perm = await Geolocator.requestPermission();
     }
-    return perm != LocationPermission.denied && perm != LocationPermission.deniedForever;
+    return perm != LocationPermission.denied &&
+        perm != LocationPermission.deniedForever;
   }
 
   static void invalidate() {
@@ -131,10 +161,12 @@ class AppLocator {
     }
 
     try {
-      final raw = await _ch.invokeMethod('getFix', {
-        'timeoutMs': timeout.inMilliseconds,
-        'force': force,
-      }).timeout(timeout + const Duration(seconds: 2));
+      final raw = await _ch
+          .invokeMethod('getFix', {
+            'timeoutMs': timeout.inMilliseconds,
+            'force': force,
+          })
+          .timeout(timeout + const Duration(seconds: 2));
       final fix = _parse(raw);
       _store(fix);
       onUpdate?.call(fix);
@@ -151,14 +183,19 @@ class AppLocator {
 
   static Future<GeoFix> _fallback({void Function(GeoFix)? onUpdate}) async {
     try {
-      final last = await Geolocator.getLastKnownPosition(forceAndroidLocationManager: true);
+      final last = await Geolocator.getLastKnownPosition(
+        forceAndroidLocationManager: true,
+      );
       if (last != null) {
-        final fix = GeoFix(
-          latitude: last.latitude,
-          longitude: last.longitude,
-          accuracy: last.accuracy,
-          source: 'last',
-          at: last.timestamp,
+        final fix = _toCampusGcj(
+          GeoFix(
+            latitude: last.latitude,
+            longitude: last.longitude,
+            accuracy: last.accuracy,
+            source: 'last',
+            at: last.timestamp,
+          ),
+          datum: 'wgs84',
         );
         _store(fix);
         onUpdate?.call(fix);
@@ -173,12 +210,15 @@ class AppLocator {
           timeLimit: const Duration(seconds: 5),
         ),
       );
-      final fix = GeoFix(
-        latitude: p.latitude,
-        longitude: p.longitude,
-        accuracy: p.accuracy,
-        source: 'network',
-        at: p.timestamp,
+      final fix = _toCampusGcj(
+        GeoFix(
+          latitude: p.latitude,
+          longitude: p.longitude,
+          accuracy: p.accuracy,
+          source: Platform.isIOS ? 'gps' : 'network',
+          at: p.timestamp,
+        ),
+        datum: Platform.isIOS ? 'wgs84' : 'gcj02',
       );
       _store(fix);
       onUpdate?.call(fix);
@@ -200,12 +240,41 @@ class AppLocator {
     final lng = (raw['longitude'] as num?)?.toDouble();
     if (lat == null || lng == null) throw LocateException('无法获取定位');
     final ms = (raw['time'] as num?)?.toInt();
+    return _toCampusGcj(
+      GeoFix(
+        latitude: lat,
+        longitude: lng,
+        accuracy: (raw['accuracy'] as num?)?.toDouble() ?? 0,
+        source: '${raw['source'] ?? ''}',
+        at: ms == null || ms <= 0
+            ? DateTime.now()
+            : DateTime.fromMillisecondsSinceEpoch(ms),
+      ),
+      datum: raw['datum']?.toString(),
+      provider: raw['provider']?.toString(),
+    );
+  }
+
+  static GeoFix _toCampusGcj(GeoFix fix, {String? datum, String? provider}) {
+    final g = campusGcj02(
+      fix.latitude,
+      fix.longitude,
+      source: fix.source,
+      datum: datum,
+      provider: provider,
+    );
+    if (g.$1 == fix.latitude &&
+        g.$2 == fix.longitude &&
+        fix.datum == 'gcj02') {
+      return fix;
+    }
     return GeoFix(
-      latitude: lat,
-      longitude: lng,
-      accuracy: (raw['accuracy'] as num?)?.toDouble() ?? 0,
-      source: '${raw['source'] ?? ''}',
-      at: ms == null || ms <= 0 ? DateTime.now() : DateTime.fromMillisecondsSinceEpoch(ms),
+      latitude: g.$1,
+      longitude: g.$2,
+      accuracy: fix.accuracy,
+      source: fix.source,
+      datum: 'gcj02',
+      at: fix.at,
     );
   }
 }

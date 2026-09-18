@@ -226,6 +226,7 @@ class KtkqClient {
     Map<String, dynamic>? params,
     Object? data,
     bool retry401 = true,
+    bool json = true,
   }) async {
     _auth();
     final hit = await rs
@@ -234,7 +235,7 @@ class KtkqClient {
           url: '$kKtkq$path',
           query: params,
           data: data,
-          headers: _headers(json: true),
+          headers: _headers(json: json),
         )
         .timeout(
           const Duration(seconds: 25),
@@ -500,6 +501,36 @@ class KtkqClient {
     'longitude': longitude,
     'code': code,
   });
+
+  /// 官网围栏预检。GET query，不记一次签到。
+  Future<Map<String, dynamic>> checkAllowSign({
+    required String teachClassId,
+    required String scheduleId,
+    required int week,
+    required int weekDay,
+    required int startNode,
+    required int endNode,
+    String activityId = '',
+    required Object latitude,
+    required Object longitude,
+    Object accuracy = 8,
+  }) => _api(
+    'GET',
+    '/jwmobile/biz/v410/signin/checkAllowSign',
+    params: {
+      'teachClassId': teachClassId,
+      'scheduleId': scheduleId,
+      'week': '$week',
+      'weekDay': '$weekDay',
+      'startNode': '$startNode',
+      'endNode': '$endNode',
+      'activityId': activityId,
+      'latitude': '$latitude',
+      'longitude': '$longitude',
+      'accuracy': '$accuracy',
+    },
+    json: false,
+  );
 
   Future<Map<String, dynamic>> studentHistory(String teachClassId) => _post(
     '/jwmobile/biz/v410/signin/queryStudentHistory',
