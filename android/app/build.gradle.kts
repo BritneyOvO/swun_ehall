@@ -2,8 +2,8 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
-    id("dev.flutter.flutter-gradle-plugin")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 val keystoreProperties = Properties()
@@ -30,8 +30,7 @@ val buglyAppId = localOrEnv("bugly.appId", "BUGLY_APP_ID")
 
 android {
     namespace = "cn.edu.swun.swun_ehall"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk = 37
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -40,27 +39,21 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "cn.edu.swun.swun_ehall"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 6
+        versionName = "1.0.5"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AMAP_KEY", "\"$amapKey\"")
         buildConfigField("String", "BUGLY_APP_ID", "\"$buglyAppId\"")
         manifestPlaceholders["AMAP_KEY"] = amapKey
         ndk {
-            abiFilters.clear()
-            abiFilters.add("arm64-v8a")
+            abiFilters += "arm64-v8a"
         }
     }
 
@@ -95,16 +88,29 @@ android {
 
 kotlin {
     compilerOptions {
-        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
-flutter {
-    source = "../.."
-}
-
 dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2025.01.01")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.navigation:navigation-compose:2.8.8")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation("top.yukonga.miuix.kmp:miuix-ui:0.9.4-rc01")
+    implementation("top.yukonga.miuix.kmp:miuix-preference:0.9.4-rc01")
+    implementation("top.yukonga.miuix.kmp:miuix-icons:0.9.4-rc01")
     implementation("com.amap.api:location:6.5.1")
     implementation("com.tencent.bugly:crashreport:4.1.9")
     implementation("com.tencent.bugly:nativecrashreport:3.9.2")
+    testImplementation("junit:junit:4.13.2")
+    debugImplementation("androidx.compose.ui:ui-tooling")
 }

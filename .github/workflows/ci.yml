@@ -20,14 +20,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: subosito/flutter-action@v2
+      - uses: android-actions/setup-android@v4
         with:
-          flutter-version: "3.47.2"
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      - run: flutter analyze lib test
-      - run: flutter test
+          packages: platform-tools
+      - name: Unit tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
 
   apk:
     name: Compile APK
@@ -48,12 +46,6 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.47.2"
-          channel: stable
-          cache: true
-      - run: flutter pub get
       - name: Decode upload keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -68,16 +60,20 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/upload-keystore.jks
           python3 -c 'import os; open("android/key.properties","w").write("storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=upload-keystore.jks\n" % (os.environ["ANDROID_KEYSTORE_PASSWORD"], os.environ["ANDROID_KEY_PASSWORD"], os.environ["ANDROID_KEY_ALIAS"]))'
       - name: Build debug APK
-        run: flutter build apk --debug --target-platform android-arm64
+        working-directory: android
+        run: ./gradlew :app:assembleDebug
       - name: Build release APK
         if: startsWith(github.ref, 'refs/tags/v')
-        run: flutter build apk --release --target-platform android-arm64
+        working-directory: android
+        run: ./gradlew :app:assembleRelease
       - name: Name artifacts
         run: |
           mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-debug.apk dist/swun_ehall-debug-arm64.apk
-          if [ -f build/app/outputs/flutter-apk/app-release.apk ]; then
-            cp build/app/outputs/flutter-apk/app-release.apk dist/swun_ehall-release-arm64.apk
+          DEBUG=$(find android/app/build/outputs/apk -name '*debug*.apk' | head -1)
+          cp "$DEBUG" dist/swun_ehall-debug-arm64.apk
+          REL=$(find android/app/build/outputs/apk -name '*release*.apk' | head -1 || true)
+          if [ -n "$REL" ] && [ -f "$REL" ]; then
+            cp "$REL" dist/swun_ehall-release-arm64.apk
           fi
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             ver="${GITHUB_REF_NAME#v}"
@@ -107,7 +103,7 @@ jobs:
           parts = [
               f"# 民大助手 / MinDa ZhuShou v{ver}",
               "",
-              "Android arm64-v8a",
+              "Android arm64-v8a · Jetpack Compose + MIUIX",
               "",
           ]
           if notes:
@@ -125,7 +121,6 @@ jobs:
           )
           Path("dist").mkdir(exist_ok=True)
           Path("dist/RELEASE_NOTES.md").write_text("\n".join(parts) + "\n", encoding="utf-8")
-          print(Path("dist/RELEASE_NOTES.md").read_text(encoding="utf-8"))
           PY
       - uses: actions/upload-artifact@v5
         with:

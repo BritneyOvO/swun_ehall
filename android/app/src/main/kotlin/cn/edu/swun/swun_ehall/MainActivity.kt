@@ -1,14 +1,15 @@
 package cn.edu.swun.swun_ehall
 
-import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import cn.edu.swun.swun_ehall.ui.SwunApp
 
-class MainActivity : FlutterActivity() {
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        LocatePlugin.registerWith(flutterEngine, this)
-        VaultPlugin.registerWith(flutterEngine)
-        BuglyPlugin.registerWith(flutterEngine)
-        InstallPlugin.registerWith(flutterEngine, this)
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent { SwunApp() }
     }
 }
