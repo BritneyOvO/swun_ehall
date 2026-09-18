@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'httpx.dart';
 import 'update.dart';
 
 const _installCh = MethodChannel('cn.edu.swun.swun_ehall/install');
+const _minApkBytes = 1024 * 1024;
 
 class ApkInstallException implements Exception {
   ApkInstallException(this.message, {this.needPermission = false});
@@ -19,6 +21,48 @@ class ApkInstallException implements Exception {
   String toString() => message;
 }
 
+Future<Directory> updateApkDir() async {
+  final root = await getApplicationSupportDirectory();
+  final dir = Directory(p.join(root.path, 'update'));
+  if (!await dir.exists()) await dir.create(recursive: true);
+  return dir;
+}
+
+File updateApkFile(Directory dir, String version) =>
+    File(p.join(dir.path, 'swun_ehall-$version.apk'));
+
+Future<File?> cachedReleaseApk(AppRelease rel) async {
+  final dir = await updateApkDir();
+  final file = updateApkFile(dir, rel.version);
+  if (!await file.exists()) return null;
+  if (await file.length() < _minApkBytes) return null;
+  return file;
+}
+
+/// 启动后删掉已经装上（或更旧）的安装包，以及没下完的 .part。
+Future<void> purgeStaleUpdateApks() async {
+  try {
+    final dir = await updateApkDir();
+    await for (final e in dir.list()) {
+      if (e is! File) continue;
+      final name = p.basename(e.path);
+      if (name.endsWith('.part')) {
+        try {
+          await e.delete();
+        } catch (_) {}
+        continue;
+      }
+      final m = RegExp(r'swun_ehall-(\d+(?:\.\d+)*)').firstMatch(name);
+      if (m == null) continue;
+      if (compareVersions(m.group(1)!, kAppVersion) <= 0) {
+        try {
+          await e.delete();
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
 Future<File> downloadReleaseApk(
   AppRelease rel, {
   void Function(double progress)? onProgress,
@@ -28,12 +72,24 @@ Future<File> downloadReleaseApk(
   if (url.isEmpty) {
     throw ApkInstallException('这个版本没有 Android 安装包');
   }
-  final dir = await getTemporaryDirectory();
-  final file = File('${dir.path}/update/swun_ehall-${rel.version}.apk');
-  if (await file.exists()) {
-    await file.delete();
+  final dir = await updateApkDir();
+  final file = updateApkFile(dir, rel.version);
+  final cached = await cachedReleaseApk(rel);
+  if (cached != null) {
+    onProgress?.call(1);
+    return cached;
   }
-  await file.parent.create(recursive: true);
+  if (await file.exists()) {
+    try {
+      await file.delete();
+    } catch (_) {}
+  }
+  final part = File('${file.path}.part');
+  if (await part.exists()) {
+    try {
+      await part.delete();
+    } catch (_) {}
+  }
   final dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 12),
@@ -51,19 +107,20 @@ Future<File> downloadReleaseApk(
   try {
     await dio.download(
       url,
-      file.path,
+      part.path,
       cancelToken: cancel,
       onReceiveProgress: (got, total) {
         if (total > 0) onProgress?.call((got / total).clamp(0, 1));
       },
     );
+    await part.rename(file.path);
   } on DioException catch (e) {
     if (CancelToken.isCancel(e)) rethrow;
     throw ApkInstallException('下载失败：${publicError(e)}');
   } finally {
     dio.close(force: true);
   }
-  if (!await file.exists() || await file.length() < 1024) {
+  if (!await file.exists() || await file.length() < _minApkBytes) {
     throw ApkInstallException('安装包不完整，请稍后重试');
   }
   onProgress?.call(1);

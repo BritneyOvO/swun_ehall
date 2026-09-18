@@ -29,9 +29,22 @@ class _UpdateDialog extends StatefulWidget {
 
 class _UpdateDialogState extends State<_UpdateDialog> {
   var _busy = false;
+  var _cached = false;
   double? _progress;
   String? _status;
   CancelToken? _cancel;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_checkCache());
+  }
+
+  Future<void> _checkCache() async {
+    final hit = await cachedReleaseApk(widget.rel);
+    if (!mounted || hit == null) return;
+    setState(() => _cached = true);
+  }
 
   @override
   void dispose() {
@@ -42,10 +55,11 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   Future<void> _install() async {
     if (_busy) return;
     final token = CancelToken();
+    final reuse = _cached;
     setState(() {
       _busy = true;
-      _progress = 0;
-      _status = '正在下载…';
+      _progress = reuse ? 1 : 0;
+      _status = reuse ? '正在打开安装…' : '正在下载…';
       _cancel = token;
     });
     try {
@@ -63,7 +77,10 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         _status = '正在打开安装…';
       });
       await installApkFile(file);
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        setState(() => _cached = true);
+        Navigator.of(context).pop();
+      }
     } on DioException catch (e) {
       if (CancelToken.isCancel(e) || !mounted) return;
       setState(() {
@@ -145,15 +162,6 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                   },
                 ),
               ],
-              if (_busy) ...[
-                const SizedBox(height: 14),
-                LinearProgressIndicator(value: _progress),
-                const SizedBox(height: 6),
-                Text(
-                  _status ?? '正在下载…',
-                  style: TextStyle(color: context.muted, fontSize: 12),
-                ),
-              ],
             ],
           ),
         ),
@@ -168,11 +176,49 @@ class _UpdateDialogState extends State<_UpdateDialog> {
               : () => Navigator.of(context).pop(),
           child: Text(_busy ? '取消' : '稍后'),
         ),
-        FilledButton(
-          onPressed: _busy ? null : _install,
-          child: const Text('下载并安装'),
-        ),
+        _downloadButton(context),
       ],
+    );
+  }
+
+  Widget _downloadButton(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final p = (_progress ?? 0).clamp(0.0, 1.0);
+    final label = !_busy
+        ? (_cached ? '安装' : '下载并安装')
+        : (p >= 1 || (_status ?? '').contains('安装'))
+            ? '正在安装…'
+            : (p <= 0 ? '正在下载…' : '${(p * 100).round()}%');
+    return FilledButton(
+      clipBehavior: Clip.antiAlias,
+      onPressed: _busy ? null : _install,
+      style: FilledButton.styleFrom(
+        disabledBackgroundColor: scheme.primary,
+        disabledForegroundColor: scheme.onPrimary,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+      ),
+      child: SizedBox(
+        width: 108,
+        height: 36,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (_busy)
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: p <= 0 ? 0.08 : p,
+                    child: ColoredBox(
+                      color: scheme.onPrimary.withValues(alpha: 0.28),
+                    ),
+                  ),
+                ),
+              ),
+            Text(label),
+          ],
+        ),
+      ),
     );
   }
 }

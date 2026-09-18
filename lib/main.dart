@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'api/apk_update.dart';
 import 'api/bugly.dart';
 import 'pages/login_page.dart';
 import 'pages/shell.dart';
@@ -14,6 +15,7 @@ import 'widgets/update_prompt.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   Bugly.installHooks();
+  unawaited(purgeStaleUpdateApks());
   runApp(const SwunApp());
 }
 
