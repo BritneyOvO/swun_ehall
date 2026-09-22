@@ -1,4 +1,11 @@
 -dontwarn com.tencent.bugly.**
 -keep public class com.tencent.bugly.** { *; }
+-keep class com.xiaomi.** { *; }
+-keep class com.heytap.** { *; }
+-keep class com.vivo.push.** { *; }
+-keep class com.huawei.** { *; }
+-keep class com.hihonor.push.** { *; }
+-keep class com.meizu.cloud.pushsdk.** { *; }
+-keep class cn.edu.swun.swun_ehall.data.push.** { *; }
 -keep class android.support.** { *; }
 -keep class androidx.** { *; }

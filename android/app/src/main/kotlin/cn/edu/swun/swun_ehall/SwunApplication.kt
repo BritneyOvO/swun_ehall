@@ -2,6 +2,7 @@ package cn.edu.swun.swun_ehall
 
 import android.app.Application
 import android.os.Build
+import cn.edu.swun.swun_ehall.data.push.VendorPush
 import cn.edu.swun.swun_ehall.ui.theme.applyPredictiveBack
 import com.tencent.bugly.crashreport.CrashReport
 
@@ -13,6 +14,7 @@ class SwunApplication : Application() {
             val enable = getSharedPreferences("swun_theme", MODE_PRIVATE).getBoolean("predictiveBack", false)
             applyPredictiveBack(this, enable)
         }
+        VendorPush.start(this)
         val appId = BuildConfig.BUGLY_APP_ID.trim()
         if (appId.isEmpty()) return
         try {

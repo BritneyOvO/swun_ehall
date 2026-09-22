@@ -27,6 +27,16 @@ fun localOrEnv(fileKey: String, envKey: String): String {
 
 val amapKey = localOrEnv("amap.key", "AMAP_KEY")
 val buglyAppId = localOrEnv("bugly.appId", "BUGLY_APP_ID")
+val miAppId = localOrEnv("mipush.appId", "MIPUSH_APP_ID")
+val miAppKey = localOrEnv("mipush.appKey", "MIPUSH_APP_KEY")
+val oppoAppKey = localOrEnv("oppo.appKey", "OPPO_APP_KEY")
+val oppoAppSecret = localOrEnv("oppo.appSecret", "OPPO_APP_SECRET")
+val vivoAppId = localOrEnv("vivo.appId", "VIVO_APP_ID")
+val vivoAppKey = localOrEnv("vivo.appKey", "VIVO_APP_KEY")
+val meizuAppId = localOrEnv("meizu.appId", "MEIZU_APP_ID")
+val meizuAppKey = localOrEnv("meizu.appKey", "MEIZU_APP_KEY")
+val huaweiAppId = localOrEnv("huawei.appId", "HUAWEI_APP_ID")
+val honorAppId = localOrEnv("honor.appId", "HONOR_APP_ID")
 
 android {
     namespace = "cn.edu.swun.swun_ehall"
@@ -51,7 +61,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AMAP_KEY", "\"$amapKey\"")
         buildConfigField("String", "BUGLY_APP_ID", "\"$buglyAppId\"")
+        buildConfigField("String", "MI_APP_ID", "\"$miAppId\"")
+        buildConfigField("String", "MI_APP_KEY", "\"$miAppKey\"")
+        buildConfigField("String", "OPPO_APP_KEY", "\"$oppoAppKey\"")
+        buildConfigField("String", "OPPO_APP_SECRET", "\"$oppoAppSecret\"")
+        buildConfigField("String", "VIVO_APP_ID", "\"$vivoAppId\"")
+        buildConfigField("String", "VIVO_APP_KEY", "\"$vivoAppKey\"")
+        buildConfigField("String", "MEIZU_APP_ID", "\"$meizuAppId\"")
+        buildConfigField("String", "MEIZU_APP_KEY", "\"$meizuAppKey\"")
+        buildConfigField("String", "HUAWEI_APP_ID", "\"$huaweiAppId\"")
+        buildConfigField("String", "HONOR_APP_ID", "\"$honorAppId\"")
         manifestPlaceholders["AMAP_KEY"] = amapKey
+        manifestPlaceholders["VIVO_APP_ID"] = vivoAppId.ifEmpty { "0" }
+        manifestPlaceholders["VIVO_APP_KEY"] = vivoAppKey.ifEmpty { "0" }
+        manifestPlaceholders["HUAWEI_APP_ID"] = if (huaweiAppId.isEmpty()) "appid=0" else "appid=$huaweiAppId"
+        manifestPlaceholders["HONOR_APP_ID"] = honorAppId.ifEmpty { "0" }
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -117,6 +141,12 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze-blur:2.0.0-rc02")
     implementation("dev.chrisbanes.haze:haze-glass:2.0.0-rc02")
     implementation("com.amap.api:location:6.5.1")
+    implementation(files("libs/MiPush_SDK_Client_6_0_1-C.jar"))
+    implementation(files("libs/com.heytap.msp_3.1.0.aar"))
+    implementation(files("libs/vivo-push-open.jar", "libs/vivo-push-open-build.jar"))
+    implementation("com.huawei.hms:push:6.13.0.301")
+    implementation("com.hihonor.mcs:push:10.0.39.302")
+    implementation("com.meizu.flyme.internet:push-internal:5.0.3")
     implementation("com.tencent.bugly:crashreport:4.1.9")
     implementation("com.tencent.bugly:nativecrashreport:3.9.2")
     testImplementation("junit:junit:4.13.2")
