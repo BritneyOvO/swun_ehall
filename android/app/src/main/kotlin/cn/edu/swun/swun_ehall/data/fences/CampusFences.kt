@@ -1,5 +1,7 @@
 package cn.edu.swun.swun_ehall.data.fences
 
+import kotlin.random.Random
+
 data class CampusFence(
     val name: String,
     val southLat: Double,
@@ -12,7 +14,45 @@ data class CampusFence(
     val eastLng: Double,
     val centerLat: Double,
     val centerLng: Double,
-)
+) {
+    fun contains(lat: Double, lng: Double): Boolean {
+        val poly = arrayOf(
+            southLat to southLng,
+            eastLat to eastLng,
+            northLat to northLng,
+            westLat to westLng,
+        )
+        var inside = false
+        var j = poly.lastIndex
+        for (i in poly.indices) {
+            val yi = poly[i].first
+            val xi = poly[i].second
+            val yj = poly[j].first
+            val xj = poly[j].second
+            val cross = (yi > lat) != (yj > lat) &&
+                lng < (xj - xi) * (lat - yi) / ((yj - yi).takeIf { it != 0.0 } ?: 1e-12) + xi
+            if (cross) inside = !inside
+            j = i
+        }
+        return inside
+    }
+
+    fun randomInside(random: Random = Random): Pair<Double, Double> {
+        val lats = doubleArrayOf(southLat, northLat, westLat, eastLat)
+        val lngs = doubleArrayOf(southLng, northLng, westLng, eastLng)
+        val minLat = lats.min()
+        val maxLat = lats.max()
+        val minLng = lngs.min()
+        val maxLng = lngs.max()
+        repeat(48) {
+            val lat = minLat + random.nextDouble() * (maxLat - minLat)
+            val lng = minLng + random.nextDouble() * (maxLng - minLng)
+            if (!contains(lat, lng)) return@repeat
+            return centerLat + (lat - centerLat) * 0.85 to centerLng + (lng - centerLng) * 0.85
+        }
+        return centerLat to centerLng
+    }
+}
 
 object CampusFences {
     val bs = CampusFence(

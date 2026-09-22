@@ -1,7 +1,11 @@
 package cn.edu.swun.swun_ehall.data.update
 
+import cn.edu.swun.swun_ehall.BuildConfig
+import cn.edu.swun.swun_ehall.data.model.AppRelease
+
 object Versions {
-    const val APP = "1.0.5"
+    val APP: String = BuildConfig.VERSION_NAME
+    val CODE: Int = BuildConfig.VERSION_CODE
 
     fun compare(a: String, b: String): Int {
         val pa = parts(a)
@@ -16,6 +20,11 @@ object Versions {
     }
 
     fun isNewer(remote: String, current: String = APP): Boolean = compare(remote, current) > 0
+
+    fun isNewer(rel: AppRelease): Boolean {
+        if (rel.versionCode > 0) return rel.versionCode > CODE
+        return isNewer(rel.version, APP)
+    }
 
     private fun parts(raw: String): List<Int> {
         var s = raw.trim()

@@ -2,88 +2,131 @@ package cn.edu.swun.swun_ehall.ui.clock
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.session.Session
+import cn.edu.swun.swun_ehall.ui.common.BackNav
+import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
+import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
+import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureSection
+import cn.edu.swun.swun_ehall.ui.common.RefreshNav
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun ClockScreen(session: Session, nav: NavHostController) {
     var msg by remember { mutableStateOf(session.lastPunch) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(!session.demoMode) }
+    LaunchedEffect(session.loggedIn, session.demoMode) {
+        loading = true
+        session.refreshClock()
+        loading = false
+    }
+    val cs = MiuixTheme.colorScheme
     Scaffold(
         topBar = {
             SmallTopAppBar(
                 title = "公寓打卡",
-                navigationIcon = {
-                    IconButton(onClick = { nav.popBackStack() }) {
-                        top.yukonga.miuix.kmp.basic.Icon(MiuixIcons.Back, contentDescription = "返回")
+                navigationIcon = { BackNav { nav.popBackStack() } },
+                actions = {
+                    RefreshNav {
+                        scope.launch {
+                            loading = true
+                            session.refreshClock()
+                            loading = false
+                        }
                     }
                 },
             )
         },
     ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-        ) {
-            Card {
-                Column(Modifier.padding(14.dp)) {
+        FeatureColumn(padding) {
+            Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
                     Text("在校打卡", style = MiuixTheme.textStyles.title3)
-                    Text("提交坐标会走 GCJ-02 转换（gps/fused 转，高德不再转）")
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = { msg = session.dormPunch(useCampusFence = false) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("立即打卡") }
-            if (session.developerMode) {
-                Spacer(Modifier.height(8.dp))
-                TextButton(
-                    text = "一键校内打卡",
-                    onClick = { msg = session.dormPunch(useCampusFence = true) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            val punchMsg = msg
-            if (punchMsg != null) {
-                Spacer(Modifier.height(12.dp))
-                Text(punchMsg, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-            }
-            Spacer(Modifier.height(16.dp))
-            Text("最近记录", style = MiuixTheme.textStyles.title3)
-            cn.edu.swun.swun_ehall.data.demo.DemoData.clockRecords.forEach { r ->
-                Card(modifier = Modifier.padding(top = 8.dp)) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text(r.time)
-                        Text("${r.address} · ${r.status}", color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    Text(
+                        "提交坐标会转换成 GCJ-02（gps/fused 转，高德不再转）。",
+                        color = cs.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                    )
+                    if (loading) {
+                        Text("正在登录公寓系统…", color = cs.onSurfaceVariantSummary, modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    Button(
+                        onClick = {
+                            if (busy) return@Button
+                            scope.launch {
+                                busy = true
+                                msg = try {
+                                    session.dormPunch(useCampusFence = false)
+                                } catch (e: Exception) {
+                                    e.message ?: "打卡失败"
+                                }
+                                busy = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !busy,
+                    ) { Text(if (busy) "打卡中…" else "立即打卡") }
+                    if (session.developerMode) {
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(
+                            text = "一键校内打卡",
+                            onClick = {
+                                scope.launch {
+                                    busy = true
+                                    msg = try {
+                                        session.dormPunch(useCampusFence = true)
+                                    } catch (e: Exception) {
+                                        e.message ?: "打卡失败"
+                                    }
+                                    busy = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !busy,
+                        )
                     }
                 }
             }
+            session.loadHint?.let { FeatureHint(it, error = true) }
+            msg?.let { FeatureHint(it) }
+            FeatureSection("最近记录")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                if (session.clockRecords.isEmpty()) {
+                    Text("暂无打卡记录", modifier = Modifier.padding(16.dp), color = cs.onSurfaceVariantSummary)
+                } else {
+                    session.clockRecords.forEachIndexed { i, r ->
+                        if (i > 0) HorizontalDivider()
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Text(r.time)
+                            Text("${r.address} · ${r.status}", color = cs.onSurfaceVariantSummary)
+                        }
+                    }
+                }
+            }
+            FeatureBottomSpace()
         }
     }
 }
