@@ -11,6 +11,8 @@ data class Lesson(
 ) {
     val end: Int get() = start + span - 1
 
+    fun ended(nowMinutes: Int = minutesNow()): Boolean = lessonEnded(end, nowMinutes)
+
     fun inWeek(week: Int): Boolean {
         val mask = weeks.trim()
         if (mask.isEmpty() || mask == "null") return true
@@ -325,6 +327,22 @@ fun formatXf(v: Double): String {
 }
 
 val kWeekdayLabels = listOf("", "周一", "周二", "周三", "周四", "周五", "周六", "周日")
+
+fun minutesNow(now: java.util.Calendar = java.util.Calendar.getInstance()): Int =
+    now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+
+fun periodEndMinutes(period: Int): Int? {
+    val hm = kPeriodTimes.firstOrNull { it.first == period }?.second?.second ?: return null
+    val parts = hm.split(':')
+    val h = parts.getOrNull(0)?.toIntOrNull() ?: return null
+    val m = parts.getOrNull(1)?.toIntOrNull() ?: return null
+    return h * 60 + m
+}
+
+fun lessonEnded(endPeriod: Int, nowMinutes: Int = minutesNow()): Boolean {
+    val endAt = periodEndMinutes(endPeriod) ?: return false
+    return nowMinutes >= endAt
+}
 
 val kPeriodTimes = listOf(
     1 to ("8:30" to "9:15"),

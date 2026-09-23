@@ -18,6 +18,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import cn.edu.swun.swun_ehall.data.model.minutesNow
 import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.data.update.Versions
 import top.yukonga.miuix.kmp.basic.Card
@@ -48,7 +53,15 @@ fun HomeScreen(session: Session, nav: NavHostController) {
             val d = it.get(java.util.Calendar.DAY_OF_WEEK)
             if (d == java.util.Calendar.SUNDAY) 7 else d - 1
         }) { "" }
+    var nowMinutes by remember { mutableIntStateOf(minutesNow()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            nowMinutes = minutesNow()
+        }
+    }
     val today = session.todayLessons()
+    val left = today.filter { !it.ended(nowMinutes) }
     LaunchedEffect(session.loggedIn, session.checkUpdateOnLaunch, session.demoMode) {
         session.checkLatestIfEnabled()
     }
@@ -147,14 +160,14 @@ fun HomeScreen(session: Session, nav: NavHostController) {
                         Spacer(Modifier.size(8.dp))
                         Text("今日课程", style = MiuixTheme.textStyles.title3)
                     }
-                    if (today.isEmpty()) {
+                    if (left.isEmpty()) {
                         Text(
-                            "今天没有课",
+                            if (today.isEmpty()) "今天没有课" else "今天的课上完了",
                             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
                     } else {
-                        today.forEach { lesson ->
+                        left.forEach { lesson ->
                             Column(
                                 Modifier
                                     .fillMaxWidth()

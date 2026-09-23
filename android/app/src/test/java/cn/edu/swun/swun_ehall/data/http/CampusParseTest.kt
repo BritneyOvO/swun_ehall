@@ -70,6 +70,15 @@ class CampusParseTest {
     }
 
     @Test
+    fun finishedPeriodDropsFromHome() {
+        val lesson = cn.edu.swun.swun_ehall.data.model.Lesson("网络攻防", "BS-223", "陈浩", 3, 3, 2)
+        assertEquals(4, lesson.end)
+        assertFalse(lesson.ended(11 * 60 + 14))
+        assertTrue(lesson.ended(12 * 60))
+        assertTrue(lesson.ended(12 * 60 + 1))
+    }
+
+    @Test
     fun casEncryptProducesBase64() {
         val out = CasCrypto.encryptPassword("secret", "1234567890123456")
         assertTrue(out.isNotBlank())
