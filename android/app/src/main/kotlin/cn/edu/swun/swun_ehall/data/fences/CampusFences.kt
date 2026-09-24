@@ -91,10 +91,10 @@ object CampusFences {
     fun forRoom(room: String): CampusFence? {
         val u = room.trim().uppercase().replace(" ", "")
         if (u.isEmpty()) return null
-        if (Regex("^BS-?\\d").containsMatchIn(u)) return bs
-        if (Regex("^BW-?\\d").containsMatchIn(u)) return bw
-        if (Regex("^BX-?\\d").containsMatchIn(u)) return bx
-        if (Regex("^H-?\\d").containsMatchIn(u)) return h
+        if (Regex("(^|[^A-Z])BS-?\\d").containsMatchIn(u)) return bs
+        if (Regex("(^|[^A-Z])BW-?\\d").containsMatchIn(u)) return bw
+        if (Regex("(^|[^A-Z])BX-?\\d").containsMatchIn(u)) return bx
+        if (Regex("(^|[^A-Z])H-?\\d").containsMatchIn(u)) return h
         return null
     }
 }

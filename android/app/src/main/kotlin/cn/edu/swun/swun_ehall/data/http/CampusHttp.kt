@@ -63,6 +63,17 @@ class MemoryCookieJar : CookieJar {
             }
         }
     }
+
+    fun removeHost(host: String, names: Set<String>) {
+        val upper = names.map { it.uppercase() }.toSet()
+        store.entries.forEach { (domain, list) ->
+            val bare = domain.removePrefix(".")
+            if (host != bare && !host.endsWith(".$bare")) return@forEach
+            synchronized(list) {
+                list.removeAll { it.name.uppercase() in upper }
+            }
+        }
+    }
 }
 
 object CampusHttp {

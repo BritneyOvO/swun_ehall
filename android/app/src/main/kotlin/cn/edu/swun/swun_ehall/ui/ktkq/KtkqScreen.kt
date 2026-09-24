@@ -27,6 +27,7 @@ import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
+import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -37,6 +38,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun KtkqScreen(session: Session, nav: NavHostController) {
     var loading by remember { mutableStateOf(!session.demoMode && session.ktkqCourses.isEmpty()) }
+    var testing by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(session.loggedIn, session.demoMode) {
         loading = true
@@ -78,6 +81,25 @@ fun KtkqScreen(session: Session, nav: NavHostController) {
                     fontSize = 13.sp,
                     modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp),
                 )
+            }
+            if (session.developerMode) {
+                Button(
+                    onClick = {
+                        if (testing) return@Button
+                        scope.launch {
+                            testing = true
+                            testResult = try {
+                                session.testFencePunch()
+                            } catch (e: Exception) {
+                                e.message?.removePrefix("Exception: ") ?: "预检失败"
+                            }
+                            testing = false
+                        }
+                    },
+                    modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+                    enabled = !testing,
+                ) { Text(if (testing) "预检中…" else "测试课堂打卡") }
+                testResult?.let { FeatureHint(it) }
             }
             when {
                 !loading && session.ktkqCourses.isEmpty() && session.loadHint == null ->

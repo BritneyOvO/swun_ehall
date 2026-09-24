@@ -40,6 +40,7 @@ import cn.edu.swun.swun_ehall.data.http.matchKtkqSlot
 import cn.edu.swun.swun_ehall.data.model.KtkqCourse
 import cn.edu.swun.swun_ehall.data.model.KtkqWeek
 import cn.edu.swun.swun_ehall.data.model.SignActivity
+import cn.edu.swun.swun_ehall.data.model.kWeekdayLabels
 import cn.edu.swun.swun_ehall.data.model.ktkqSlotFromLesson
 import cn.edu.swun.swun_ehall.data.model.slotKey
 import cn.edu.swun.swun_ehall.data.model.XkCourse
@@ -736,6 +737,87 @@ class Session(app: Application) : AndroidViewModel(app) {
             accuracy = 8.0,
         )
         return "已用 ${fence.name} 围栏随机点签到 · $msg"
+    }
+
+    suspend fun testFencePunch(slot: SignActivity? = null): String {
+        if (!demoMode && ktkq.isEmpty()) {
+            try {
+                refreshKtkq()
+            } catch (_: Exception) {
+            }
+        }
+        val targets = fenceProbeTargets(slot)
+        if (targets.isEmpty()) return "课堂考勤没有课班号，无法向服务器预检"
+        if (demoMode) return "示例模式不请求服务器"
+        return withContext(Dispatchers.IO) {
+            ensureKtkq()
+            targets.joinToString("\n") { item -> probeFencePoint(item) }
+        }
+    }
+
+    private fun fenceProbeTargets(slot: SignActivity?): List<SignActivity> {
+        if (slot != null && CampusFences.forRoom(slot.classroom) != null &&
+            slot.teachClassId.isNotBlank() && slot.scheduleId.isNotBlank()
+        ) {
+            return listOf(slot)
+        }
+        val byFence = linkedMapOf<String, SignActivity>()
+        fun keep(item: SignActivity) {
+            if (item.teachClassId.isBlank() || item.scheduleId.isBlank()) return
+            val fence = CampusFences.forRoom(item.classroom) ?: return
+            byFence.putIfAbsent(fence.name, item)
+        }
+        ktkq.forEach { keep(it) }
+        for (lesson in schedule) {
+            val fence = CampusFences.forRoom(lesson.room) ?: continue
+            if (fence.name in byFence) continue
+            val donor = ktkq.firstOrNull {
+                TeacherCache.normKc(it.course) == TeacherCache.normKc(lesson.name) &&
+                    it.teachClassId.isNotBlank() && it.scheduleId.isNotBlank()
+            } ?: continue
+            keep(
+                donor.copy(
+                    classroom = lesson.room,
+                    weekDay = lesson.weekday,
+                    startNode = lesson.start,
+                    endNode = lesson.end,
+                    week = ktkqWeekNum,
+                ),
+            )
+        }
+        return byFence.values.toList()
+    }
+
+    private fun probeFencePoint(item: SignActivity): String {
+        val fence = CampusFences.forRoom(item.classroom) ?: return item.classroom
+        val (lat, lng) = fence.randomInside()
+        val week = item.week.takeIf { it > 0 } ?: ktkqWeekNum
+        val day = if (item.weekDay in 1..7) item.weekDay else 1
+        val activityId = item.activityId.takeIf { it.isNotBlank() && !it.contains("|") }.orEmpty()
+        return try {
+            val r = ktkqClient.checkAllowSign(
+                teachClassId = item.teachClassId,
+                scheduleId = item.scheduleId,
+                week = week,
+                weekDay = day,
+                startNode = item.startNode.coerceAtLeast(1),
+                endNode = item.endNode.coerceAtLeast(item.startNode.coerceAtLeast(1)),
+                activityId = activityId,
+                lat = lat,
+                lng = lng,
+            )
+            val status = r.optJSONObject("data")?.optString("status").orEmpty()
+            val msg = r.optString("msg")
+            val label = when (status) {
+                "IS_ALLOW" -> "在范围内"
+                "NOT_IN_SCOPE" -> "不在范围"
+                else -> status.ifBlank { msg }.ifBlank { "无结果" }
+            }
+            val whenText = if (day in 1..7) kWeekdayLabels[day] else ""
+            "${item.classroom} ${item.course} $whenText $label ${"%.6f".format(lat)}, ${"%.6f".format(lng)}${if (msg.isNotBlank() && msg != label) " $msg" else ""}"
+        } catch (e: Exception) {
+            "${item.classroom} 预检失败 ${e.message?.removePrefix("Exception: ").orEmpty()}"
+        }
     }
 
     suspend fun locateCampus(): GeoFix = withContext(Dispatchers.Main) {

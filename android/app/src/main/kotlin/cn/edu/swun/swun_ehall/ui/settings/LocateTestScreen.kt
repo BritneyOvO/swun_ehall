@@ -24,7 +24,6 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun LocateTestScreen(session: Session, nav: NavHostController) {
@@ -49,11 +48,7 @@ fun LocateTestScreen(session: Session, nav: NavHostController) {
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            Text(
-                "用楼中心反推 GPS 再走 campusGcj02。不打签到接口。",
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-            Card(modifier = Modifier.padding(top = 12.dp)) {
+            Card {
                 rooms.forEach { room ->
                     ArrowPreference(
                         title = room,

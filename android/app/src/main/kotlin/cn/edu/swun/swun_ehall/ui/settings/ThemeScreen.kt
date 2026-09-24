@@ -150,12 +150,6 @@ fun ThemeScreen(settings: ThemeSettings, nav: NavHostController) {
                         onCheckedChange = { settings.persistLiquidGlass(it) },
                     )
                 }
-                SwitchPreference(
-                    title = "导航栏角标",
-                    summary = "在课表等入口显示数量角标",
-                    checked = settings.navBadge,
-                    onCheckedChange = { settings.persistNavBadge(it) },
-                )
             }
             Card(
                 modifier = Modifier

@@ -65,11 +65,7 @@ fun ClockScreen(session: Session, nav: NavHostController) {
             Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("在校打卡", style = MiuixTheme.textStyles.title3)
-                    Text(
-                        "提交坐标会转换成 GCJ-02（gps/fused 转，高德不再转）。",
-                        color = cs.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
-                    )
+                    Spacer(Modifier.height(12.dp))
                     if (loading) {
                         Text("正在登录公寓系统…", color = cs.onSurfaceVariantSummary, modifier = Modifier.padding(bottom = 8.dp))
                     }

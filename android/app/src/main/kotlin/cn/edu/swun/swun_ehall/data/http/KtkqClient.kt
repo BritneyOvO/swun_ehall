@@ -39,7 +39,7 @@ class KtkqClient(private val rs: RsGateway) {
             } catch (e: Exception) {
                 lastErr = e
                 val msg = e.message.orEmpty()
-                if (msg.contains("夜间关闭") || msg.contains("被踢回 CAS")) throw e
+                if (msg.contains("夜间关闭")) throw e
                 token = null
                 Log.w("swun", "[ktkq] login attempt ${attempt + 1} $e")
             }
@@ -47,16 +47,28 @@ class KtkqClient(private val rs: RsGateway) {
         throw lastErr ?: Exception("未拿到课堂考勤 token")
     }
 
+    private fun clearStaleAuthCookies() {
+        CampusHttp.cookies.removeHost(
+            "ktkq.swun.edu.cn",
+            setOf("Authorization", "EM_TOKEN", "EM-TOKEN"),
+        )
+    }
+
     private fun loginOnce(cas: CasClient) {
+        clearStaleAuthCookies()
         var url = cas.ticketFor(K_KTKQ_SERVICE)
         var last = url
         var webTried = false
         for (i in 0 until 12) {
-            val r = CampusHttp.get(url)
+            val r = CampusHttp.get(
+                url,
+                mapOf("Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+            )
             val setCookies = r.headers("Set-Cookie")
             val loc = CampusHttp.location(r)
             val body = CampusHttp.text(r)
             last = r.request.url.toString()
+            Log.d("swun", "[ktkq] hop $i ${r.code} ticket=${url.contains("ticket=")} locAuth=${loc.contains("authserver")}")
             if (CampusHttp.looksNightClosed(r.code, body)) error("课堂考勤夜间关闭或不在服务时间")
             token = parseKtkqToken(body = body, urls = listOf(loc, last, url), setCookies = setCookies)
             if (!token.isNullOrEmpty()) {
@@ -72,7 +84,8 @@ class KtkqClient(private val rs: RsGateway) {
             url = CampusHttp.absUrl(K_KTKQ, loc)
             last = url
             if (url.contains("authserver") && !url.contains("ticket=")) {
-                error("课堂考勤登录失败: 被踢回 CAS")
+                Log.w("swun", "[ktkq] ticket hop bounced to CAS, use web login")
+                break
             }
         }
         if (token.isNullOrEmpty()) token = tokenFromCookies()

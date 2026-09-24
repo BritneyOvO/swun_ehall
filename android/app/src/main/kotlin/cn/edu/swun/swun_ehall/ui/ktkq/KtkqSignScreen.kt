@@ -195,6 +195,9 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
         },
     ) { padding ->
         FeatureColumn(padding) {
+            if (session.developerMode) {
+                FenceProbeButton(session, slot)
+            }
             if (loading) {
                 FeatureHint("正在查询签到活动…")
                 FeatureBottomSpace()
@@ -344,7 +347,7 @@ private fun LocCard(
                     if (p.source == "demo") "西南民族大学（示例定位）" else "当前位置 ${p.coordText}",
                 )
                 Text(
-                    "${p.sourceLabel} · 精度 ${p.accuracy.toInt()} 米 · 提交 GCJ-02 ${p.coordText}",
+                    "${p.sourceLabel} · 精度 ${p.accuracy.toInt()} 米",
                     color = cs.onSurfaceVariantSummary,
                     fontSize = 12.sp,
                 )
@@ -422,6 +425,30 @@ private fun ActivityCard(
             }
         }
     }
+}
+
+@Composable
+private fun FenceProbeButton(session: Session, slot: SignActivity?) {
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    Button(
+        onClick = {
+            if (testing) return@Button
+            scope.launch {
+                testing = true
+                result = try {
+                    session.testFencePunch(slot)
+                } catch (e: Exception) {
+                    e.message?.removePrefix("Exception: ") ?: "预检失败"
+                }
+                testing = false
+            }
+        },
+        modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+        enabled = !testing,
+    ) { Text(if (testing) "预检中…" else "测试课堂打卡") }
+    result?.let { FeatureHint(it) }
 }
 
 private enum class PunchSpot { Gps, Fence, Building }

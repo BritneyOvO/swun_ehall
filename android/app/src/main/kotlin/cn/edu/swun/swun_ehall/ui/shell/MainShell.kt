@@ -25,13 +25,11 @@ import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.rememberHazeState
-import top.yukonga.miuix.kmp.basic.Badge
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
-import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Contacts
 import top.yukonga.miuix.kmp.icon.extended.File
@@ -48,24 +46,12 @@ fun MainShell(session: Session, nav: NavHostController, theme: ThemeSettings = v
         NavigationItem("成绩", MiuixIcons.File),
         NavigationItem("我的", MiuixIcons.Contacts),
     )
-    val todayCount = session.todayLessons().size
     val cs = MiuixTheme.colorScheme
     val dark = isSystemInDarkTheme()
     val barColor = lerp(cs.surfaceContainer, Color.Black, if (dark) 0.10f else 0.045f)
     val hazeState = rememberHazeState()
     val useGlass = theme.liquidGlass
     val useFloating = theme.floatingBar || useGlass
-    fun badgeFor(i: Int): (@Composable () -> Unit)? {
-        if (!theme.navBadge) return null
-        return when (i) {
-            1 -> if (todayCount > 0) {
-                { Badge { Text("$todayCount") } }
-            } else {
-                null
-            }
-            else -> null
-        }
-    }
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
@@ -93,7 +79,6 @@ fun MainShell(session: Session, nav: NavHostController, theme: ThemeSettings = v
                             onClick = { index = i },
                             icon = item.icon,
                             label = item.label,
-                            badge = badgeFor(i),
                         )
                     }
                 }
@@ -115,7 +100,6 @@ fun MainShell(session: Session, nav: NavHostController, theme: ThemeSettings = v
                             onClick = { index = i },
                             icon = item.icon,
                             label = item.label,
-                            badge = badgeFor(i),
                         )
                     }
                 }
