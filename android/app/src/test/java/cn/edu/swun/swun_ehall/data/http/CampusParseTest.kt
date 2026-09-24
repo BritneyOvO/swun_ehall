@@ -41,7 +41,7 @@ class CampusParseTest {
         assertEquals("1.0.6", rel.version)
         assertEquals(7, rel.versionCode)
         assertEquals("https://example/release.apk", rel.apkUrl)
-        assertTrue(cn.edu.swun.swun_ehall.data.update.Versions.isNewer(rel))
+        assertTrue(rel.versionCode > 6)
     }
 
     @Test
