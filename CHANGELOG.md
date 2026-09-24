@@ -1,5 +1,25 @@
 # 更新说明 | Changelog
 
+## 1.0.6
+
+### 更新内容
+
+- 课表：同一时间多门课选定后所有周都用这门；老师按上课周分开；教室名称尽量完整显示。
+- 首页：已经下课的今日课程不再列出。
+- 课堂考勤：按课程分组，点进签到再查活动；登录被踢回统一身份时改走页面登录。
+- 我的：自动显示办事大厅头像，点头像可自定义或取消自定义。
+- 更新：只查最新发行版，下载在通知栏进行，完成后可安装。
+- 预测性返回跟手放慢，后面不再露出开屏图标。
+
+### What's New
+
+- Timetable: a chosen overlapping course applies to every week; teachers follow the week range; room names stay visible.
+- Home: finished classes drop off today's list.
+- Classroom attendance: group by course and probe the sign activity after opening it; if CAS bounces the ticket, fall back to the page login.
+- Mine: show the campus-hall avatar, and tap it to set or clear a custom photo.
+- Updates: check only the latest release and download in a notification, then install.
+- Slow the predictive-back gesture so the splash icon no longer shows behind it.
+
 ## 1.0.5
 
 ### 更新内容
