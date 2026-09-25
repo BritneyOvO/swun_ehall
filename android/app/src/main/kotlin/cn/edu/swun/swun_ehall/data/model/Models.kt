@@ -172,6 +172,15 @@ data class ClockRecord(
     val status: String,
 )
 
+/** Apartment punch range from gyglxt positions. Not a classroom building fence. */
+data class ClockFence(
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    val radiusMeters: Double,
+    val polygon: List<Pair<Double, Double>> = emptyList(),
+)
+
 data class GeoFix(
     val latitude: Double,
     val longitude: Double,

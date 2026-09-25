@@ -16,11 +16,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import cn.edu.swun.swun_ehall.R
 import kotlinx.coroutines.delay
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun SplashOverlay(onFinished: () -> Unit) {
@@ -37,13 +37,13 @@ fun SplashOverlay(onFinished: () -> Unit) {
         Modifier
             .fillMaxSize()
             .alpha(cover.value)
-            .background(MiuixTheme.colorScheme.background),
+            .background(colorResource(R.color.splash_bg)),
         contentAlignment = Alignment.Center,
     ) {
         Image(
             painter = painterResource(R.drawable.splash_logo),
             contentDescription = null,
-            modifier = Modifier.size(88.dp),
+            modifier = Modifier.size(160.dp),
         )
     }
 }

@@ -17,6 +17,7 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -41,9 +42,12 @@ fun ExamsScreen(session: Session, nav: NavHostController) {
             )
         },
     ) { padding ->
+        if (loading) {
+            FeatureLoadingPage(padding)
+            return@Scaffold
+        }
         FeatureColumn(padding) {
             when {
-                loading && session.exams.isEmpty() -> FeatureHint("正在拉取考试安排…")
                 session.exams.isEmpty() -> FeatureHint("本学期暂无考试安排")
                 else -> Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                     session.exams.forEachIndexed { i, e ->

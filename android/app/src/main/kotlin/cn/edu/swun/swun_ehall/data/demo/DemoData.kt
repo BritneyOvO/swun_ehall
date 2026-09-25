@@ -1,5 +1,6 @@
 package cn.edu.swun.swun_ehall.data.demo
 
+import cn.edu.swun.swun_ehall.data.model.ClockFence
 import cn.edu.swun.swun_ehall.data.model.ClockRecord
 import cn.edu.swun.swun_ehall.data.model.CreditBucket
 import cn.edu.swun.swun_ehall.data.model.CreditProgress
@@ -263,5 +264,9 @@ object DemoData {
         ClockRecord("昨天 22:01", "武侯校区", "正常"),
     )
 
-    val clockFence = 30.58120 to 103.97048
+    val clockFences = listOf(
+        ClockFence("武侯校区", 30.58120, 103.97048, 800.0),
+    )
+
+    val clockFence = clockFences.first().latitude to clockFences.first().longitude
 }

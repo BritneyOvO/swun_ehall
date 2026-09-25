@@ -25,6 +25,7 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
@@ -42,6 +43,10 @@ fun KtkqScreen(session: Session, nav: NavHostController) {
     var testResult by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(session.loggedIn, session.demoMode) {
+        if (session.ktkqCourses.isNotEmpty()) {
+            loading = false
+            return@LaunchedEffect
+        }
         loading = true
         session.refreshKtkq()
         loading = false
@@ -58,7 +63,7 @@ fun KtkqScreen(session: Session, nav: NavHostController) {
                     RefreshNav {
                         scope.launch {
                             loading = true
-                            session.refreshKtkq()
+                            session.refreshKtkq(force = true)
                             loading = false
                         }
                     }
@@ -66,20 +71,17 @@ fun KtkqScreen(session: Session, nav: NavHostController) {
             )
         },
     ) { padding ->
+        if (loading) {
+            FeatureLoadingPage(padding)
+            return@Scaffold
+        }
         FeatureColumn(padding) {
-            if (loading) FeatureHint("正在拉取本周课程…")
             session.loadHint?.let { FeatureHint(it, error = true) }
-            if (!loading) {
+            run {
                 Text(
                     title,
                     style = MiuixTheme.textStyles.title3,
-                    modifier = Modifier.padding(top = 16.dp, start = 4.dp, end = 4.dp),
-                )
-                Text(
-                    "点一门课进入签到。课表里点课程也可以。",
-                    color = cs.onSurfaceVariantSummary,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp),
+                    modifier = Modifier.padding(top = 16.dp, start = 4.dp, end = 4.dp, bottom = 4.dp),
                 )
             }
             if (session.developerMode) {
@@ -102,7 +104,7 @@ fun KtkqScreen(session: Session, nav: NavHostController) {
                 testResult?.let { FeatureHint(it) }
             }
             when {
-                !loading && session.ktkqCourses.isEmpty() && session.loadHint == null ->
+                session.ktkqCourses.isEmpty() && session.loadHint == null ->
                     FeatureHint("本周暂无课程")
                 session.ktkqCourses.isNotEmpty() -> session.ktkqCourses.forEach { course ->
                     WeekCourseCard(course) { slot ->

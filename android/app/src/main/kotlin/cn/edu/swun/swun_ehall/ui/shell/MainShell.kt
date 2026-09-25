@@ -20,6 +20,7 @@ import cn.edu.swun.swun_ehall.ui.grades.GradesScreen
 import cn.edu.swun.swun_ehall.ui.home.HomeScreen
 import cn.edu.swun.swun_ehall.ui.mine.MineScreen
 import cn.edu.swun.swun_ehall.ui.schedule.ScheduleScreen
+import cn.edu.swun.swun_ehall.ui.theme.ThemeMode
 import cn.edu.swun.swun_ehall.ui.theme.ThemeSettings
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.blur.HazeBlurStyle
@@ -47,8 +48,16 @@ fun MainShell(session: Session, nav: NavHostController, theme: ThemeSettings = v
         NavigationItem("我的", MiuixIcons.Contacts),
     )
     val cs = MiuixTheme.colorScheme
-    val dark = isSystemInDarkTheme()
-    val barColor = lerp(cs.surfaceContainer, Color.Black, if (dark) 0.10f else 0.045f)
+    val dark = when (theme.mode) {
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+        ThemeMode.System -> isSystemInDarkTheme()
+    }
+    val barColor = if (dark) {
+        lerp(cs.background, cs.surfaceContainer, 0.42f)
+    } else {
+        lerp(cs.surfaceContainer, Color.Black, 0.045f)
+    }
     val hazeState = rememberHazeState()
     val useGlass = theme.liquidGlass
     val useFloating = theme.floatingBar || useGlass
@@ -71,7 +80,11 @@ fun MainShell(session: Session, nav: NavHostController, theme: ThemeSettings = v
                     modifier = if (useGlass) Modifier.liquidGlass(hazeState) else Modifier,
                     color = if (useGlass) Color.Transparent else barColor,
                     showDivider = false,
-                    shadowElevation = if (useGlass) 8.dp else 10.dp,
+                    shadowElevation = when {
+                        useGlass -> 8.dp
+                        dark -> 2.dp
+                        else -> 10.dp
+                    },
                 ) {
                     items.forEachIndexed { i, item ->
                         FloatingNavigationBarItem(

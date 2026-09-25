@@ -116,36 +116,36 @@ class RsGateway(private val app: Context) {
     ): RsHit {
         val host = url.toHttpUrlOrNull()?.host ?: error("网关地址无效")
         synchronized(slot(host).lock) {
-            val skipDio = unlocked(host)
-            if (!inPage && !skipDio) {
-                val first = dioOnce(method, url, headers, body)
-                if (first != null && first.usable) return first
-                if (first != null && looksLikeRuishu(first.status, first.body)) rsHosts.add(host)
+            val first = dioOnce(method, url, headers, body)
+            if (first != null && first.usable) {
+                noteUnlocked(host)
+                return first
             }
+            if (first != null && looksLikeRuishu(first.status, first.body)) rsHosts.add(host)
             val s = ensureView(host)
+            pushCookies(url)
             if (s.view != null && (inPage || cookiesFresh(host))) {
                 try {
                     val hit = jsFetch(s, method, url, headers, body)
                     android.util.Log.d("swun", "[rs] call js $host ${hit.status} ${hit.body.length}b")
-                    if (hit.usable) return hit
-                    if (inPage) {
-                        Thread.sleep(280)
-                        val again = jsFetch(s, method, url, headers, body)
-                        if (again.usable) return again
-                        error("网关仍被拦截")
+                    if (hit.usable) {
+                        noteUnlocked(host)
+                        return hit
                     }
                 } catch (e: Exception) {
-                    if (inPage) throw e
+                    if (inPage && cookiesFresh(host)) throw e
                 }
             }
-            if (inPage) error("网关未就绪")
+            if (inPage && s.view == null) error("网关未就绪")
             refreshChallenge(url, headers["Referer"] ?: headers["referer"])
-            var hit = jsFetch(ensureView(host), method, url, headers, body)
-            if (!hit.usable) {
-                Thread.sleep(280)
-                hit = jsFetch(ensureView(host), method, url, headers, body)
+            val after = dioOnce(method, url, headers, body)
+            if (after != null && after.usable) {
+                noteUnlocked(host)
+                return after
             }
+            val hit = jsFetch(ensureView(host), method, url, headers, body)
             if (!hit.usable) error("网关仍被拦截")
+            noteUnlocked(host)
             return hit
         }
     }
@@ -360,6 +360,12 @@ class RsGateway(private val app: Context) {
 
     private fun slot(host: String): RsSlot = slots.getOrPut(host) { RsSlot() }
 
+    private fun noteUnlocked(host: String) {
+        rsHosts.add(host)
+        val s = slot(host)
+        if (s.cookieAt == 0L) s.cookieAt = System.currentTimeMillis()
+    }
+
     private fun cookiesFresh(host: String): Boolean {
         val s = slots[host] ?: return false
         return s.view != null && s.cookieAt > 0 && System.currentTimeMillis() - s.cookieAt < 8 * 60_000
@@ -439,9 +445,8 @@ class RsGateway(private val app: Context) {
         }
         val before = wafSig(target)
         dropWafCookies(target)
-        load(s, target, 2_800)
+        load(s, target, 2_200)
         waitWaf(target, before)
-        Thread.sleep(250)
         pullCookies(target)
         s.cookieAt = System.currentTimeMillis()
         rsHosts.add(host)

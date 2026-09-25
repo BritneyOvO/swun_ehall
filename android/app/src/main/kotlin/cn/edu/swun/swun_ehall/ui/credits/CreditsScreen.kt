@@ -22,6 +22,7 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -49,9 +50,12 @@ fun CreditsScreen(session: Session, nav: NavHostController) {
             )
         },
     ) { padding ->
+        if (loading) {
+            FeatureLoadingPage(padding)
+            return@Scaffold
+        }
         FeatureColumn(padding) {
             when {
-                loading && p == null -> FeatureHint("正在统计学分…")
                 p == null -> FeatureHint("暂无学分数据")
                 else -> {
                     Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {

@@ -15,11 +15,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import cn.edu.swun.swun_ehall.data.model.GeoFix
 import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
@@ -38,10 +40,16 @@ fun ClockScreen(session: Session, nav: NavHostController) {
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(!session.demoMode) }
+    var me by remember { mutableStateOf<GeoFix?>(null) }
     LaunchedEffect(session.loggedIn, session.demoMode) {
         loading = true
         session.refreshClock()
         loading = false
+        me = try {
+            session.locateCampus()
+        } catch (_: Exception) {
+            null
+        }
     }
     val cs = MiuixTheme.colorScheme
     Scaffold(
@@ -61,14 +69,15 @@ fun ClockScreen(session: Session, nav: NavHostController) {
             )
         },
     ) { padding ->
+        if (loading) {
+            FeatureLoadingPage(padding)
+            return@Scaffold
+        }
         FeatureColumn(padding) {
             Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("在校打卡", style = MiuixTheme.textStyles.title3)
                     Spacer(Modifier.height(12.dp))
-                    if (loading) {
-                        Text("正在登录公寓系统…", color = cs.onSurfaceVariantSummary, modifier = Modifier.padding(bottom = 8.dp))
-                    }
                     Button(
                         onClick = {
                             if (busy) return@Button
@@ -106,6 +115,7 @@ fun ClockScreen(session: Session, nav: NavHostController) {
                     }
                 }
             }
+            CampusMap(me, session.clockFences.toList(), modifier = Modifier.padding(top = 12.dp))
             session.loadHint?.let { FeatureHint(it, error = true) }
             msg?.let { FeatureHint(it) }
             FeatureSection("最近记录")

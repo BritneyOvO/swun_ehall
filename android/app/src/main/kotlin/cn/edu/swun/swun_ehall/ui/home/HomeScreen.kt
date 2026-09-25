@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.model.minutesNow
 import cn.edu.swun.swun_ehall.data.session.Session
-import cn.edu.swun.swun_ehall.data.update.Versions
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -65,7 +64,6 @@ fun HomeScreen(session: Session, nav: NavHostController) {
     LaunchedEffect(session.loggedIn, session.checkUpdateOnLaunch, session.demoMode) {
         session.checkLatestIfEnabled()
     }
-    val update = session.latestRelease?.takeIf { Versions.isNewer(it) }
     val services = listOf(
         Triple("一卡通", "ykt", MiuixIcons.BankCards),
         Triple("学分", "credits", MiuixIcons.Tasks),
@@ -91,23 +89,6 @@ fun HomeScreen(session: Session, nav: NavHostController) {
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(top = 4.dp),
                     )
-                }
-            }
-            if (update != null) {
-                Spacer(Modifier.height(12.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { nav.navigate("about") },
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("发现新版本 ${update.version}", color = MiuixTheme.colorScheme.primary)
-                        Text(
-                            "点按查看说明并下载安装",
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                    }
                 }
             }
             Spacer(Modifier.height(16.dp))

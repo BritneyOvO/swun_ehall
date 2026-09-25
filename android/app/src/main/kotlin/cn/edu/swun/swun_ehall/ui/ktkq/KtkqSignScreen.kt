@@ -24,19 +24,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.fences.CampusFences
+import cn.edu.swun.swun_ehall.data.geo.Geo
 import cn.edu.swun.swun_ehall.data.http.formatKtkqCst
 import cn.edu.swun.swun_ehall.data.http.formatKtkqCstRange
 import cn.edu.swun.swun_ehall.data.http.ktkqNeedsCode
 import cn.edu.swun.swun_ehall.data.http.ktkqSignTypeLabel
 import cn.edu.swun.swun_ehall.data.http.ktkqStatusLabel
+import cn.edu.swun.swun_ehall.data.model.ClockFence
 import cn.edu.swun.swun_ehall.data.model.GeoFix
 import cn.edu.swun.swun_ehall.data.model.KtkqActivity
 import cn.edu.swun.swun_ehall.data.model.SignActivity
 import cn.edu.swun.swun_ehall.data.session.Session
+import cn.edu.swun.swun_ehall.ui.clock.CampusMap
 import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
@@ -181,6 +185,7 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
     val data = info
     val room = data?.classroom?.ifBlank { slot?.classroom }.orEmpty()
     val fence = CampusFences.forRoom(room)
+    val fenceRing = CampusFences.outlineFor(room).orEmpty()
     Scaffold(
         topBar = {
             SmallTopAppBar(
@@ -194,14 +199,13 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
             )
         },
     ) { padding ->
+        if (loading) {
+            FeatureLoadingPage(padding)
+            return@Scaffold
+        }
         FeatureColumn(padding) {
             if (session.developerMode) {
                 FenceProbeButton(session, slot)
-            }
-            if (loading) {
-                FeatureHint("正在查询签到活动…")
-                FeatureBottomSpace()
-                return@FeatureColumn
             }
             error?.let { FeatureHint(it, error = true) }
             if (data == null && error != null) {
@@ -217,6 +221,23 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
                     locError = locError,
                     onRelocate = { scope.launch { locate(force = true) } },
                 )
+                if (fenceRing.size >= 3) {
+                    val ring = fenceRing.map { (lat, lng) -> Geo.wgs84ToGcj02(lat, lng) }
+                    CampusMap(
+                        pos,
+                        listOf(
+                            ClockFence(
+                                name = fence?.name ?: room,
+                                latitude = ring.map { it.first }.average(),
+                                longitude = ring.map { it.second }.average(),
+                                radiusMeters = 0.0,
+                                polygon = ring,
+                            ),
+                        ),
+                        modifier = Modifier.padding(top = 12.dp),
+                        zoom = 17f,
+                    )
+                }
                 FeatureSection("签到活动")
                 if (data.activities.isEmpty()) {
                     FeatureHint(data.message.ifBlank { "无签到活动" })

@@ -79,6 +79,34 @@ class CampusParseTest {
     }
 
     @Test
+    fun updateNotesKeepsChineseSection() {
+        val body = """
+            # 民大助手 v1.0.7
+
+            ### 更新内容
+
+            - 课表：教室显示完整
+            - **首页**：已下课不再列出
+
+            ### What's New
+
+            - Timetable rooms stay visible.
+
+            ## 下载 | Downloads
+
+            - `app.apk` — Release
+
+            仅学生账号 · Student accounts only
+        """.trimIndent()
+        val notes = cn.edu.swun.swun_ehall.data.update.updateNotesMarkdown(body)
+        assertTrue(notes.contains("### 更新内容"))
+        assertTrue(notes.contains("教室显示完整"))
+        assertFalse(notes.contains("What's New"))
+        assertFalse(notes.contains("Downloads"))
+        assertFalse(notes.contains("仅学生账号"))
+    }
+
+    @Test
     fun casEncryptProducesBase64() {
         val out = CasCrypto.encryptPassword("secret", "1234567890123456")
         assertTrue(out.isNotBlank())
@@ -383,6 +411,46 @@ class CampusParseTest {
         assertEquals(1, rounds.size)
         assertEquals("01", rounds[0].kklxdm)
         assertEquals("主修课程", rounds[0].name)
+    }
+
+    @Test
+    fun parseClockFencesUsesApartmentPointsNotClassrooms() {
+        val raw = JSONObject(
+            """
+            {"code":0,"list":[
+              {"indexCode":1,"positionName":"武侯校区","lng":"103.97048","lat":"30.58120"},
+              {"name":"航空港校区","latitude":30.4,"longitude":104.1,"radius":"500"},
+              {"lat":"0","lng":"0"}
+            ]}
+            """.trimIndent(),
+        )
+        val fences = parseClockFences(raw)
+        assertEquals(2, fences.size)
+        assertEquals("武侯校区", fences[0].name)
+        assertEquals(30.58120, fences[0].latitude, 0.00001)
+        assertEquals(103.97048, fences[0].longitude, 0.00001)
+        assertEquals(CLOCK_FENCE_METERS, fences[0].radiusMeters, 0.001)
+        assertEquals("航空港校区", fences[1].name)
+        assertEquals(500.0, fences[1].radiusMeters, 0.001)
+        assertEquals(800.0, parseClockFences(JSONObject("""{"list":[{"lat":"30.58","lng":"103.97","radius":"0.8"}]}"""))[0].radiusMeters, 0.001)
+        val outline = parseClockFences(
+            JSONObject(
+                """
+                {"list":[
+                  {"lat":"30.5810","lng":"103.9700"},
+                  {"lat":"30.5820","lng":"103.9710"},
+                  {"lat":"30.5805","lng":"103.9715"}
+                ]}
+                """.trimIndent(),
+            ),
+        )
+        assertEquals(1, outline.size)
+        assertEquals(3, outline[0].polygon.size)
+        val shaped = parseClockFences(
+            JSONObject("""{"list":[{"name":"武侯","lat":"30.58","lng":"103.97","points":"103.970,30.581;103.971,30.582;103.972,30.580"}]}"""),
+        )
+        assertEquals(1, shaped.size)
+        assertEquals(3, shaped[0].polygon.size)
     }
 
     @Test

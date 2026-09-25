@@ -26,6 +26,7 @@ const val K_UA =
 
 class MemoryCookieJar : CookieJar {
     private val store = ConcurrentHashMap<String, MutableList<Cookie>>()
+    var onChanged: (() -> Unit)? = null
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val now = System.currentTimeMillis()
@@ -49,6 +50,7 @@ class MemoryCookieJar : CookieJar {
                 }
             }
         }
+        if (cookies.isNotEmpty()) onChanged?.invoke()
     }
 
     fun all(): List<Cookie> = store.values.flatten()

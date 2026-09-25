@@ -8,7 +8,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import cn.edu.swun.swun_ehall.data.http.WebViewHost
 import cn.edu.swun.swun_ehall.data.update.UpdateClient
 import cn.edu.swun.swun_ehall.data.update.UpdateDownload
@@ -18,11 +17,9 @@ import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
         val skipSplash = SwunApplication.pickingMedia
         SwunApplication.markPickingMedia(application, false)
-        splash.setKeepOnScreenCondition { false }
         WebViewHost.bind(this)
         val perms = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,

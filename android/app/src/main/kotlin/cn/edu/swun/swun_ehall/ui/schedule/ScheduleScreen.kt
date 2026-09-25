@@ -28,6 +28,7 @@ import androidx.compose.ui.zIndex
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.model.Lesson
 import cn.edu.swun.swun_ehall.data.session.Session
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import kotlinx.coroutines.launch
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import top.yukonga.miuix.kmp.basic.Card
@@ -85,6 +86,10 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
             )
         },
     ) { padding ->
+        if (loading) {
+            FeatureLoadingPage(padding)
+            return@Scaffold
+        }
         Column(
             Modifier
                 .fillMaxSize()
@@ -112,11 +117,6 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
             )
             Box(Modifier.weight(1f).fillMaxSize()) {
             when {
-                loading && session.schedule.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("正在从蓝图拉取课表…")
-                    }
-                }
                 session.schedule.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("本学期暂无课表")

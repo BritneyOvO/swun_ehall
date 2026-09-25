@@ -29,6 +29,8 @@ import cn.edu.swun.swun_ehall.data.qr.Qr
 import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoading
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
@@ -68,6 +70,10 @@ fun YktScreen(session: Session, nav: NavHostController) {
             )
         },
     ) { padding ->
+        if (loading && session.yktQr.isNullOrBlank()) {
+            FeatureLoadingPage(padding)
+            return@Scaffold
+        }
         FeatureColumn(padding) {
             Row(
                 Modifier
@@ -78,7 +84,7 @@ fun YktScreen(session: Session, nav: NavHostController) {
                 Text("余额", color = cs.onSurfaceVariantSummary, fontSize = 13.sp)
                 Spacer(Modifier.weight(1f))
                 Text(
-                    session.yktBalance?.let { "¥ ${"%.2f".format(it)}" } ?: if (loading) "—" else "—",
+                    session.yktBalance?.let { "¥ ${"%.2f".format(it)}" } ?: "—",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -111,11 +117,6 @@ fun YktScreen(session: Session, nav: NavHostController) {
                             Spacer(Modifier.height(8.dp))
                             Text("请向收款设备出示", color = cs.onSurfaceVariantSummary, fontSize = 13.sp)
                         }
-                        loading -> Text(
-                            "正在获取付款码…",
-                            color = cs.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(vertical = 48.dp),
-                        )
                         else -> Text(
                             session.yktError ?: "暂无二维码",
                             color = if (session.yktError != null) cs.error else cs.onSurfaceVariantSummary,
@@ -130,12 +131,7 @@ fun YktScreen(session: Session, nav: NavHostController) {
                     Text("今日余额使用明细", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                     Spacer(Modifier.height(8.dp))
                     when {
-                        loading && session.yktBills.isEmpty() -> Text(
-                            "正在读取明细…",
-                            color = cs.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(vertical = 20.dp).fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                        )
+                        loading && session.yktBills.isEmpty() -> FeatureLoading(card = false)
                         session.yktBills.isEmpty() -> Text(
                             "暂无明细",
                             color = cs.onSurfaceVariantSummary,

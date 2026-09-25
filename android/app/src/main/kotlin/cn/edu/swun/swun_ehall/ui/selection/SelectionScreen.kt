@@ -22,6 +22,7 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.FeatureStatus
 import kotlinx.coroutines.launch
@@ -67,6 +68,10 @@ fun SelectionScreen(session: Session, nav: NavHostController) {
             )
         },
     ) { padding ->
+        if (loading) {
+            FeatureLoadingPage(padding)
+            return@Scaffold
+        }
         FeatureColumn(padding) {
             if (session.xkRounds.size > 1) {
                 TabRow(
@@ -91,7 +96,6 @@ fun SelectionScreen(session: Session, nav: NavHostController) {
                 }
             }
             when {
-                loading -> FeatureHint("正在拉取选课…")
                 session.xkRounds.isEmpty() -> FeatureHint(session.loadHint ?: "当前没有开放的选课轮次")
                 session.xkCourses.isEmpty() -> FeatureHint("没有匹配的课程")
                 else -> Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {

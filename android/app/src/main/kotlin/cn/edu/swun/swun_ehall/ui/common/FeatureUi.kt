@@ -1,8 +1,10 @@
 package cn.edu.swun.swun_ehall.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,7 +46,7 @@ fun RefreshNav(onClick: () -> Unit) {
 }
 
 @Composable
-fun FeatureColumn(padding: androidx.compose.foundation.layout.PaddingValues, content: @Composable ColumnScope.() -> Unit) {
+fun FeatureColumn(padding: PaddingValues, content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
@@ -53,6 +55,30 @@ fun FeatureColumn(padding: androidx.compose.foundation.layout.PaddingValues, con
             .padding(horizontal = 12.dp),
         content = content,
     )
+}
+
+@Composable
+fun FeatureLoadingPage(padding: PaddingValues) {
+    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+        FeatureLoading(card = false)
+    }
+}
+
+@Composable
+fun FeatureLoading(card: Boolean = true) {
+    val body = @Composable {
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 28.dp, horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator(modifier = Modifier.size(36.dp))
+        }
+    }
+    if (card) {
+        Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) { body() }
+    } else {
+        body()
+    }
 }
 
 @Composable

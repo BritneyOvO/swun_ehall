@@ -31,7 +31,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.edu.swun.swun_ehall.data.model.Lesson
@@ -42,14 +44,14 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val LessonPalette = listOf(
-    Color(0xFF9B1B30),
-    Color(0xFF3D6B5E),
-    Color(0xFF4A6080),
-    Color(0xFF6A4E6E),
-    Color(0xFF8A5A3A),
-    Color(0xFF4E6B3E),
-    Color(0xFF5A6278),
-    Color(0xFF6D4C41),
+    Color(0xFFE85D4C),
+    Color(0xFF2BB5A0),
+    Color(0xFF4C8DFF),
+    Color(0xFFA56BFF),
+    Color(0xFFF0923A),
+    Color(0xFF3CBF6E),
+    Color(0xFF5B6CFF),
+    Color(0xFFE86AA8),
 )
 
 private val DayNames = listOf("", "周一", "周二", "周三", "周四", "周五", "周六", "周日")
@@ -70,11 +72,55 @@ fun mondayOfSchoolWeek(week: Int, curWeek: Int): LocalDate {
 }
 
 @Composable
+private fun NameLabel(name: String, maxHeight: Dp) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val maxH = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val maxW = constraints.maxWidth.coerceAtLeast(1)
+        var size = 12f
+        var lines = 1
+        var layout = measurer.measure(
+            text = name,
+            style = TextStyle(fontSize = size.sp, lineHeight = (size + 2f).sp, fontWeight = FontWeight.Bold),
+            overflow = TextOverflow.Clip,
+            softWrap = true,
+            maxLines = 1,
+            constraints = Constraints(maxWidth = maxW),
+        )
+        while (size >= 8.5f) {
+            val linePx = with(density) { (size + 2f).sp.toPx() }.coerceAtLeast(1f)
+            lines = (maxH / linePx).toInt().coerceIn(1, 12)
+            layout = measurer.measure(
+                text = name,
+                style = TextStyle(fontSize = size.sp, lineHeight = (size + 2f).sp, fontWeight = FontWeight.Bold),
+                overflow = TextOverflow.Clip,
+                softWrap = true,
+                maxLines = lines,
+                constraints = Constraints(maxWidth = maxW),
+            )
+            if (!layout.hasVisualOverflow) break
+            size -= 0.5f
+        }
+        Text(
+            name,
+            color = Color.White,
+            fontSize = size.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = (size + 2f).sp,
+            maxLines = lines,
+            overflow = if (layout.hasVisualOverflow) TextOverflow.Ellipsis else TextOverflow.Clip,
+            softWrap = true,
+        )
+    }
+}
+
+@Composable
 private fun RoomLabel(room: String, color: Color, maxLines: Int) {
     val measurer = rememberTextMeasurer()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val maxW = constraints.maxWidth.coerceAtLeast(1)
-        var size = 10f
+        var size = 12f
         var layout = measurer.measure(
             text = room,
             style = TextStyle(fontSize = size.sp, lineHeight = (size + 2f).sp, fontWeight = FontWeight.Medium),
@@ -244,22 +290,20 @@ fun CourseTable(
                                         Text("${group.size} 门课重叠", color = muted, fontSize = 10.sp)
                                     }
                                 } else {
-                                    Column(Modifier.fillMaxSize()) {
-                                        Text(
-                                            if (conflict) "▾ ${l.name}" else l.name,
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = if (span >= 3) 3 else if (span >= 2) 2 else 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            lineHeight = 13.sp,
-                                            modifier = Modifier.weight(1f, fill = false),
+                                    Column(Modifier.fillMaxWidth()) {
+                                        val reserved = 4.dp +
+                                            (if (l.teacher.isNotEmpty()) 15.dp else 0.dp) +
+                                            (if (l.room.isNotEmpty()) 16.dp else 0.dp)
+                                        NameLabel(
+                                            name = if (conflict) "▾ ${l.name}" else l.name,
+                                            maxHeight = (PeriodH * span - 11.dp - reserved).coerceAtLeast(16.dp),
                                         )
                                         if (l.teacher.isNotEmpty()) {
                                             Text(
                                                 l.teacher,
-                                                color = Color.White.copy(alpha = 0.7f),
-                                                fontSize = 9.sp,
+                                                color = Color.White.copy(alpha = 0.92f),
+                                                fontSize = 11.sp,
+                                                lineHeight = 13.sp,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
@@ -268,7 +312,7 @@ fun CourseTable(
                                             RoomLabel(
                                                 room = l.room,
                                                 color = Color.White.copy(alpha = 0.92f),
-                                                maxLines = if (span >= 2) 3 else 2,
+                                                maxLines = if (span >= 2) 2 else 1,
                                             )
                                         }
                                     }

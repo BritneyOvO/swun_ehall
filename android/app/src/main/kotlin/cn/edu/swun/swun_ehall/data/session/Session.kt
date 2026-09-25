@@ -26,6 +26,7 @@ import cn.edu.swun.swun_ehall.data.http.xkOfficialSxbj
 import cn.edu.swun.swun_ehall.data.http.xkSaveCourseBody
 import cn.edu.swun.swun_ehall.data.http.xkSubmitAlert
 import cn.edu.swun.swun_ehall.data.model.AppRelease
+import cn.edu.swun.swun_ehall.data.model.ClockFence
 import cn.edu.swun.swun_ehall.data.model.ClockRecord
 import cn.edu.swun.swun_ehall.data.model.CreditProgress
 import cn.edu.swun.swun_ehall.data.model.Exam
@@ -81,6 +82,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     var developerMode by mutableStateOf(prefs.getBoolean("developerMode", false))
     var checkUpdateOnLaunch by mutableStateOf(prefs.getBoolean("checkUpdateOnLaunch", true))
     var latestRelease by mutableStateOf<AppRelease?>(null)
+    var dismissedUpdate by mutableStateOf<String?>(null)
     private var lastUpdateCheckAt = 0L
     var lastPunch by mutableStateOf<String?>(null)
     var yktQr by mutableStateOf<String?>(null)
@@ -92,7 +94,9 @@ class Session(app: Application) : AndroidViewModel(app) {
     var remoteAvatarPath by mutableStateOf<String?>(null)
     var avatarEpoch by mutableIntStateOf(0)
     var pendingCropPath by mutableStateOf<String?>(null)
-    private val remoteAvatarFile = File(app.filesDir, "remote_avatar")
+    private val avatarDir = File(app.filesDir, "avatars").apply { if (!exists()) mkdirs() }
+    private val legacyCustomAvatar = File(app.filesDir, "avatar.png")
+    private val legacyRemoteAvatar = File(app.filesDir, "remote_avatar")
     private val cropSrcFile = File(app.filesDir, "crop_src")
     var credits by mutableStateOf<CreditProgress?>(null)
     var xkPanel by mutableStateOf<Map<String, String>>(emptyMap())
@@ -109,17 +113,18 @@ class Session(app: Application) : AndroidViewModel(app) {
     val yktBills = mutableStateListOf<YktBill>()
     var yktBalance by mutableStateOf<Double?>(null)
     val clockRecords = mutableStateListOf<ClockRecord>()
+    val clockFences = mutableStateListOf<ClockFence>()
     val xkRounds = mutableStateListOf<XkRound>()
     val xkCourses = mutableStateListOf<XkCourse>()
-    private val avatarFile = File(app.filesDir, "avatar.png")
-
     init {
+        CampusHttp.cookies.onChanged = { persistCookieFile() }
+        ktkqClient.onToken = { prefs.edit().putString(ktkqTokenKey(), it).apply() }
+        gy.onToken = { prefs.edit().putString(gyTokenKey(), it).apply() }
         accounts.load()
         studentId = accounts.currentId.ifBlank { creds.username }
         slotPicks.load(studentId)
         teachers.load(studentId)
-        if (avatarFile.exists()) localAvatarPath = avatarFile.absolutePath
-        if (remoteAvatarFile.exists()) remoteAvatarPath = remoteAvatarFile.absolutePath
+        bindAvatars(studentId)
         UpdateClient.purgeStale(app)
         restoreFromDisk()
     }
@@ -173,12 +178,14 @@ class Session(app: Application) : AndroidViewModel(app) {
         yktBalance = DemoData.yktBalance
         yktQr = "SWUN-DEMO-YKT-${studentId.ifEmpty { "202430000000" }}"
         clockRecords.clear(); clockRecords.addAll(DemoData.clockRecords)
+        clockFences.clear(); clockFences.addAll(DemoData.clockFences)
         credits = DemoData.credits
         xkRounds.clear(); xkRounds.addAll(DemoData.xkRounds)
         xkCourses.clear(); xkCourses.addAll(DemoData.xkCourses)
         xkProfile = DemoData.xkProfile
         curWeek = 1
         totalWeek = 16
+        bindAvatars(studentId)
     }
 
     suspend fun login(user: String, pass: String) {
@@ -189,6 +196,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         busy = true
         error = null
         demoMode = false
+        bindAvatars(user.trim())
         try {
             withContext(Dispatchers.IO) {
                 CampusHttp.cookies.clear()
@@ -229,7 +237,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         yktQr = null
         displayName = "同学"
         profile = Profile()
-        schedule.clear(); grades.clear(); exams.clear(); ktkq.clear(); ktkqCourses.clear(); yktBills.clear(); clockRecords.clear()
+        schedule.clear(); grades.clear(); exams.clear(); ktkq.clear(); ktkqCourses.clear(); yktBills.clear(); clockRecords.clear(); clockFences.clear()
         ktkqWeekNum = 1
         ktkqXnxqmc = ""
         pendingKtkqSlot = null
@@ -238,6 +246,12 @@ class Session(app: Application) : AndroidViewModel(app) {
         credits = null
         yktQr = null
         yktError = null
+        localAvatarPath = null
+        remoteAvatarPath = null
+        avatarEpoch++
+        ktkqClient.token = null
+        gy.token = null
+        prefs.edit().remove(ktkqTokenKey()).remove(gyTokenKey()).apply()
         viewModelScope.launch(Dispatchers.IO) {
             try { lantu.clear() } catch (_: Exception) {}
             CampusHttp.cookies.clear()
@@ -257,6 +271,7 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     fun removeAccount(id: String) {
         val wasCurrent = id == accounts.currentId || id == studentId
+        deleteAccountAvatars(id)
         accounts.remove(id)
         if (wasCurrent) logout()
     }
@@ -289,15 +304,58 @@ class Session(app: Application) : AndroidViewModel(app) {
     }
 
     fun setLocalAvatar(bytes: ByteArray) {
-        avatarFile.writeBytes(bytes)
-        localAvatarPath = avatarFile.absolutePath
+        val file = customAvatarFile()
+        file.parentFile?.mkdirs()
+        file.writeBytes(bytes)
+        localAvatarPath = file.absolutePath
         avatarEpoch++
     }
 
     fun clearLocalAvatar() {
-        if (avatarFile.exists()) avatarFile.delete()
+        val file = customAvatarFile()
+        if (file.exists()) file.delete()
         localAvatarPath = null
         avatarEpoch++
+    }
+
+    private fun accountKey(id: String = studentId.ifBlank { accounts.currentId }): String {
+        val raw = id.trim().ifBlank { "default" }
+        return raw.replace(Regex("[^0-9A-Za-z._-]"), "_")
+    }
+
+    private fun customAvatarFile(id: String = accountKey()) = File(avatarDir, "$id.png")
+
+    private fun remoteAvatarFileFor(id: String = accountKey()) = File(avatarDir, "$id.remote")
+
+    private fun bindAvatars(id: String) {
+        val key = accountKey(id)
+        migrateLegacyAvatars(key)
+        val custom = customAvatarFile(key)
+        val remote = remoteAvatarFileFor(key)
+        localAvatarPath = custom.takeIf { it.exists() && it.length() > 32 }?.absolutePath
+        remoteAvatarPath = remote.takeIf { it.exists() && it.length() > 32 }?.absolutePath
+        avatarEpoch++
+    }
+
+    private fun migrateLegacyAvatars(key: String) {
+        val custom = customAvatarFile(key)
+        if (!custom.exists() && legacyCustomAvatar.exists()) {
+            custom.parentFile?.mkdirs()
+            legacyCustomAvatar.copyTo(custom, overwrite = false)
+            legacyCustomAvatar.delete()
+        }
+        val remote = remoteAvatarFileFor(key)
+        if (!remote.exists() && legacyRemoteAvatar.exists()) {
+            remote.parentFile?.mkdirs()
+            legacyRemoteAvatar.copyTo(remote, overwrite = false)
+            legacyRemoteAvatar.delete()
+        }
+    }
+
+    private fun deleteAccountAvatars(id: String) {
+        val key = accountKey(id)
+        customAvatarFile(key).delete()
+        remoteAvatarFileFor(key).delete()
     }
 
     suspend fun refreshSchedule() {
@@ -526,7 +584,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    suspend fun refreshKtkq() {
+    suspend fun refreshKtkq(force: Boolean = false) {
         if (demoMode) {
             applyKtkqWeek(DemoData.ktkqWeek)
             return
@@ -534,10 +592,16 @@ class Session(app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.IO) {
             try {
                 ensureKtkq()
-                val week = ktkqClient.weekCourses(refresh = true)
+                val weekNum = curWeek.takeIf { it > 0 }
+                val week = ktkqClient.weekCourses(week = weekNum, refresh = force)
                 val items = week.flatten()
                 teachers.fillFromKtkq(items, week.week)
                 val patched = teachers.apply(schedule.toList())
+                prefs.edit()
+                    .putString(ktkqTokenKey(), ktkqClient.token.orEmpty())
+                    .putString(ktkqTermKey(), ktkqClient.knownXnxqdm)
+                    .putString(ktkqTermNameKey(), week.xnxqmc)
+                    .apply()
                 withContext(Dispatchers.Main) {
                     loadHint = null
                     applyKtkqWeek(week)
@@ -648,15 +712,29 @@ class Session(app: Application) : AndroidViewModel(app) {
     suspend fun refreshClock() {
         if (demoMode) {
             clockRecords.clear(); clockRecords.addAll(DemoData.clockRecords)
+            clockFences.clear(); clockFences.addAll(DemoData.clockFences)
             return
         }
         withContext(Dispatchers.IO) {
             try {
                 ensureGy()
-                val rec = gy.records()
+                var hint: String? = null
+                val rec = try {
+                    gy.records()
+                } catch (e: Exception) {
+                    Log.e("swun", "clock", e)
+                    hint = publicError(e)
+                    null
+                }
+                val fences = gy.positions()
                 withContext(Dispatchers.Main) {
-                    clockRecords.clear()
-                    clockRecords.addAll(rec)
+                    if (hint != null) loadHint = hint
+                    if (rec != null) {
+                        clockRecords.clear()
+                        clockRecords.addAll(rec)
+                    }
+                    clockFences.clear()
+                    clockFences.addAll(fences)
                 }
             } catch (e: Exception) {
                 Log.e("swun", "clock", e)
@@ -742,7 +820,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     suspend fun testFencePunch(slot: SignActivity? = null): String {
         if (!demoMode && ktkq.isEmpty()) {
             try {
-                refreshKtkq()
+                refreshKtkq(force = true)
             } catch (_: Exception) {
             }
         }
@@ -868,10 +946,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         refreshSchedule()
         try { refreshGrades() } catch (_: Exception) {}
         try {
-            Thread.sleep(600)
             rs.warmup("https://ktkq.swun.edu.cn/")
-            rs.warmup("https://gyglxt.swun.edu.cn/")
-            rs.warmup("https://ykth5.swun.edu.cn/")
         } catch (_: Exception) {
         }
     }
@@ -910,21 +985,26 @@ class Session(app: Application) : AndroidViewModel(app) {
         if (id.isNotEmpty()) accounts.upsert(id, profile.name)
         slotPicks.load(id)
         teachers.load(id)
+        bindAvatars(id)
     }
 
     private suspend fun fetchRemoteAvatar(url: String) {
+        val owner = accountKey()
+        val file = remoteAvatarFileFor(owner)
         try {
             val req = okhttp3.Request.Builder().url(url).header("Accept", "image/*").build()
             val ok = CampusHttp.followClient.newCall(req).execute().use { r ->
                 if (r.code !in 200..399) return@use false
                 val bytes = r.body?.bytes() ?: return@use false
                 if (bytes.size < 64) return@use false
-                remoteAvatarFile.writeBytes(bytes)
+                file.parentFile?.mkdirs()
+                file.writeBytes(bytes)
                 true
             }
             if (!ok) return
             withContext(Dispatchers.Main) {
-                remoteAvatarPath = remoteAvatarFile.absolutePath
+                if (accountKey() != owner) return@withContext
+                remoteAvatarPath = file.absolutePath
                 avatarEpoch++
             }
         } catch (e: Exception) {
@@ -948,17 +1028,43 @@ class Session(app: Application) : AndroidViewModel(app) {
         cookieFile.writeText(CampusHttp.exportCookies())
     }
 
+    private fun ktkqTokenKey() = "ktkqToken_${studentId.ifBlank { accounts.currentId }}"
+    private fun ktkqTermKey() = "ktkqXnxqdm_${studentId.ifBlank { accounts.currentId }}"
+    private fun ktkqTermNameKey() = "ktkqXnxqmc_${studentId.ifBlank { accounts.currentId }}"
+
     private fun ensureKtkq() {
         ensureCas()
         ktkqClient.attachCas(cas)
-        if (ktkqClient.token.isNullOrEmpty()) ktkqClient.loginWithCas(cas)
+        if (ktkqClient.token.isNullOrEmpty()) {
+            val saved = prefs.getString(ktkqTokenKey(), "").orEmpty()
+            if (saved.length > 16) ktkqClient.token = saved
+            ktkqClient.knownXnxqdm = prefs.getString(ktkqTermKey(), "").orEmpty()
+            ktkqClient.knownXnxqmc = prefs.getString(ktkqTermNameKey(), "").orEmpty()
+        }
+        if (ktkqClient.token.isNullOrEmpty()) {
+            ktkqClient.loginWithCas(cas)
+            prefs.edit().putString(ktkqTokenKey(), ktkqClient.token.orEmpty()).apply()
+        }
     }
+
+    private fun gyTokenKey() = "gyToken_${studentId.ifBlank { accounts.currentId }}"
 
     private fun ensureGy() {
         ensureCas()
         gy.attachCas(cas)
         gy.username = studentId.ifEmpty { gy.username }
+        if (gy.token.isNullOrEmpty()) {
+            val saved = prefs.getString(gyTokenKey(), "").orEmpty()
+            if (saved.length > 8) gy.token = saved
+        }
         if (gy.token.isNullOrEmpty()) gy.loginWithCas(cas)
+    }
+
+    private fun persistCookieFile() {
+        try {
+            cookieFile.writeText(CampusHttp.exportCookies())
+        } catch (_: Exception) {
+        }
     }
 
     private fun publicError(e: Exception): String =

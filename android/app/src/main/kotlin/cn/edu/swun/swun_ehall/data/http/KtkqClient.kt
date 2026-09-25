@@ -21,9 +21,13 @@ const val K_KTKQ_SERVICE = "$K_KTKQ/jwmobile/auth/index"
 
 class KtkqClient(private val rs: RsGateway) {
     var token: String? = null
+    var onToken: ((String) -> Unit)? = null
     private var cas: CasClient? = null
     private var weekCacheKey: String? = null
     private var weekCache: JSONObject? = null
+    private var weekMem: KtkqWeek? = null
+    var knownXnxqdm: String = ""
+    var knownXnxqmc: String = ""
 
     fun attachCas(c: CasClient) {
         cas = c
@@ -96,67 +100,51 @@ class KtkqClient(private val rs: RsGateway) {
         }
         if (token.isNullOrEmpty()) error("未拿到课堂考勤 token")
         persistToken(token!!)
-        if (!webTried) syncWebSession() else writeLsToken()
     }
 
     fun weekCourses(week: Int? = null, refresh: Boolean = false): KtkqWeek {
+        val mem = weekMem
+        if (!refresh && mem != null && mem.courses.isNotEmpty() && (week == null || week == mem.week)) {
+            return mem
+        }
         var data = JSONObject()
-        var xnxqdm = ""
-        try {
-            val st = get("/jwmobile/biz/v410/schedule/school/time")
-            data = jsonDataOf(st)
-            xnxqdm = pickKtkqXnxqdm(data, emptyList())
-            Log.d("swun", "[ktkq] schoolTime code=${st.opt("code")} keys=${data.keys().asSequence().toList()}")
-        } catch (e: Exception) {
-            Log.w("swun", "[ktkq] schoolTime $e")
-        }
+        var xnxqdm = knownXnxqdm
         if (xnxqdm.isEmpty()) {
             try {
-                val terms = get("/jwmobile/biz/v410/schedule/termList")
-                val rows = termRows(terms.opt("data"))
-                xnxqdm = pickKtkqXnxqdm(data, rows)
-                if (xnxqdm.isNotEmpty()) {
-                    try {
-                        val st = get("/jwmobile/biz/v410/schedule/school/time", mapOf("xnxqdm" to xnxqdm))
-                        data = jsonDataOf(st)
-                        val again = pickKtkqXnxqdm(data, emptyList())
-                        if (again.isNotEmpty()) xnxqdm = again
-                    } catch (e: Exception) {
-                        Log.w("swun", "[ktkq] schoolTime($xnxqdm) $e")
-                    }
+                val st = get("/jwmobile/biz/v410/schedule/school/time")
+                data = jsonDataOf(st)
+                xnxqdm = pickKtkqXnxqdm(data, emptyList())
+            } catch (e: Exception) {
+                Log.w("swun", "[ktkq] schoolTime $e")
+            }
+            if (xnxqdm.isEmpty()) {
+                try {
+                    val terms = get("/jwmobile/biz/v410/schedule/termList")
+                    val rows = termRows(terms.opt("data"))
+                    xnxqdm = pickKtkqXnxqdm(data, rows)
+                } catch (e: Exception) {
+                    Log.w("swun", "[ktkq] termList $e")
                 }
-            } catch (e: Exception) {
-                Log.w("swun", "[ktkq] termList $e")
             }
+            if (xnxqdm.isEmpty()) xnxqdm = ktkqXnxqdmNow()
+            knownXnxqdm = xnxqdm
+            val mc = data.kqStr("xnxqmc")
+            if (mc.isNotEmpty()) knownXnxqmc = mc
         }
-        if (xnxqdm.isEmpty()) {
-            xnxqdm = ktkqXnxqdmNow()
-            Log.d("swun", "[ktkq] calendar xnxqdm=$xnxqdm")
-        }
-        if (data.length() == 0 && xnxqdm.isNotEmpty()) {
-            try {
-                data = jsonDataOf(get("/jwmobile/biz/v410/schedule/school/time", mapOf("xnxqdm" to xnxqdm)))
-            } catch (e: Exception) {
-                Log.w("swun", "[ktkq] schoolTime($xnxqdm) $e")
-            }
-        }
-        val skzc = week ?: kqInt(data, "todayWeekNum", kqInt(data, "skzc", 1))
+        val skzc = week ?: kqInt(data, "todayWeekNum", kqInt(data, "skzc", mem?.week ?: 1)).coerceAtLeast(1)
         val key = "$xnxqdm|$skzc"
         val cached = weekCache
         if (!refresh && cached != null && weekCacheKey == key) {
-            return ktkqWeekOf(cached, xnxqdm, skzc, data)
+            return ktkqWeekOf(cached, xnxqdm, skzc, data, knownXnxqmc).also { weekMem = it }
         }
-        fun pull() = post(
-            "/jwmobile/biz/v410/schedule/querySchedule",
-            JSONObject().put("xnxqdm", xnxqdm).put("skzc", skzc),
-        )
         val raw = try {
-            pull()
+            post(
+                "/jwmobile/biz/v410/schedule/querySchedule",
+                JSONObject().put("xnxqdm", xnxqdm).put("skzc", skzc),
+            )
         } catch (e: Exception) {
             Log.w("swun", "[ktkq] querySchedule $e")
-            if (ktkqLooksAuthError(e)) throw e
-            Thread.sleep(400)
-            pull()
+            throw e
         }
         val out = normalizeKtkqWeek(raw)
         val n = kqObjList(out.opt("data")).size
@@ -165,7 +153,7 @@ class KtkqClient(private val rs: RsGateway) {
             weekCacheKey = key
             weekCache = out
         }
-        return ktkqWeekOf(out, xnxqdm, skzc, data)
+        return ktkqWeekOf(out, xnxqdm, skzc, data, knownXnxqmc).also { weekMem = it }
     }
 
     fun signForLesson(lesson: SignActivity, week: Int? = null, refresh: Boolean = false): SignActivity {
@@ -368,6 +356,7 @@ class KtkqClient(private val rs: RsGateway) {
 
     private fun persistToken(t: String) {
         token = t
+        onToken?.invoke(t)
         val paths = listOf("/", "/jwmobile", "/jwmobile/", "/jwmobile/index", "/jwmobile/auth/index")
         paths.forEach { path ->
             val url = "https://ktkq.swun.edu.cn$path".toHttpUrlOrNull() ?: return@forEach
@@ -615,7 +604,7 @@ fun normalizeKtkqWeek(raw: JSONObject): JSONObject {
     return JSONObject(raw.toString()).put("code", raw.opt("code") ?: 200).put("data", out)
 }
 
-fun ktkqWeekOf(raw: JSONObject, xnxqdm: String, week: Int, school: JSONObject): KtkqWeek {
+fun ktkqWeekOf(raw: JSONObject, xnxqdm: String, week: Int, school: JSONObject, termName: String = ""): KtkqWeek {
     val courses = mutableListOf<KtkqCourse>()
     for (c in kqObjList(raw.opt("data"))) {
         val nested = kqObjList(c.opt("list"))
@@ -640,7 +629,7 @@ fun ktkqWeekOf(raw: JSONObject, xnxqdm: String, week: Int, school: JSONObject): 
     }
     return KtkqWeek(
         xnxqdm = xnxqdm,
-        xnxqmc = school.kqStr("xnxqmc").ifBlank { xnxqdm },
+        xnxqmc = school.kqStr("xnxqmc").ifBlank { termName }.ifBlank { xnxqdm },
         week = week,
         courses = courses,
     )

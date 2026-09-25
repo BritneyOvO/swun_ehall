@@ -25,6 +25,7 @@ import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
@@ -84,6 +85,10 @@ fun GradesScreen(session: Session) {
             )
         },
     ) { padding ->
+        if (loading) {
+            FeatureLoadingPage(padding)
+            return@Scaffold
+        }
         FeatureColumn(padding) {
             Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                 OverlayDropdownPreference(
@@ -108,7 +113,6 @@ fun GradesScreen(session: Session) {
                 }
             }
             when {
-                loading && shown.isEmpty() -> FeatureHint("正在从教务拉取成绩…")
                 shown.isEmpty() -> FeatureHint("该学期暂无成绩")
                 else -> Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                     shown.forEachIndexed { i, g ->

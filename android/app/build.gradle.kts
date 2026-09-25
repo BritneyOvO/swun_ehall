@@ -56,8 +56,8 @@ android {
         applicationId = "cn.edu.swun.swun_ehall"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.0.6"
+        versionCode = 8
+        versionName = "1.0.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AMAP_KEY", "\"$amapKey\"")
         buildConfigField("String", "BUGLY_APP_ID", "\"$buglyAppId\"")
@@ -127,7 +127,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.8")
     implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
@@ -140,7 +139,8 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze:2.0.0-rc02")
     implementation("dev.chrisbanes.haze:haze-blur:2.0.0-rc02")
     implementation("dev.chrisbanes.haze:haze-glass:2.0.0-rc02")
-    implementation("com.amap.api:location:6.5.1")
+    // Latest combined map SDK. It already contains location classes, so do not add com.amap.api:location beside it.
+    implementation("com.amap.api:3dmap-location-search:11.3.100_loc11.3.000_sea9.8.1")
     implementation(files("libs/MiPush_SDK_Client_6_0_1-C.jar"))
     implementation(files("libs/com.heytap.msp_3.1.0.aar"))
     implementation(files("libs/vivo-push-open.jar", "libs/vivo-push-open-build.jar"))

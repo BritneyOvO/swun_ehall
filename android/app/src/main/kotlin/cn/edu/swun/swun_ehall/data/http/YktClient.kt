@@ -14,7 +14,6 @@ class YktClient(private val rs: RsGateway) {
     fun fetchQr(studentId: String, schoolId: String = "187"): String {
         if (studentId.isBlank()) error("没有学号，无法打开一卡通")
         val fn = openFunction(studentId, schoolId, "qrcode")
-        Thread.sleep(280)
         val hit = rs.call(
             "POST",
             K_YKT_QR,
@@ -30,7 +29,6 @@ class YktClient(private val rs: RsGateway) {
     fun fetchLedger(studentId: String, schoolId: String = "187"): Pair<Double?, List<YktBill>> {
         if (studentId.isBlank()) error("没有学号，无法打开一卡通")
         val fn = openFunction(studentId, schoolId, "bill")
-        Thread.sleep(280)
         val hit = rs.call(
             "POST",
             K_YKT_BILL,
@@ -49,7 +47,6 @@ class YktClient(private val rs: RsGateway) {
     fun fetchBalance(studentId: String, schoolId: String = "187"): Double? {
         if (studentId.isBlank()) error("没有学号，无法打开一卡通")
         openFunction(studentId, schoolId, "data")
-        Thread.sleep(200)
         val raw = rs.evalJs(
             "ykth5.swun.edu.cn",
             """

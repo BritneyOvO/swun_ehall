@@ -1,5 +1,27 @@
 # 更新说明 | Changelog
 
+## 1.0.7
+
+### 更新内容
+
+- 公寓打卡：卡片下方显示地图，标出打卡范围和当前位置。
+- 课堂签到：按教室标出签到范围和中心点，地图对准中心。
+- 课表：课程名尽量完整显示，颜色更亮，老师和教室紧挨课程名。
+- 加载：功能页加载时只显示转圈；一卡通付款码出来就显示整页。
+- 更新：发现新版本时弹窗显示更新说明，并可下载安装。
+- 开屏：只显示图标，下面不再写「民大助手」。
+- 深色模式底栏颜色更贴近页面。
+
+### What's New
+
+- Apartment punch shows a map with the punch area and your location.
+- Classroom sign-in shows the room's sign area and its center, with the map zoomed on that point.
+- Timetable course names wrap to fit, in brighter colors, with teacher and room under the name.
+- Feature pages show only a spinner while loading; the campus card appears as soon as the payment QR is ready.
+- A new release opens a dialog with the notes and a download.
+- Splash shows only the icon, without the words 民大助手 underneath.
+- The dark-mode bottom bar sits closer to the page color.
+
 ## 1.0.6
 
 ### 更新内容
