@@ -1,5 +1,17 @@
 # 更新说明 | Changelog
 
+## 1.0.8
+
+### 更新内容
+
+- 仓库只保留 Android 客户端，已移除 Flutter 工程。
+- 开屏图标保留「西南民族大学」，去掉下面的「民大助手」。
+
+### What's New
+
+- The repository now contains only the Android client. The Flutter project is removed.
+- The splash icon keeps 「西南民族大学」 and no longer shows 「民大助手」 underneath.
+
 ## 1.0.7
 
 ### 更新内容

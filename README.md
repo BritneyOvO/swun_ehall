@@ -10,10 +10,6 @@ cd android && ./gradlew :app:assembleDebug
 
 > 非官方应用，与学校信息化部门无关。只服务学生账号（`jsdm=xs`），请只用自己的学号登录。
 
-<p>
-  <img src="assets/icon/app_icon.png" width="96" alt="民大助手图标">
-</p>
-
 ## 功能
 
 | 模块 | 说明 |
@@ -39,29 +35,22 @@ cd android && ./gradlew :app:assembleDebug
 
 ## 运行环境
 
-- Flutter 3.47+ / Dart 3.13+
+- JDK 17
 - Android **arm64-v8a**（工程已限制 ABI）
 - 西南民族大学学生统一身份账号
 
 ## 构建
 
 ```bash
-flutter pub get
-flutter test
-flutter build apk --debug --target-platform android-arm64
-flutter build apk --release --target-platform android-arm64
+cd android
+./gradlew :app:assembleDebug
+./gradlew :app:assembleRelease
 ```
 
 产物：
 
-- `build/app/outputs/flutter-apk/app-debug.apk`
-- `build/app/outputs/flutter-apk/app-release.apk`
-
-安装到已连接的设备：
-
-```bash
-flutter install --debug
-```
+- `android/app/build/outputs/apk/debug/app-debug.apk`
+- `android/app/build/outputs/apk/release/app-release.apk`
 
 签名用 `android/key.properties` 和 `android/upload-keystore.jks`（已 gitignore）。debug 和 release 共用这把证书；没有密钥时才回退到系统 debug 签名。
 
