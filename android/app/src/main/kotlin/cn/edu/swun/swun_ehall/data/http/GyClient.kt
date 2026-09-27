@@ -147,7 +147,7 @@ class GyClient(private val rs: RsGateway) {
 
     }
 
-/** Same threshold as the Flutter clock page: nearest position within 800 m counts as in range. */
+/** Nearest punch position within 800 m counts as in range. */
 const val CLOCK_FENCE_METERS = 800.0
 
 fun parseClockFences(json: JSONObject): List<ClockFence> {
