@@ -36,6 +36,7 @@ object CasCrypto {
 
 class CasClient {
     fun login(username: String, password: String) {
+        val started = System.nanoTime()
         CampusHttp.dropCasTgt()
         var page = loginPage()
         if (CampusHttp.isRedirect(page) && CampusHttp.location(page).contains("ticket=")) {
@@ -90,6 +91,7 @@ class CasClient {
         }
         consume(loc)
         if (!hasTgt()) error("统一身份未拿到登录凭证")
+        SwunLog.took(started, "统一身份登录完成")
     }
 
     fun hasTgt(): Boolean = CampusHttp.cookies.all().any {
@@ -98,25 +100,38 @@ class CasClient {
     }
 
     fun tgtAlive(): Boolean {
-        if (hasTgt()) return true
+        val started = System.nanoTime()
+        if (hasTgt()) {
+            SwunLog.took(started, "统一身份凭证 本地仍在")
+            return true
+        }
         return try {
             val service = URLEncoder.encode(K_EHALL_SERVICE, "UTF-8")
             val r = CampusHttp.get("$K_AUTH/login?service=$service")
             val loc = CampusHttp.location(r)
             r.close()
-            loc.contains("ticket=")
-        } catch (_: Exception) {
+            val ok = loc.contains("ticket=")
+            SwunLog.took(started, "统一身份凭证 探活=$ok")
+            ok
+        } catch (e: Exception) {
+            SwunLog.took(started, "统一身份凭证 探活失败 ${e.message}")
             false
         }
     }
 
     fun ticketFor(service: String): String {
+        val started = System.nanoTime()
         var url = "$K_AUTH/login?service=${URLEncoder.encode(service, "UTF-8")}"
-        repeat(6) {
+        repeat(6) { hop ->
+            val hopAt = System.nanoTime()
             val r = CampusHttp.get(url)
             val next = CampusHttp.location(r)
+            SwunLog.took(hopAt, "换票#$hop HTTP ${r.code}")
             r.close()
-            if (next.contains("ticket=")) return CampusHttp.upgradeHttps(next)
+            if (next.contains("ticket=")) {
+                SwunLog.took(started, "换票完成")
+                return CampusHttp.upgradeHttps(next)
+            }
             if (!CampusHttp.isRedirect(r) || next.isEmpty()) error("未能换到 ticket (会话可能已过期)")
             url = CampusHttp.absUrl(K_AUTH, next)
         }

@@ -275,6 +275,74 @@ class CampusParseTest {
     }
 
     @Test
+    fun jwxtCurrentWeekFollowsDate() {
+        val json = JSONObject().put(
+            "rqazcList",
+            org.json.JSONArray()
+                .put(JSONObject().put("rq", "2026-09-07").put("zc", "1"))
+                .put(JSONObject().put("rq", "2026-09-30").put("zc", "4"))
+                .put(JSONObject().put("rq", "2026-12-28").put("zc", "16")),
+        )
+        val hit = jwxtCurrentWeek(json, java.time.LocalDate.of(2026, 9, 30))
+        assertEquals(4, hit.week)
+        assertEquals(16, hit.total)
+        val between = jwxtCurrentWeek(json, java.time.LocalDate.of(2026, 10, 2))
+        assertEquals(4, between.week)
+    }
+
+    @Test
+    fun week1AnchorPutsOct7InWeek6() {
+        val json = JSONObject()
+            .put("zs", "1")
+            .put(
+                "rqazcList",
+                org.json.JSONArray()
+                    .put(JSONObject().put("xqj", 1).put("rq", "2026-08-31")),
+            )
+        val hit = jwxtCurrentWeek(json, java.time.LocalDate.of(2026, 10, 7))
+        assertEquals(6, hit.week)
+        assertEquals(java.time.LocalDate.of(2026, 8, 31), hit.week1Monday)
+    }
+
+    @Test
+    fun mobileKbWeekUsesTopLevelZs() {
+        val json = JSONObject()
+            .put("zs", "6")
+            .put(
+                "rqazcList",
+                org.json.JSONArray()
+                    .put(JSONObject().put("xqj", 1).put("xqjmc", "星期一").put("rq", "2026-10-05"))
+                    .put(JSONObject().put("xqj", 3).put("xqjmc", "星期三").put("rq", "2026-10-07")),
+            )
+        val hit = jwxtCurrentWeek(json, java.time.LocalDate.of(2026, 10, 7))
+        assertEquals(6, hit.week)
+        assertEquals(java.time.LocalDate.of(2026, 8, 31), hit.week1Monday)
+    }
+
+    @Test
+    fun jwxtKbBecomesLessons() {
+        val kb = org.json.JSONArray().put(
+            JSONObject()
+                .put("kcmc", "网络工程学期实训 (网络仿真)")
+                .put("cdmc", "BS-222")
+                .put("xm", "徐小琼")
+                .put("xqj", "1")
+                .put("jcor", "5-6")
+                .put("zcd", "1-16周"),
+        )
+        val lessons = lessonsFromJwxtKb(kb)
+        assertEquals(1, lessons.size)
+        assertEquals(1, lessons[0].weekday)
+        assertEquals(5, lessons[0].start)
+        assertEquals(2, lessons[0].span)
+        assertEquals("BS-222", lessons[0].room)
+        assertEquals("徐小琼", lessons[0].teacher)
+        assertTrue(lessons[0].inWeek(1))
+        assertTrue(lessons[0].inWeek(16))
+        assertEquals(false, lessons[0].inWeek(17))
+    }
+
+    @Test
     fun teacherCacheFillsEmptyXm() {
         val cache = cn.edu.swun.swun_ehall.data.session.TeacherCache(java.io.File.createTempFile("kbt", ".json"))
         val kb = org.json.JSONArray().put(

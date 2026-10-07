@@ -3,9 +3,9 @@ package cn.edu.swun.swun_ehall.data.http
 /**
  * 瑞数站点约定。解瑞数只认这一套，不在业务客户端里各写各的。
  *
- * 1. unlock — 打开首页，等到 WAF Cookie（FSSBB / 3AAF）
+ * 1. unlock — 打开首页，瑞数 cookie 由页面自己维护
  * 2. open   — 推 CASTGC，加载 URL（可过 CAS），等到 [RsWait]
- * 3. call   — OkHttp；412 则 unlock，再在页内 jQuery → XHR → fetch
+ * 3. call   — 每次请求都用该站共用 WebView 重新打开挑战页，只拿这一次新写的 cookie 发一次 OkHttp，用完即删。公寓挑战页是 /wxweb/，考勤是 /jwmobile/index
  * 4. token  — 跳转 URL / Cookie / localStorage
  * [RsGateway.followSso] 把 CAS ticket 和 1–4 串起来。
  */

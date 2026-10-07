@@ -21,6 +21,9 @@ class YktClient(private val rs: RsGateway) {
             inPage = true,
         )
         Log.d("swun", "[ykt] qr HTTP ${hit.status} ${hit.body.length}b ${hit.body.take(200)}")
+        if (CampusHttp.looksNightClosed(hit.status, hit.body) || CampusHttp.looksRuishu(hit.status, hit.body) || payloadOf(hit.body) == null) {
+            SwunLog.api("一卡通二维码", hit.status, hit.url, hit.body)
+        }
         if (CampusHttp.looksNightClosed(hit.status, hit.body)) error("一卡通夜间关闭或不在服务时间")
         if (CampusHttp.looksRuishu(hit.status, hit.body)) error("一卡通二维码仍被网关拦截")
         return payloadOf(hit.body) ?: error("用户无卡片，无法生成二维码")
@@ -37,6 +40,9 @@ class YktClient(private val rs: RsGateway) {
             inPage = true,
         )
         Log.d("swun", "[ykt] bill HTTP ${hit.status} ${hit.body.length}b ${hit.body.take(400)}")
+        if (CampusHttp.looksNightClosed(hit.status, hit.body) || CampusHttp.looksRuishu(hit.status, hit.body)) {
+            SwunLog.api("一卡通明细", hit.status, hit.url, hit.body)
+        }
         if (CampusHttp.looksNightClosed(hit.status, hit.body)) error("一卡通夜间关闭或不在服务时间")
         if (CampusHttp.looksRuishu(hit.status, hit.body)) error("一卡通明细仍被网关拦截")
         val items = parseYktBills(hit.body)

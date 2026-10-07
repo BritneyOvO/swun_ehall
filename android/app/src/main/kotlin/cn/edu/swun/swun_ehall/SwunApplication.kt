@@ -2,6 +2,7 @@ package cn.edu.swun.swun_ehall
 
 import android.app.Application
 import android.os.Build
+import cn.edu.swun.swun_ehall.data.http.SwunLog
 import cn.edu.swun.swun_ehall.data.push.VendorPush
 import cn.edu.swun.swun_ehall.ui.theme.applyPredictiveBack
 import com.tencent.bugly.crashreport.CrashReport
@@ -9,6 +10,7 @@ import com.tencent.bugly.crashreport.CrashReport
 class SwunApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        SwunLog.init(this)
         pickingMedia = getSharedPreferences("swun_session", MODE_PRIVATE).getBoolean(PREF_PICKING_MEDIA, false)
         if (Build.VERSION.SDK_INT >= 34) {
             val enable = getSharedPreferences("swun_theme", MODE_PRIVATE).getBoolean("predictiveBack", false)

@@ -33,12 +33,12 @@ class KtkqClient(private val rs: RsGateway) {
         cas = c
     }
 
-    fun loginWithCas(cas: CasClient) {
+    fun loginWithCas(cas: CasClient, reject: String? = null) {
         this.cas = cas
         var lastErr: Exception? = null
         repeat(2) { attempt ->
             try {
-                loginOnce(cas)
+                loginOnce(cas, reject)
                 return
             } catch (e: Exception) {
                 lastErr = e
@@ -58,8 +58,14 @@ class KtkqClient(private val rs: RsGateway) {
         )
     }
 
-    private fun loginOnce(cas: CasClient) {
+    private fun loginOnce(cas: CasClient, reject: String? = null) {
         clearStaleAuthCookies()
+        val authNames = listOf("Authorization", "EM_TOKEN", "EM-TOKEN", "token")
+        try {
+            rs.clearSiteCookies("ktkq.swun.edu.cn", authNames)
+            rs.clearLocalStorage("ktkq.swun.edu.cn", authNames)
+        } catch (_: Exception) {
+        }
         var url = cas.ticketFor(K_KTKQ_SERVICE)
         var last = url
         var webTried = false
@@ -99,6 +105,12 @@ class KtkqClient(private val rs: RsGateway) {
             webTried = true
         }
         if (token.isNullOrEmpty()) error("未拿到课堂考勤 token")
+        if (token == reject) {
+            SwunLog.w("考勤登录仍是旧token len=${token!!.length}")
+            token = null
+            error("课堂考勤登录态没有更新")
+        }
+        SwunLog.w("考勤登录新token len=${token!!.length}")
         persistToken(token!!)
     }
 
@@ -357,21 +369,16 @@ class KtkqClient(private val rs: RsGateway) {
     private fun persistToken(t: String) {
         token = t
         onToken?.invoke(t)
-        val paths = listOf("/", "/jwmobile", "/jwmobile/", "/jwmobile/index", "/jwmobile/auth/index")
-        paths.forEach { path ->
-            val url = "https://ktkq.swun.edu.cn$path".toHttpUrlOrNull() ?: return@forEach
-            val c = okhttp3.Cookie.Builder()
-                .name("Authorization")
-                .value(t)
-                .domain("ktkq.swun.edu.cn")
-                .path(if (path == "/jwmobile") "/jwmobile" else path)
-                .secure()
-                .httpOnly()
-                .build()
-            CampusHttp.cookies.saveFromResponse(url, listOf(c))
-        }
-        rs.pushCookies("https://ktkq.swun.edu.cn/")
-        rs.pushCookies("https://ktkq.swun.edu.cn/jwmobile/")
+        clearStaleAuthCookies()
+        val url = "$K_KTKQ/".toHttpUrlOrNull() ?: return
+        val c = okhttp3.Cookie.Builder()
+            .name("Authorization")
+            .value(t)
+            .hostOnlyDomain("ktkq.swun.edu.cn")
+            .path("/")
+            .secure()
+            .build()
+        CampusHttp.cookies.saveFromResponse(url, listOf(c))
         writeLsToken()
     }
 
@@ -414,10 +421,7 @@ class KtkqClient(private val rs: RsGateway) {
         put("Referer", "$K_KTKQ/jwmobile/index")
         put("X-Requested-With", "XMLHttpRequest")
         val t = token
-        if (!t.isNullOrEmpty()) {
-            put("Authorization", t)
-            put("EM-TOKEN", t)
-        }
+        if (!t.isNullOrEmpty() && !ktkqTokenExpired(t)) put("Authorization", t)
     }
 
     private fun get(path: String, params: Map<String, String> = emptyMap()): JSONObject {
@@ -435,25 +439,37 @@ class KtkqClient(private val rs: RsGateway) {
     private fun post(path: String, body: JSONObject): JSONObject = api("POST", path, body.toString())
 
     private fun api(method: String, path: String, body: String? = null, retry401: Boolean = true): JSONObject {
-        val hit = rs.call(
+        if (retry401 && cas != null && (token.isNullOrEmpty() || ktkqTokenExpired(token!!))) {
+            token = null
+            loginWithCas(cas!!)
+        }
+        SwunLog.w("考勤鉴权 header=${token?.length ?: 0}")
+        val hit = rs.callInPage(
             method = method,
             url = "$K_KTKQ$path",
             headers = headers() + if (body != null) mapOf("Content-Type" to "application/json") else emptyMap(),
             body = body,
+            pageUrl = "$K_KTKQ/jwmobile/index",
         )
-        if (CampusHttp.looksNightClosed(hit.status, hit.body)) error("课堂考勤夜间关闭或不在服务时间")
+        if (CampusHttp.looksNightClosed(hit.status, hit.body)) {
+            SwunLog.api("课堂考勤夜间关闭", hit.status, hit.url, hit.body)
+            error("课堂考勤夜间关闭或不在服务时间")
+        }
         val map = try {
             hit.asJson()
         } catch (_: Exception) {
+            SwunLog.api("课堂考勤", hit.status, hit.url, hit.body)
             if (CampusHttp.looksRuishu(hit.status, hit.body)) error("课堂考勤仍被网关拦截")
             error("$path 非 JSON")
         }
         if (authFailed(map, hit.status)) {
+            SwunLog.api("课堂考勤认证失败", hit.status, hit.url, hit.body)
             if (retry401 && cas != null) {
+                val rejected = token
                 token = null
                 weekCache = null
                 weekCacheKey = null
-                loginWithCas(cas!!)
+                loginWithCas(cas!!, rejected)
                 return api(method, path, body, retry401 = false)
             }
             error(map.optString("msg").ifBlank { "课堂考勤认证失败" })
@@ -917,6 +933,26 @@ fun tokenFromKtkqBody(data: String): String? {
         cleanKtkqToken(it)?.let { t -> return t }
     }
     return null
+}
+
+fun ktkqTokenExpired(token: String): Boolean {
+    val parts = token.split('.')
+    if (parts.size < 2) return false
+    var payload = parts[1]
+    val pad = (4 - payload.length % 4) % 4
+    if (pad != 4) payload += "=".repeat(pad)
+    val json = try {
+        String(android.util.Base64.decode(payload, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP), Charsets.UTF_8)
+    } catch (_: Exception) {
+        return false
+    }
+    val exp = try {
+        org.json.JSONObject(json).optLong("exp", 0L)
+    } catch (_: Exception) {
+        0L
+    }
+    if (exp <= 0L) return false
+    return exp * 1000L <= System.currentTimeMillis() + 60_000L
 }
 
 fun cleanKtkqToken(raw: String?): String? {

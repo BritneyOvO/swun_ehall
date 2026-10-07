@@ -17,9 +17,13 @@ import cn.edu.swun.swun_ehall.data.http.CasClient
 import cn.edu.swun.swun_ehall.data.http.EhallClient
 import cn.edu.swun.swun_ehall.data.http.GyClient
 import cn.edu.swun.swun_ehall.data.http.JwxtClient
+import cn.edu.swun.swun_ehall.data.http.jwxtCurrentWeek
+import cn.edu.swun.swun_ehall.data.http.jwxtKbList
 import cn.edu.swun.swun_ehall.data.http.KtkqClient
+import cn.edu.swun.swun_ehall.data.http.ktkqTokenExpired
 import cn.edu.swun.swun_ehall.data.http.LantuClient
 import cn.edu.swun.swun_ehall.data.http.RsGateway
+import cn.edu.swun.swun_ehall.data.http.SwunLog
 import cn.edu.swun.swun_ehall.data.http.YktClient
 import cn.edu.swun.swun_ehall.data.locate.Locator
 import cn.edu.swun.swun_ehall.data.http.xkOfficialSxbj
@@ -61,7 +65,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     val slotPicks = SlotChoiceStore(prefs)
     private val teachers = TeacherCache(File(app.filesDir, "kb_teachers.json"))
     private val locator = Locator(app)
-    private val rs = RsGateway(app)
+    private val rs = RsGateway(app).also { it.prepareSites() }
     private val cas = CasClient()
     private val ehall = EhallClient()
     private val lantu = LantuClient(File(app.filesDir, "lantu.json"))
@@ -90,6 +94,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     var loadHint by mutableStateOf<String?>(null)
     var curWeek by mutableStateOf(1)
     var totalWeek by mutableStateOf(16)
+    var week1Monday by mutableStateOf<java.time.LocalDate?>(null)
     var localAvatarPath by mutableStateOf<String?>(null)
     var remoteAvatarPath by mutableStateOf<String?>(null)
     var avatarEpoch by mutableIntStateOf(0)
@@ -362,30 +367,32 @@ class Session(app: Application) : AndroidViewModel(app) {
         if (demoMode) return
         withContext(Dispatchers.IO) {
             try {
-                val course = lantu.getCourse()
-                var lessons = teachers.apply(lantu.mapLessons(course))
-                val week = course.optString("curWeek").toIntOrNull() ?: 1
-                val total = course.optString("totalWeek").toIntOrNull() ?: 16
+                val started = System.nanoTime()
+                val casAt = System.nanoTime()
+                ensureCas()
+                SwunLog.took(casAt, "课表 统一身份")
+                jwxt.attachCas(cas)
+                val sessionAt = System.nanoTime()
+                jwxt.ensureSession()
+                SwunLog.took(sessionAt, "课表 教务会话")
+                if (jwxt.portalClosed) error("教务夜间关闭或不在服务时间")
+                val fetchAt = System.nanoTime()
+                val page = jwxt.schedulePage()
+                SwunLog.took(fetchAt, "课表 拉取")
+                val kb = jwxtKbList(page)
+                teachers.fillFromJwxt(kb)
+                val lessons = teachers.apply(jwxt.lessonsFromKb(kb))
+                if (lessons.isEmpty()) error("课表没有返回课程")
+                val cal = jwxtCurrentWeek(page)
+                val total = maxOf(cal.total, lessons.maxOfOrNull { it.weeks.length } ?: 16)
+                SwunLog.took(started, "课表 完成 ${lessons.size}门 第${cal.week}周 起始周一=${cal.week1Monday}")
                 withContext(Dispatchers.Main) {
                     schedule.clear()
                     schedule.addAll(lessons)
-                    curWeek = week.coerceAtLeast(1)
-                    totalWeek = maxOf(total, lessons.maxOfOrNull { it.weeks.length } ?: 16)
-                }
-                try {
-                    ensureCas()
-                    jwxt.attachCas(cas)
-                    jwxt.ensureSession()
-                    if (!jwxt.portalClosed) {
-                        teachers.fillFromJwxt(jwxt.scheduleKb())
-                        lessons = teachers.apply(lessons)
-                        withContext(Dispatchers.Main) {
-                            schedule.clear()
-                            schedule.addAll(lessons)
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("swun", "kb teachers", e)
+                    curWeek = cal.week.coerceAtLeast(1)
+                    totalWeek = total
+                    week1Monday = cal.week1Monday
+                    loadHint = null
                 }
             } catch (e: Exception) {
                 Log.e("swun", "schedule", e)
@@ -1037,7 +1044,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         ktkqClient.attachCas(cas)
         if (ktkqClient.token.isNullOrEmpty()) {
             val saved = prefs.getString(ktkqTokenKey(), "").orEmpty()
-            if (saved.length > 16) ktkqClient.token = saved
+            if (saved.length > 16 && !ktkqTokenExpired(saved)) ktkqClient.token = saved
             ktkqClient.knownXnxqdm = prefs.getString(ktkqTermKey(), "").orEmpty()
             ktkqClient.knownXnxqmc = prefs.getString(ktkqTermNameKey(), "").orEmpty()
         }

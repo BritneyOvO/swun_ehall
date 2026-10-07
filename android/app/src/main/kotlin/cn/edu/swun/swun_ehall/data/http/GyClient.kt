@@ -131,8 +131,13 @@ class GyClient(private val rs: RsGateway) {
         val map = try {
             hit.asJson()
         } catch (_: Exception) {
+            SwunLog.api("公寓", hit.status, hit.url, hit.body)
             if (CampusHttp.looksRuishu(hit.status, hit.body)) error("公寓系统仍被网关拦截")
             error("$path 非 JSON")
+        }
+        val msg = map.optString("msg") + map.optString("message")
+        if (gyTokenExpired(map, hit.status) || msg.contains("失败") || msg.contains("验证")) {
+            SwunLog.api("公寓", hit.status, hit.url, hit.body)
         }
         if (gyTokenExpired(map, hit.status)) {
             if (retry401 && cas != null) {

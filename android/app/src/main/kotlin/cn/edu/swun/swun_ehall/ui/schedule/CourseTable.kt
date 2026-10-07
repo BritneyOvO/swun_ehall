@@ -65,7 +65,8 @@ fun lessonColor(name: String): Color {
     return LessonPalette[h % LessonPalette.size]
 }
 
-fun mondayOfSchoolWeek(week: Int, curWeek: Int): LocalDate {
+fun mondayOfSchoolWeek(week: Int, curWeek: Int, week1Monday: LocalDate? = null): LocalDate {
+    if (week1Monday != null) return week1Monday.plusDays(7L * (week - 1))
     val n = LocalDate.now()
     val thisMonday = n.minusDays((n.dayOfWeek.value - 1).toLong())
     return thisMonday.plusDays(7L * (week - curWeek))
@@ -164,6 +165,7 @@ fun CourseTable(
     lessons: List<Lesson>,
     week: Int,
     curWeek: Int,
+    week1Monday: LocalDate? = null,
     choices: SlotChoiceStore,
     onLessonTap: (Lesson) -> Unit,
     onConflictTap: (List<Lesson>) -> Unit,
@@ -171,7 +173,7 @@ fun CourseTable(
 ) {
     val periods = remember(lessons) { maxPeriodOf(lessons) }
     val pickRev = choices.generation
-    val monday = remember(week, curWeek) { mondayOfSchoolWeek(week, curWeek) }
+    val monday = remember(week, curWeek, week1Monday) { mondayOfSchoolWeek(week, curWeek, week1Monday) }
     val today = LocalDate.now()
     val ink = MiuixTheme.colorScheme.onBackground
     val line = ink.copy(alpha = 0.14f)

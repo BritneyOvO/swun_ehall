@@ -76,6 +76,16 @@ class MemoryCookieJar : CookieJar {
             }
         }
     }
+
+    fun removeWaf(host: String) {
+        store.entries.forEach { (domain, list) ->
+            val bare = domain.removePrefix(".")
+            if (host != bare && !host.endsWith(".$bare")) return@forEach
+            synchronized(list) {
+                list.removeAll { CampusHttp.isWafCookieName(it.name) }
+            }
+        }
+    }
 }
 
 object CampusHttp {
@@ -120,7 +130,19 @@ object CampusHttp {
                 .header("User-Agent", K_UA)
                 .header("Accept-Language", "zh-CN,zh;q=0.9")
                 .build()
-            chain.proceed(req)
+            val resp = chain.proceed(req)
+            if (resp.code == 412) {
+                val waf = cookies.loadForRequest(req.url)
+                    .filter { isWafCookieName(it.name) }
+                    .joinToString("; ") { "${it.name}=${it.value}" }
+                val set = resp.headers("Set-Cookie").mapNotNull { header ->
+                    val pair = header.substringBefore(';')
+                    val name = pair.substringBefore('=')
+                    if (!isWafCookieName(name)) null else pair
+                }.joinToString("; ")
+                SwunLog.w("瑞数412 ${resp.protocol} ${req.url.encodedPath} cookie=[$waf] set=[$set]")
+            }
+            resp
         }
         .build()
 

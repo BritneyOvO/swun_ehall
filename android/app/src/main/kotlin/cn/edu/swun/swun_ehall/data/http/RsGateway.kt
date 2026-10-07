@@ -44,15 +44,71 @@ data class RsHit(val status: Int, val body: String, val url: String = "") {
     }
 }
 
+internal data class PSample(val name: String, val value: String, val enableName: String, val enable: String)
+
 class RsJsBridge {
     @Volatile var json: String = ""
     @Volatile var latch: CountDownLatch? = null
+    @Volatile var traceStartNs: Long = 0
+    @Volatile var lastWriteNs: Long = 0
+    @Volatile var lastPLen: Int = 0
+    @Volatile var readyKind: String = ""
+    @Volatile var readyLatch: CountDownLatch? = null
+    private val writes = mutableListOf<String>()
+    private val samples = mutableListOf<PSample>()
+    private var enableName: String = ""
+    private var enableValue: String = ""
 
     @JavascriptInterface
     fun result(s: String) {
         json = s
         latch?.countDown()
     }
+
+    /** 只在内存里留下每一版 P，日志只记名字和长度。 */
+    @JavascriptInterface
+    fun keep(name: String, value: String) {
+        if (name.isEmpty() || name.any { !it.isLetterOrDigit() && it != '_' }) return
+        val len = value.length
+        val ms = if (traceStartNs == 0L) 0 else (System.nanoTime() - traceStartNs) / 1_000_000
+        synchronized(writes) { writes.add("#${writes.size + 1} $name=$value @${ms}ms") }
+        lastWriteNs = System.nanoTime()
+        if (name.startsWith("enable")) {
+            enableName = name
+            enableValue = value
+        }
+        if (name.endsWith("P") && len >= 300) {
+            lastPLen = len
+            synchronized(samples) {
+                if (samples.lastOrNull()?.value != value) {
+                    samples.add(PSample(name, value, enableName, enableValue))
+                }
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun ready(kind: String) {
+        val name = kind.take(16).filter { it.isLetter() }
+        if (name.isEmpty()) return
+        readyKind = name
+        readyLatch?.countDown()
+    }
+
+    fun beginTrace() {
+        synchronized(writes) { writes.clear() }
+        synchronized(samples) { samples.clear() }
+        enableName = ""
+        enableValue = ""
+        traceStartNs = System.nanoTime()
+        lastWriteNs = 0
+        lastPLen = 0
+        readyKind = ""
+    }
+
+    fun trace(): String = synchronized(writes) { writes.joinToString(" | ") }
+
+    internal fun samples(): List<PSample> = synchronized(samples) { samples.toList() }
 }
 
 private class RsSlot {
@@ -62,6 +118,10 @@ private class RsSlot {
     val lock = Any()
     @Volatile var lastUrl: String = ""
     @Volatile var tokenUrl: String = ""
+    @Volatile var boundToken: String = ""
+    @Volatile var loading: Boolean = false
+    @Volatile var bridgeReturn: String = ""
+    @Volatile var wafOkAt: Long = 0
 
     fun note(url: String) {
         if (url.isBlank() || url.startsWith("about:")) return
@@ -70,8 +130,41 @@ private class RsSlot {
     }
 }
 
+private const val COOKIE_HOOK = """
+(function(){
+  if (window.__swunHook) return;
+  window.__swunHook = true;
+  var d = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+  if (!d || !d.set || !d.get) return;
+  var set = d.set, get = d.get;
+  Object.defineProperty(Document.prototype, 'cookie', {
+    configurable: true,
+    enumerable: d.enumerable,
+    get: function(){ return get.call(this); },
+    set: function(v){
+      set.call(this, v);
+      try {
+        var s = String(v), i = s.indexOf('='), name = i < 0 ? s : s.slice(0, i);
+        var val = i < 0 ? '' : s.slice(i + 1).split(';')[0];
+        if (window.SwunRs) SwunRs.keep(name, val);
+      } catch (e) {}
+    }
+  });
+  try {
+    var loc = window.location;
+    if (!loc.__swunLoc) {
+      loc.replace = function() { try { SwunRs.ready('replace'); } catch (e) {} };
+      loc.assign = function() { try { SwunRs.ready('assign'); } catch (e) {} };
+      loc.reload = function() { try { SwunRs.ready('reload'); } catch (e) {} };
+      loc.__swunLoc = true;
+    }
+  } catch (e) {}
+})();
+"""
+
 class RsGateway(private val app: Context) {
     private val main = Handler(Looper.getMainLooper())
+    private val knownWaf = setOf("3AAFGrVH3FUNO", "3AAFGrVH3FUNP", "enable_3AAFGrVH3FUN")
     private val slots = ConcurrentHashMap<String, RsSlot>()
     private val rsHosts = ConcurrentHashMap.newKeySet<String>()
 
@@ -113,41 +206,94 @@ class RsGateway(private val app: Context) {
         headers: Map<String, String> = emptyMap(),
         body: String? = null,
         inPage: Boolean = false,
+        pageUrl: String? = null,
     ): RsHit {
         val host = url.toHttpUrlOrNull()?.host ?: error("网关地址无效")
-        synchronized(slot(host).lock) {
-            val first = dioOnce(method, url, headers, body)
-            if (first != null && first.usable) {
-                noteUnlocked(host)
-                return first
-            }
-            if (first != null && looksLikeRuishu(first.status, first.body)) rsHosts.add(host)
-            val s = ensureView(host)
-            pushCookies(url)
-            if (s.view != null && (inPage || cookiesFresh(host))) {
-                try {
-                    val hit = jsFetch(s, method, url, headers, body)
-                    android.util.Log.d("swun", "[rs] call js $host ${hit.status} ${hit.body.length}b")
-                    if (hit.usable) {
-                        noteUnlocked(host)
-                        return hit
-                    }
-                } catch (e: Exception) {
-                    if (inPage && cookiesFresh(host)) throw e
-                }
-            }
-            if (inPage && s.view == null) error("网关未就绪")
-            refreshChallenge(url, headers["Referer"] ?: headers["referer"])
-            val after = dioOnce(method, url, headers, body)
-            if (after != null && after.usable) {
-                noteUnlocked(host)
-                return after
-            }
-            val hit = jsFetch(ensureView(host), method, url, headers, body)
-            if (!hit.usable) error("网关仍被拦截")
-            noteUnlocked(host)
-            return hit
+        val path = url.substringBefore('?').substringAfter("://").let { raw ->
+            val slash = raw.indexOf('/')
+            if (slash >= 0) raw.substring(slash) else raw
         }
+        val queued = System.nanoTime()
+        synchronized(slot(host).lock) {
+            val t0 = System.nanoTime()
+            SwunLog.took(queued, "$method $path 等到锁")
+            val s = ensureView(host)
+            if (s.view == null) error("网关未就绪")
+            SwunLog.took(t0, "$method $path WebView就绪")
+            val page = challengePage(url)
+            val retryHeaders = LinkedHashMap(headers)
+            if (retryHeaders.keys.none { it.equals("Referer", true) }) retryHeaders["Referer"] = page
+            if (wafReady(s, url)) {
+                val httpAt = System.nanoTime()
+                val reused = dioOnce(method, url, retryHeaders, body)
+                val sent = url.toHttpUrlOrNull()?.let { http ->
+                    CampusHttp.cookies.loadForRequest(http)
+                        .filter { CampusHttp.isWafCookieName(it.name) }
+                        .joinToString("; ") { "${it.name}=${it.value}" }
+                }.orEmpty()
+                SwunLog.w("瑞数沿用 $path [$sent]")
+                SwunLog.took(httpAt, "$method $path 沿用cookie HTTP ${reused?.status ?: 0} ${reused?.body?.length ?: 0}b")
+                if (reused != null && reused.status != 0 && reused.status != 412 && !looksLikeRuishu(reused.status, reused.body)) {
+                    s.wafOkAt = System.currentTimeMillis()
+                    SwunLog.took(t0, "$method $path 结束")
+                    return reused
+                }
+                s.wafOkAt = 0
+                CampusHttp.cookies.removeWaf(host)
+            }
+            val stale = collectWaf(cookieUrls(host, page)).mapValues { it.value.toSet() }
+            CampusHttp.cookies.removeWaf(host)
+            dropPageWaf(host, stale.keys + knownWaf)
+            val before = wafSnapshot(page)
+            val staleP = stale.filterKeys { it.endsWith("P") }.values.flatten().toSet()
+            SwunLog.took(t0, "$method $path 清掉旧cookie before=[$before]")
+            var ready = awaitCookie(s, page, staleP)
+            SwunLog.took(t0, "$method $path cookie返回=$ready 来源=${s.bridgeReturn} fresh=[${wafSnapshot(page)}]")
+            SwunLog.w("瑞数写入 $path [${s.bridge.trace()}]")
+            var hit = sendCookie(host, page, s, method, url, retryHeaders, body, path)
+            val blocked = hit == null || hit.status == 0 || hit.status == 412 || looksLikeRuishu(hit.status, hit.body)
+            if (blocked) {
+                SwunLog.w("瑞数再开一页 $path")
+                ready = awaitCookie(s, page, staleP)
+                SwunLog.took(t0, "$method $path 第二轮 cookie返回=$ready 来源=${s.bridgeReturn} fresh=[${wafSnapshot(page)}]")
+                SwunLog.w("瑞数写入 $path [${s.bridge.trace()}]")
+                hit = sendCookie(host, page, s, method, url, retryHeaders, body, path)
+            }
+            onMain(2_000) { s.view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT }
+            val passed = hit != null && hit.status != 0 && hit.status != 412 && !looksLikeRuishu(hit.status, hit.body)
+            if (passed) s.wafOkAt = System.currentTimeMillis() else {
+                s.wafOkAt = 0
+                CampusHttp.cookies.removeWaf(host)
+            }
+            SwunLog.took(t0, "$method $path 结束")
+            if (hit != null && hit.usable) return hit
+            if (passed) return hit!!
+            SwunLog.api("网关仍被拦截", hit?.status ?: 0, url, hit?.body.orEmpty())
+            error("网关仍被拦截")
+        }
+    }
+
+    fun callInPage(
+        method: String,
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+        body: String? = null,
+        pageUrl: String? = null,
+    ): RsHit = call(method, url, headers, body, inPage = true, pageUrl = pageUrl)
+
+    fun prepareSites() {
+        main.post {
+            listOf(RsSites.KTKQ, RsSites.GY, RsSites.YKT).forEach { ensureView(it.host) }
+        }
+    }
+
+    private fun stampNamedCookie(host: String, name: String, token: String) {
+        val cm = CookieManager.getInstance()
+        cm.setCookie("https://$host/", "$name=$token; Path=/")
+        if (host == "ktkq.swun.edu.cn") {
+            cm.setCookie("https://$host/jwmobile/", "$name=$token; Path=/jwmobile")
+        }
+        cm.flush()
     }
 
     fun followSso(ticketUrl: String, site: RsSite): String {
@@ -356,6 +502,23 @@ class RsGateway(private val app: Context) {
         evalJs(host, "try { localStorage.setItem(${JSONObject.quote(key)}, ${JSONObject.quote(value)}); } catch (e) {} return '1';")
     }
 
+    fun clearLocalStorage(host: String, keys: List<String>) {
+        val js = keys.joinToString("") { "localStorage.removeItem(${JSONObject.quote(it)});" }
+        evalJs(host, "try { $js } catch (e) {} return '1';")
+    }
+
+    fun clearSiteCookies(host: String, names: Collection<String>) {
+        val cm = CookieManager.getInstance()
+        val paths = listOf("/", "/jwmobile", "/jwmobile/")
+        names.forEach { name ->
+            paths.forEach { path ->
+                val url = if (path == "/") "https://$host/" else "https://$host$path"
+                cm.setCookie(url, "$name=; Path=$path; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0")
+            }
+        }
+        cm.flush()
+    }
+
     fun cookieHeader(url: String): String = CookieManager.getInstance().getCookie(url).orEmpty()
 
     private fun slot(host: String): RsSlot = slots.getOrPut(host) { RsSlot() }
@@ -413,10 +576,13 @@ class RsGateway(private val app: Context) {
         }
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+            slot.loading = true
             url?.let { slot.note(it) }
+            view?.evaluateJavascript(COOKIE_HOOK, null)
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
+            slot.loading = false
             url?.let { slot.note(it) }
             onFinished?.invoke()
         }
@@ -426,13 +592,20 @@ class RsGateway(private val app: Context) {
         }
     }
 
-    private fun load(slot: RsSlot, url: String, waitMs: Long) {
+    private fun load(slot: RsSlot, url: String, waitMs: Long, noCache: Boolean = false): Boolean {
         val latch = CountDownLatch(1)
+        val target = url.substringBefore('#').substringBefore('?')
         onMain(2_000) {
-            slot.view?.webViewClient = sslClient(slot) { latch.countDown() }
-            slot.view?.loadUrl(url)
+            val view = slot.view ?: return@onMain
+            if (noCache) view.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+            view.webViewClient = sslClient(slot) {
+                val cur = slot.lastUrl.substringBefore('#').substringBefore('?')
+                if (cur == target || cur.startsWith("$target/")) latch.countDown()
+            }
+            val here = slot.lastUrl.substringBefore('#').substringBefore('?')
+            if (here == target || here.startsWith("$target/")) view.reload() else view.loadUrl(url)
         }
-        latch.await(waitMs, TimeUnit.MILLISECONDS)
+        return latch.await(waitMs, TimeUnit.MILLISECONDS)
     }
 
     private fun refreshChallenge(url: String, keepUrl: String?) {
@@ -443,23 +616,9 @@ class RsGateway(private val app: Context) {
         if (keep != null && keep.host == host) {
             target = keep.newBuilder().fragment(null).build().toString()
         }
-        val before = wafSig(target)
-        dropWafCookies(target)
-        load(s, target, 2_200)
-        waitWaf(target, before)
-        pullCookies(target)
+        load(s, target, 8_000)
         s.cookieAt = System.currentTimeMillis()
         rsHosts.add(host)
-    }
-
-    private fun waitWaf(url: String, previous: String, timeoutMs: Long = 2_800) {
-        val until = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < until) {
-            val sig = wafSig(url)
-            if (sig.isNotEmpty() && sig != previous) return
-            Thread.sleep(40)
-        }
-        if (wafSig(url).isEmpty()) error("网关挑战超时 (瑞数)")
     }
 
     private fun wafSig(url: String): String {
@@ -471,23 +630,11 @@ class RsGateway(private val app: Context) {
         return parts.joinToString("|")
     }
 
-    private fun dropWafCookies(url: String) {
-        val cm = CookieManager.getInstance()
-        val header = cm.getCookie(url).orEmpty()
-        header.split(';').forEach { part ->
-            val name = part.substringBefore('=').trim()
-            if (CampusHttp.isWafCookieName(name)) {
-                cm.setCookie(url, "$name=; Max-Age=0; Path=/")
-            }
-        }
-        cm.flush()
-    }
-
     fun pushCookies(url: String) {
         val httpUrl = url.toHttpUrlOrNull() ?: return
         val cm = CookieManager.getInstance()
         CampusHttp.cookies.loadForRequest(httpUrl).forEach { c ->
-            if (c.value.isEmpty()) return@forEach
+            if (c.value.isEmpty() || CampusHttp.isWafCookieName(c.name)) return@forEach
             val bits = StringBuilder("${c.name}=${c.value}; Path=${c.path.ifBlank { "/" }}")
             if (c.secure) bits.append("; Secure")
             cm.setCookie("https://${c.domain}${c.path}", bits.toString())
@@ -502,7 +649,7 @@ class RsGateway(private val app: Context) {
         if (header.isBlank()) return
         header.split(';').forEach { part ->
             val c = Cookie.parse(httpUrl, part.trim()) ?: return@forEach
-            if (c.value.isEmpty()) return@forEach
+            if (c.value.isEmpty() || CampusHttp.isWafCookieName(c.name)) return@forEach
             if ((c.name == "Authorization" || c.name == "token" || c.name == "CASTGC") && c.value.length < 12) {
                 return@forEach
             }
@@ -559,6 +706,14 @@ class RsGateway(private val app: Context) {
                 try {
                   var hdr = {};
                   try { hdr = headerJson ? JSON.parse(headerJson) : {}; } catch (e) {}
+                  try {
+                    var auth = hdr.Authorization || hdr.authorization || hdr.token || hdr['EM-TOKEN'] || '';
+                    if (auth) {
+                      localStorage.setItem('EM_TOKEN', auth);
+                      localStorage.setItem('Authorization', auth);
+                      localStorage.setItem('token', auth);
+                    }
+                  } catch (e) {}
                   var reqUrl = url;
                   try {
                     var u = new URL(url, location.href);
@@ -621,21 +776,19 @@ class RsGateway(private val app: Context) {
                     var text = await resp.text();
                     return pack(resp.status, text, resp.url, '');
                   };
-                  var mark = '${'$'}_ts';
-                  var jq = jsonish ? null : await viaJquery();
-                  if (jq && jq.status && jq.status !== 412 && String(jq.body || '').indexOf(mark) < 0) { done(jq); return; }
-                  var xhr = await viaXhr();
-                  if (xhr.status && xhr.status !== 412 && String(xhr.body || '').indexOf(mark) < 0) { done(xhr); return; }
+                  var xhr = await Promise.race([
+                    viaXhr(),
+                    new Promise(function(resolve){ setTimeout(function(){ resolve(pack(0, '', url, 'timeout')); }, 8000); })
+                  ]);
+                  if (xhr && xhr.status) { done(xhr); return; }
                   try {
-                    var f = await viaFetch();
-                    if (f.status && f.status !== 412) { done(f); return; }
-                    if (xhr && xhr.status) { done(xhr); return; }
-                    if (jq && jq.status) { done(jq); return; }
+                    var f = await Promise.race([
+                      viaFetch(),
+                      new Promise(function(resolve){ setTimeout(function(){ resolve(pack(0, '', url, 'timeout')); }, 4000); })
+                    ]);
                     done(f);
                   } catch (e) {
-                    if (xhr && xhr.status) { done(xhr); return; }
-                    if (jq && jq.status) { done(jq); return; }
-                    done(pack(0, '', url, String(e)));
+                    done(xhr && xhr.status ? xhr : pack(0, '', url, String(e)));
                   }
                 } catch (e) {
                   done({status: 0, body: '', url: url, error: String(e)});
@@ -643,11 +796,186 @@ class RsGateway(private val app: Context) {
               })();
             })();
         """.trimIndent()
-        val raw = jsCall(slot, script, 12_000)
+        val raw = try {
+            jsCall(slot, script, 14_000)
+        } catch (e: IllegalStateException) {
+            SwunLog.w("WebView 请求超时 $method ${url.substringBefore('?')} last=${slot.lastUrl.substringBefore("token=")} ${e.message}")
+            return RsHit(0, "", url)
+        }
         val v = JSONObject(raw.ifBlank { "{}" })
-        val err = v.optString("error")
-        if (err.isNotEmpty()) error("WebView 请求失败: $err")
+        if (v.optInt("status") == 0 && v.optString("error").isNotEmpty()) {
+            SwunLog.w("WebView 请求失败 $method $url ${v.optString("error")} last=${slot.lastUrl}")
+        }
         return RsHit(v.optInt("status"), v.optString("body"), v.optString("url").ifBlank { url })
+    }
+
+    private fun wafSnapshot(url: String): String {
+        val header = CookieManager.getInstance().getCookie(url).orEmpty()
+        if (header.isEmpty()) return ""
+        return header.split(';').map { it.trim() }.mapNotNull { part ->
+            val name = part.substringBefore('=', "")
+            if (!CampusHttp.isWafCookieName(name)) return@mapNotNull null
+            "$name:${part.length - name.length - 1}"
+        }.sorted().joinToString(",")
+    }
+
+    /** 公寓 /appao 要用 /wxweb/ 的挑战页，考勤 /jwmobile/biz 要用 /jwmobile/index。根路径算出的 cookie 过不了接口。 */
+    private fun challengePage(url: String): String {
+        val http = url.toHttpUrlOrNull() ?: return url
+        return when (http.host) {
+            "ktkq.swun.edu.cn" -> "https://ktkq.swun.edu.cn/jwmobile/index"
+            "gyglxt.swun.edu.cn" -> "https://gyglxt.swun.edu.cn/wxweb/"
+            else -> "https://${http.host}/"
+        }
+    }
+
+    private fun collectWaf(urls: List<String>): Map<String, List<String>> {
+        val out = LinkedHashMap<String, MutableList<String>>()
+        urls.forEach { url ->
+            CookieManager.getInstance().getCookie(url).orEmpty().split(';').forEach { part ->
+                val trimmed = part.trim()
+                if (trimmed.isEmpty()) return@forEach
+                val name = trimmed.substringBefore('=', "")
+                val value = trimmed.substringAfter('=', "")
+                if (!CampusHttp.isWafCookieName(name) || value.isEmpty()) return@forEach
+                val list = out.getOrPut(name) { mutableListOf() }
+                if (value !in list) list.add(value)
+            }
+        }
+        return out
+    }
+
+    private fun dropPageWaf(host: String, names: Collection<String>) {
+        if (names.isEmpty()) return
+        val cm = CookieManager.getInstance()
+        val paths = listOf("/", "/wxweb", "/jwmobile", "/appao", "/appsys", "/appcas", "/menu")
+        names.forEach { name ->
+            if (!CampusHttp.isWafCookieName(name)) return@forEach
+            paths.forEach { path ->
+                val url = if (path == "/") "https://$host/" else "https://$host$path/"
+                cm.setCookie(url, "$name=; Path=$path; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0")
+            }
+        }
+        cm.flush()
+    }
+
+    private fun hasNewP(url: String, staleP: Set<String>): Boolean {
+        return collectWaf(listOf(url))
+            .filterKeys { it.endsWith("P") }
+            .values
+            .flatten()
+            .any { it.length >= 300 && it !in staleP }
+    }
+
+    private fun wafReady(slot: RsSlot, url: String): Boolean {
+        if (System.currentTimeMillis() - slot.wafOkAt > 20_000L) return false
+        val http = url.toHttpUrlOrNull() ?: return false
+        return CampusHttp.cookies.loadForRequest(http).any {
+            CampusHttp.isWafCookieName(it.name) && it.name.endsWith("P") && it.value.length >= 300
+        }
+    }
+
+    /** 脚本本轮写完并要跳转时返回，不再跟着 location.replace 重载。 */
+    private fun awaitCookie(slot: RsSlot, page: String, staleP: Set<String>): Boolean {
+        slot.bridge.beginTrace()
+        val ready = CountDownLatch(1)
+        slot.bridge.readyLatch = ready
+        return try {
+            load(slot, page, 8_000, noCache = true)
+            val deadline = System.nanoTime() + 2_000_000_000L
+            while (System.nanoTime() < deadline) {
+                val hasP = slot.bridge.lastPLen >= 300 && hasNewP(page, staleP)
+                if (hasP && slot.bridge.readyKind.isNotEmpty()) {
+                    slot.bridgeReturn = "跳转"
+                    return true
+                }
+                val last = slot.bridge.lastWriteNs
+                if (hasP && last > 0L && System.nanoTime() - last >= 250_000_000L) {
+                    slot.bridgeReturn = "本轮写完"
+                    return true
+                }
+                Thread.sleep(20)
+            }
+            slot.bridgeReturn = if (hasNewP(page, staleP)) "超时后已有" else "没有新cookie"
+            hasNewP(page, staleP)
+        } finally {
+            slot.bridge.readyLatch = null
+        }
+    }
+
+    private fun sendCookie(
+        host: String,
+        page: String,
+        slot: RsSlot,
+        method: String,
+        url: String,
+        headers: Map<String, String>,
+        body: String?,
+        path: String,
+    ): RsHit? {
+        val sample = slot.bridge.samples().lastOrNull() ?: return null
+        val jar = collectWaf(listOf(page))
+        val oName = jar.keys.firstOrNull { it.endsWith("O") } ?: return null
+        val oValue = jar[oName]?.lastOrNull().orEmpty()
+        if (oValue.isEmpty()) return null
+        val pairs = linkedMapOf(oName to oValue, sample.name to sample.value)
+        if (sample.enableName.isNotEmpty() && sample.enable.isNotEmpty()) pairs[sample.enableName] = sample.enable
+        putExact(host, page, pairs)
+        SwunLog.w("瑞数发送 $path [" + pairs.entries.joinToString("; ") { "${it.key}=${it.value}" } + "]")
+        val httpAt = System.nanoTime()
+        val hit = dioOnce(method, url, headers, body)
+        SwunLog.took(httpAt, "$method $path 接口 P:${sample.value.length} HTTP ${hit?.status ?: 0} ${hit?.body?.length ?: 0}b")
+        return hit
+    }
+
+    private fun cookieUrls(host: String, page: String): List<String> = listOf(
+        page,
+        "https://$host/",
+        "https://$host/wxweb/",
+        "https://$host/jwmobile/",
+        "https://$host/jwmobile/index",
+        "https://$host/appao/",
+    )
+
+    private fun replaceWafCookies(host: String, page: String, stale: Map<String, Set<String>>, lastPLen: Int): Int {
+        val httpUrl = page.toHttpUrlOrNull() ?: return 0
+        val current = collectWaf(listOf(page))
+        val chosen = LinkedHashMap<String, String>()
+        current.forEach { (name, values) ->
+            val fresh = values.filter { it !in stale[name].orEmpty() }
+            val value = when {
+                name.endsWith("P") && lastPLen > 0 -> fresh.lastOrNull { it.length == lastPLen } ?: fresh.lastOrNull()
+                fresh.isNotEmpty() -> fresh.last()
+                name.endsWith("P") -> null
+                else -> values.last()
+            } ?: return@forEach
+            chosen[name] = value
+        }
+        if (chosen.keys.none { it.endsWith("P") }) return 0
+        CampusHttp.cookies.removeWaf(host)
+        val cookies = chosen.mapNotNull { (name, value) ->
+            runCatching {
+                Cookie.Builder().name(name).value(value).hostOnlyDomain(host).path("/").secure().build()
+            }.getOrElse {
+                SwunLog.w("瑞数cookie丢弃 $name len=${value.length}")
+                null
+            }
+        }
+        if (cookies.isNotEmpty()) CampusHttp.cookies.saveFromResponse(httpUrl, cookies)
+        return cookies.size
+    }
+
+    private fun putExact(host: String, page: String, pairs: Map<String, String>): Int {
+        val httpUrl = page.toHttpUrlOrNull() ?: return 0
+        CampusHttp.cookies.removeWaf(host)
+        val cookies = pairs.mapNotNull { (name, value) ->
+            if (value.isEmpty()) return@mapNotNull null
+            runCatching {
+                Cookie.Builder().name(name).value(value).hostOnlyDomain(host).path("/").secure().build()
+            }.getOrNull()
+        }
+        if (cookies.isNotEmpty()) CampusHttp.cookies.saveFromResponse(httpUrl, cookies)
+        return cookies.size
     }
 
     private fun jsCall(slot: RsSlot, script: String, timeoutMs: Long): String {

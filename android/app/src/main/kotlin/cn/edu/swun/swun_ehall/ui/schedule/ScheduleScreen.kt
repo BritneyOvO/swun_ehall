@@ -132,6 +132,7 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
                             lessons = session.weekLessons(w),
                             week = w,
                             curWeek = cur,
+                            week1Monday = session.week1Monday,
                             choices = session.slotPicks,
                             onLessonTap = { openSign(it) },
                             onConflictTap = { picking = it },

@@ -14,7 +14,6 @@ import org.json.JSONObject
 
 private const val APP_KEY = "GiITvn"
 private const val BASE = "https://app.swun.edu.cn/baseCampus/"
-private const val JW = "https://app.swun.edu.cn/jwCampus/"
 private const val INFO = "https://app.swun.edu.cn/infoCampus/"
 private const val UA =
     "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/107.0.0.0 Mobile Safari/537.36 lantuMobilecampus lantuMC"
@@ -43,10 +42,6 @@ class LantuClient(private val persistFile: File? = null) {
         applyLogin(r)
         save()
     }
-
-    fun getCourse(): JSONObject = post("${JW}course/getCourse.do", JSONObject().apply {
-        put("curTime", System.currentTimeMillis())
-    })
 
     fun getUserInfo(): JSONObject = post("${BASE}user/getUserInfo.do", JSONObject())
 

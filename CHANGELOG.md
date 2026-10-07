@@ -1,5 +1,21 @@
 # 更新说明 | Changelog
 
+## 1.0.9
+
+### 更新内容
+
+- 课表改用教务手机接口，按返回的周次和日期显示。10 月 7 日是第 6 周周三。
+- 蓝途课表接口已停用。
+- 课堂考勤登录失效后会重新登录，不再使用过期的 token。
+- 瑞数站点由页面计算 cookie 后再请求；同一站点短时间内沿用刚通过的 cookie，打开页面更快。
+
+### What's New
+
+- The timetable uses the academic mobile API and follows the returned week and dates. October 7 is Wednesday of week 6.
+- The Lantu timetable API is no longer used.
+- Classroom attendance signs in again when the token is rejected, instead of retrying the expired token.
+- Ruishu sites take a cookie from the page and then call the API. A cookie that just passed is reused briefly on that site, so screens open faster.
+
 ## 1.0.8
 
 ### 更新内容
