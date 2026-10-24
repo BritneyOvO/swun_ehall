@@ -23,11 +23,26 @@ class KtkqClient(private val rs: RsGateway) {
     var token: String? = null
     var onToken: ((String) -> Unit)? = null
     private var cas: CasClient? = null
-    private var weekCacheKey: String? = null
-    private var weekCache: JSONObject? = null
-    private var weekMem: KtkqWeek? = null
+    private val weekCache = KtkqWeekCache()
     var knownXnxqdm: String = ""
     var knownXnxqmc: String = ""
+
+    private var accountId = ""
+
+    fun bindAccount(id: String) {
+        if (accountId == id) return
+        reset()
+        accountId = id
+    }
+
+    fun reset() {
+        token = null
+        cas = null
+        weekCache.clear()
+        knownXnxqdm = ""
+        knownXnxqmc = ""
+        accountId = ""
+    }
 
     fun attachCas(c: CasClient) {
         cas = c
@@ -85,7 +100,7 @@ class KtkqClient(private val rs: RsGateway) {
                 Log.d("swun", "[ktkq] token from hop $i len=${token!!.length}")
                 break
             }
-            if (looksLikeRuishu(r.code, body)) {
+            if (CampusHttp.looksRuishu(r.code, body)) {
                 token = tokenViaWeb(url)
                 webTried = true
                 break
@@ -115,10 +130,8 @@ class KtkqClient(private val rs: RsGateway) {
     }
 
     fun weekCourses(week: Int? = null, refresh: Boolean = false): KtkqWeek {
-        val mem = weekMem
-        if (!refresh && mem != null && mem.courses.isNotEmpty() && (week == null || week == mem.week)) {
-            return mem
-        }
+        val mem = weekCache.get(accountId, knownXnxqdm, week)
+        if (!refresh && mem != null) return mem
         var data = JSONObject()
         var xnxqdm = knownXnxqdm
         if (xnxqdm.isEmpty()) {
@@ -144,11 +157,7 @@ class KtkqClient(private val rs: RsGateway) {
             if (mc.isNotEmpty()) knownXnxqmc = mc
         }
         val skzc = week ?: kqInt(data, "todayWeekNum", kqInt(data, "skzc", mem?.week ?: 1)).coerceAtLeast(1)
-        val key = "$xnxqdm|$skzc"
-        val cached = weekCache
-        if (!refresh && cached != null && weekCacheKey == key) {
-            return ktkqWeekOf(cached, xnxqdm, skzc, data, knownXnxqmc).also { weekMem = it }
-        }
+        if (!refresh) weekCache.get(accountId, xnxqdm, skzc)?.let { return it }
         val raw = try {
             post(
                 "/jwmobile/biz/v410/schedule/querySchedule",
@@ -161,11 +170,9 @@ class KtkqClient(private val rs: RsGateway) {
         val out = normalizeKtkqWeek(raw)
         val n = kqObjList(out.opt("data")).size
         Log.d("swun", "[ktkq] week $xnxqdm skzc=$skzc courses=$n")
-        if (n > 0) {
-            weekCacheKey = key
-            weekCache = out
+        return ktkqWeekOf(out, xnxqdm, skzc, data, knownXnxqmc).also {
+            weekCache.put(accountId, xnxqdm, it)
         }
-        return ktkqWeekOf(out, xnxqdm, skzc, data, knownXnxqmc).also { weekMem = it }
     }
 
     fun signForLesson(lesson: SignActivity, week: Int? = null, refresh: Boolean = false): SignActivity {
@@ -467,8 +474,7 @@ class KtkqClient(private val rs: RsGateway) {
             if (retry401 && cas != null) {
                 val rejected = token
                 token = null
-                weekCache = null
-                weekCacheKey = null
+                weekCache.clear()
                 loginWithCas(cas!!, rejected)
                 return api(method, path, body, retry401 = false)
             }

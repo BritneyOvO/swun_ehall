@@ -1,6 +1,7 @@
 package cn.edu.swun.swun_ehall.data.http
 
 import cn.edu.swun.swun_ehall.data.model.SignActivity
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +11,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CampusParseTest {
+    @Test
+    fun jwxtForbiddenIsReportedAsPortalClosed() {
+        assertTrue(jwxtPortalClosed(403, "gateway denied"))
+        assertTrue(jwxtPortalClosed(503, "系统已关闭"))
+        assertFalse(jwxtPortalClosed(500, "server error"))
+    }
+
+    @Test
+    fun responseClassificationUsesPortalClosedBeforeGateway() {
+        assertEquals(CampusResponseIssue.PortalClosed, CampusHttp.classifyResponse(403, "\$_ts nsd=1"))
+        assertEquals(CampusResponseIssue.GatewayBlocked, CampusHttp.classifyResponse(412, "challenge"))
+        assertEquals(CampusResponseIssue.GatewayBlocked, CampusHttp.classifyResponse(200, "\$_ts nsd=1"))
+        assertEquals(CampusResponseIssue.NetworkFailure, CampusHttp.classifyResponse(0, ""))
+    }
+
     @Test
     fun parseApkAssetNameReadsVersionCode() {
         assertEquals(
@@ -399,6 +415,27 @@ class CampusParseTest {
         val filled = cache.apply(lessons)
         assertEquals("陈浩", filled[0].teacher)
         assertEquals("李成杰", filled[1].teacher)
+    }
+
+    @Test
+    fun lantuCourseJgmcIsTeacher() {
+        val course = JSONObject().put(
+            "courseList",
+            JSONArray().put(
+                JSONObject()
+                    .put("kcmc", "计算机组成原理")
+                    .put("jash", "BW-107")
+                    .put("skxq", 4)
+                    .put("skjc", 1)
+                    .put("cxjc", 4)
+                    .put("skzc", "1111111100000000000000000000000")
+                    .put("jgmc", "姜玥")
+                    .put("xm", "李阳"),
+            ),
+        )
+        val lessons = LantuClient(null).mapLessons(course)
+        assertEquals(1, lessons.size)
+        assertEquals("姜玥", lessons.single().teacher)
     }
 
     @Test

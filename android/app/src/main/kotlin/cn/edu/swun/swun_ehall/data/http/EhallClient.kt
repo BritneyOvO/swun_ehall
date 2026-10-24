@@ -43,13 +43,13 @@ class EhallClient {
     private fun ensureUser(cas: CasClient): JSONObject {
         loginUser()?.let { return it }
         var url = cas.ticketFor(K_EHALL_SERVICE)
-        repeat(12) {
+        for (hop in 0 until 12) {
             val r = CampusHttp.get(url)
             val loc = CampusHttp.location(r)
             val code = r.code
             CampusHttp.text(r)
-            if (code == 200 && loc.isEmpty()) return@repeat
-            if (!CampusHttp.isRedirect(r) || loc.isEmpty()) return@repeat
+            if (code == 200 && loc.isEmpty()) break
+            if (!CampusHttp.isRedirect(r) || loc.isEmpty()) break
             url = CampusHttp.absUrl(url, loc)
         }
         return loginUser() ?: error("办事大厅未登录")

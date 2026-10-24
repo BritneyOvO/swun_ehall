@@ -14,6 +14,7 @@ import org.json.JSONObject
 
 private const val APP_KEY = "GiITvn"
 private const val BASE = "https://app.swun.edu.cn/baseCampus/"
+private const val JW = "https://app.swun.edu.cn/jwCampus/"
 private const val INFO = "https://app.swun.edu.cn/infoCampus/"
 private const val UA =
     "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/107.0.0.0 Mobile Safari/537.36 lantuMobilecampus lantuMC"
@@ -41,6 +42,13 @@ class LantuClient(private val persistFile: File? = null) {
         )
         applyLogin(r)
         save()
+    }
+
+    fun getCourse(): JSONObject = post("${JW}course/getCourse.do", JSONObject().apply {
+        put("curTime", System.currentTimeMillis())
+    }).also { course ->
+        val first = course.optJSONArray("courseList")?.optJSONObject(0)
+        android.util.Log.d("swun", "[lantu] course keys=${course.keys().asSequence().toList()} count=${course.optJSONArray("courseList")?.length() ?: 0} teacher=${first?.optString("jgmc").orEmpty()}")
     }
 
     fun getUserInfo(): JSONObject = post("${BASE}user/getUserInfo.do", JSONObject())
@@ -82,7 +90,7 @@ class LantuClient(private val persistFile: File? = null) {
                 Lesson(
                     name = m.optString("kcmc"),
                     room = m.optString("jash"),
-                    teacher = "",
+                    teacher = teacherOf(m),
                     weekday = xqj,
                     start = start,
                     span = dur,
@@ -91,6 +99,35 @@ class LantuClient(private val persistFile: File? = null) {
             )
         }
         return out
+    }
+
+    private fun teacherOf(m: JSONObject): String {
+        // `xm` is the student's name in Lantu's course payload; teacher fields
+        // are exposed separately by newer responses.
+        val keys = listOf("teacher", "teacherName", "jgmc", "jsmc", "jsxm", "skjs", "jsxx", "teachers")
+        for (key in keys) {
+            val value = m.opt(key) ?: continue
+            val name = when (value) {
+                is JSONArray -> (0 until value.length()).asSequence()
+                    .map { value.opt(it)?.toString().orEmpty() }
+                    .map(::cleanTeacher)
+                    .firstOrNull { it.isNotEmpty() }
+                    .orEmpty()
+                is JSONObject -> teacherOf(value)
+                else -> cleanTeacher(value.toString())
+            }
+            if (name.isNotEmpty()) return name
+        }
+        return ""
+    }
+
+    private fun cleanTeacher(raw: String): String {
+        val value = raw.trim()
+        if (value.isEmpty() || value == "null" || value == "—" || value == "-") return ""
+        val name = value.split('/', '、', ';', '；', ',').firstOrNull()?.trim().orEmpty()
+        if (name.length !in 2..8 || name.any { it.isDigit() }) return ""
+        if (name.contains("学院") || name.contains("教室") || name.contains("楼")) return ""
+        return name
     }
 
     fun restoreLocal(): Boolean {

@@ -17,10 +17,24 @@ const val K_XK_GNMKDM = "N253512"
 private const val MENU_REF = "$K_JWXT/jwglxt/xtgl/index_initMenu.html?jsdm=xs"
 private const val XK_REF = "$K_JWXT/jwglxt/xsxk/zzxkyzb_cxZzxkYzbIndex.html?gnmkdm=$K_XK_GNMKDM"
 
+fun jwxtPortalClosed(code: Int, body: String): Boolean =
+    CampusHttp.looksNightClosed(code, body)
+
+fun throwJwxtResponseIssue(code: Int, body: String) {
+    when (CampusHttp.classifyResponse(code, body)) {
+        CampusResponseIssue.PortalClosed -> error("教务夜间关闭或不在服务时间")
+        CampusResponseIssue.GatewayBlocked -> error("教务系统被网关拦截")
+        CampusResponseIssue.AuthenticationExpired -> error("教务登录已过期，请重试")
+        CampusResponseIssue.NetworkFailure -> error("请求失败，请检查网络连接")
+        CampusResponseIssue.HttpFailure -> error("教务 HTTP $code")
+        null -> Unit
+    }
+}
+
 class JwxtClient {
     var portalClosed: Boolean = false
     private var cas: CasClient? = null
-    @Volatile private var ensuring = false
+    private val sessionLease = SessionLease()
 
     fun attachCas(c: CasClient) {
         cas = c
@@ -39,8 +53,9 @@ class JwxtClient {
             val body = CampusHttp.text(r)
             val loc = CampusHttp.location(r)
             SwunLog.took(hop, "教务登录跳转#$i HTTP ${r.code} ${body.length}b")
-            if (CampusHttp.looksNightClosed(r.code, body)) {
+            if (jwxtPortalClosed(r.code, body)) {
                 portalClosed = true
+                SwunLog.took(started, "教务登录夜间关闭 HTTP ${r.code}")
                 return
             }
             if (r.code == 200 && !looksLoggedOut(body, loc)) break
@@ -55,15 +70,15 @@ class JwxtClient {
         val body = CampusHttp.text(home)
         SwunLog.took(menuAt, "教务首页 HTTP ${home.code} ${body.length}b")
         if (home.code == 200 && !looksLoggedOut(body, CampusHttp.location(home)) &&
-            !CampusHttp.looksNightClosed(home.code, body)
+            !jwxtPortalClosed(home.code, body)
         ) {
             portalClosed = false
             SwunLog.took(started, "教务登录完成")
             return
         }
-        if (CampusHttp.looksNightClosed(home.code, body)) {
+        if (jwxtPortalClosed(home.code, body)) {
             portalClosed = true
-            SwunLog.took(started, "教务登录夜间关闭")
+            SwunLog.took(started, "教务登录夜间关闭 HTTP ${home.code}")
             return
         }
         error("教务登录失败")
@@ -74,9 +89,9 @@ class JwxtClient {
         return try {
             val home = CampusHttp.get("$K_JWXT/jwglxt/xtgl/index_initMenu.html?jsdm=xs", mapOf("Referer" to MENU_REF))
             val body = CampusHttp.text(home)
-            if (CampusHttp.looksNightClosed(home.code, body)) {
+            if (jwxtPortalClosed(home.code, body)) {
                 portalClosed = true
-                SwunLog.took(started, "教务会话检查 夜间关闭")
+                SwunLog.took(started, "教务会话检查 夜间关闭 HTTP ${home.code}")
                 return false
             }
             val ok = home.code == 200 && !looksLoggedOut(body, CampusHttp.location(home))
@@ -88,21 +103,21 @@ class JwxtClient {
         }
     }
 
+    fun reset() {
+        sessionLease.reset()
+        portalClosed = false
+        cas = null
+    }
+
     fun ensureSession(force: Boolean = false) {
-        if (!force && sessionAlive()) return
-        synchronized(this) {
-            if (ensuring) return
-            ensuring = true
-        }
-        try {
+        sessionLease.ensure(force, probe = ::sessionAlive, login = {
+            if (portalClosed) return@ensure false
             val c = cas ?: error("教务登录已过期，请重新登录")
             if (!c.tgtAlive()) error("统一身份已过期，请重新登录")
+            // loginWithCas already validates the menu; do not fetch it again here.
             loginWithCas(c)
-            if (portalClosed) return
-            if (!sessionAlive()) error("教务登录失败，请重新登录")
-        } finally {
-            ensuring = false
-        }
+            !portalClosed
+        })
     }
 
     fun allGrades(): List<Grade> = grades(xnm = "", xqm = "")
@@ -187,7 +202,7 @@ class JwxtClient {
             val loc = CampusHttp.location(r)
             val text = CampusHttp.text(r)
             SwunLog.took(started, "教务 $path HTTP ${r.code} ${text.length}b")
-            if (r.code == 403 || CampusHttp.looksNightClosed(r.code, text)) {
+            if (jwxtPortalClosed(r.code, text)) {
                 portalClosed = true
                 error("教务夜间关闭或不在服务时间")
             }
@@ -200,7 +215,9 @@ class JwxtClient {
                 error("教务登录已过期，请重新登录")
             }
             if (r.code != 200) error("教务 HTTP ${r.code}")
-            return JSONObject(text.ifBlank { "{}" })
+            val result = JSONObject(text.ifBlank { "{}" })
+            sessionLease.confirm()
+            return result
         }
         error("教务请求失败")
     }
@@ -217,7 +234,7 @@ class JwxtClient {
             val loc = CampusHttp.location(r)
             val text = CampusHttp.text(r)
             SwunLog.took(started, "教务 $pathAndQuery HTTP ${r.code} ${text.length}b")
-            if (r.code == 403 || CampusHttp.looksNightClosed(r.code, text)) {
+            if (jwxtPortalClosed(r.code, text)) {
                 portalClosed = true
                 error("教务夜间关闭或不在服务时间")
             }
@@ -230,7 +247,9 @@ class JwxtClient {
                 error("教务登录已过期，请重新登录")
             }
             if (r.code != 200) error("教务 HTTP ${r.code}")
-            return JSONObject(text.ifBlank { "{}" })
+            val result = JSONObject(text.ifBlank { "{}" })
+            sessionLease.confirm()
+            return result
         }
         error("教务请求失败")
     }
@@ -314,7 +333,7 @@ class JwxtClient {
                 ensureSession(force = true)
                 return@repeat
             }
-            if (r.code != 200) error("HTTP ${r.code}")
+            throwJwxtResponseIssue(r.code, html)
             if (html.contains("系统维护页面")) error("选课系统维护中")
             return parseXkRounds(html) to extractXkProfile(html)
         }
@@ -388,7 +407,7 @@ class JwxtClient {
             ensureSession(force = true)
             error("选课会话已刷新，请重试")
         }
-        if (r.code != 200) error("HTTP ${r.code}")
+        throwJwxtResponseIssue(r.code, text)
         return text
     }
 
@@ -411,7 +430,7 @@ class JwxtClient {
         }
         if (text.contains("加密串错误")) error("选课加密串已过期，请刷新重试")
         if (text.contains("系统维护")) error("选课系统维护中")
-        if (r.code != 200) error("HTTP ${r.code}")
+        throwJwxtResponseIssue(r.code, text)
         val t = text.trim()
         if (t.startsWith("[")) return JSONArray(t)
         if (t.startsWith("{")) return JSONObject(t)

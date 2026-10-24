@@ -16,8 +16,8 @@ data class SavedAccount(
     val label: String get() = name.trim().ifBlank { id }
 }
 
-class AccountStore(app: Context, private val creds: CredentialStore) {
-    private val file = File(app.filesDir, "accounts.json")
+class AccountStore internal constructor(private val file: File, private val creds: AccountCredentials) {
+    constructor(app: Context, creds: CredentialStore) : this(File(app.filesDir, "accounts.json"), creds)
     val items = mutableStateListOf<SavedAccount>()
     var currentId by mutableStateOf("")
         private set
@@ -45,7 +45,12 @@ class AccountStore(app: Context, private val creds: CredentialStore) {
         if (currentId.isNotEmpty() && items.none { it.id == currentId }) {
             currentId = items.firstOrNull()?.id.orEmpty()
         }
-        migrateLegacy()
+        // An existing empty store represents an intentional deletion, not a legacy install.
+        if (items.isEmpty()) {
+            currentId = ""
+            creds.username = ""
+            creds.clearPassword()
+        }
     }
 
     fun upsert(id: String, name: String = "", password: String? = null) {
@@ -67,7 +72,8 @@ class AccountStore(app: Context, private val creds: CredentialStore) {
 
     fun setCurrent(id: String) {
         currentId = id.trim()
-        if (currentId.isNotEmpty()) creds.username = currentId
+        creds.username = currentId
+        if (currentId.isEmpty()) creds.clearPassword()
         save()
     }
 
@@ -78,7 +84,8 @@ class AccountStore(app: Context, private val creds: CredentialStore) {
         items.removeAll { it.id == sid }
         creds.removePasswordFor(sid)
         if (currentId == sid) currentId = items.firstOrNull()?.id.orEmpty()
-        if (currentId.isNotEmpty()) creds.username = currentId
+        creds.username = currentId
+        if (currentId.isEmpty()) creds.clearPassword()
         save()
     }
 

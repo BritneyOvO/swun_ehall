@@ -5,6 +5,12 @@ import android.content.Context
 import android.net.http.SslError
 import android.os.Handler
 import android.os.Looper
+import android.webkit.WebStorage
+import android.view.ViewGroup
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.SslErrorHandler
@@ -22,12 +28,11 @@ import org.json.JSONObject
 data class RsHit(val status: Int, val body: String, val url: String = "") {
     val usable: Boolean
         get() {
-            if (status == 0 || status == 412) return false
-            if (looksLikeRuishu(status, body)) return false
+            if (status !in 200..299) return false
+            if (CampusHttp.looksRuishu(status, body)) return false
             val t = body.trimStart()
             if (t.startsWith("<") || t.startsWith("<!DOCTYPE", ignoreCase = true)) return false
-            if (status in 200..299) return true
-            return body.isNotBlank()
+            return true
         }
 
     fun asJson(): JSONObject {
@@ -79,6 +84,7 @@ class RsJsBridge {
         }
         if (name.endsWith("P") && len >= 300) {
             lastPLen = len
+            readyLatch?.countDown()
             synchronized(samples) {
                 if (samples.lastOrNull()?.value != value) {
                     samples.add(PSample(name, value, enableName, enableValue))
@@ -171,6 +177,7 @@ class RsGateway(private val app: Context) {
     fun unlock(url: String, keepUrl: String? = null) {
         val host = url.toHttpUrlOrNull()?.host ?: return
         synchronized(slot(host).lock) {
+            RequestCancellation.check()
             if (unlocked(host) && wafSig(RsSites.ofHost(host)?.home ?: "https://$host/").isNotEmpty()) return
             refreshChallenge(url, keepUrl)
         }
@@ -182,6 +189,7 @@ class RsGateway(private val app: Context) {
         val host = url.toHttpUrlOrNull()?.host ?: error("网关地址无效")
         val rsSite = site ?: RsSites.ofHost(host) ?: RsSite(host, "https://$host/", host, "token")
         synchronized(slot(host).lock) {
+            RequestCancellation.check()
             val s = ensureView(host)
             s.lastUrl = url
             s.tokenUrl = ""
@@ -215,6 +223,7 @@ class RsGateway(private val app: Context) {
         }
         val queued = System.nanoTime()
         synchronized(slot(host).lock) {
+            RequestCancellation.check()
             val t0 = System.nanoTime()
             SwunLog.took(queued, "$method $path 等到锁")
             val s = ensureView(host)
@@ -233,7 +242,14 @@ class RsGateway(private val app: Context) {
                 }.orEmpty()
                 SwunLog.w("瑞数沿用 $path [$sent]")
                 SwunLog.took(httpAt, "$method $path 沿用cookie HTTP ${reused?.status ?: 0} ${reused?.body?.length ?: 0}b")
-                if (reused != null && reused.status != 0 && reused.status != 412 && !looksLikeRuishu(reused.status, reused.body)) {
+                val reusedIssue = reused?.let { CampusHttp.classifyResponse(it.status, it.body) }
+                if (reusedIssue == CampusResponseIssue.PortalClosed) {
+                    val label = RsSites.ofHost(host)?.label ?: host
+                    error("${label}夜间关闭或不在服务时间")
+                }
+                if (reused != null && reusedIssue != CampusResponseIssue.GatewayBlocked &&
+                    reusedIssue != CampusResponseIssue.NetworkFailure
+                ) {
                     s.wafOkAt = System.currentTimeMillis()
                     SwunLog.took(t0, "$method $path 结束")
                     return reused
@@ -251,7 +267,7 @@ class RsGateway(private val app: Context) {
             SwunLog.took(t0, "$method $path cookie返回=$ready 来源=${s.bridgeReturn} fresh=[${wafSnapshot(page)}]")
             SwunLog.w("瑞数写入 $path [${s.bridge.trace()}]")
             var hit = sendCookie(host, page, s, method, url, retryHeaders, body, path)
-            val blocked = hit == null || hit.status == 0 || hit.status == 412 || looksLikeRuishu(hit.status, hit.body)
+            val blocked = hit?.let { CampusHttp.classifyResponse(it.status, it.body) } == CampusResponseIssue.GatewayBlocked
             if (blocked) {
                 SwunLog.w("瑞数再开一页 $path")
                 ready = awaitCookie(s, page, staleP)
@@ -260,7 +276,15 @@ class RsGateway(private val app: Context) {
                 hit = sendCookie(host, page, s, method, url, retryHeaders, body, path)
             }
             onMain(2_000) { s.view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT }
-            val passed = hit != null && hit.status != 0 && hit.status != 412 && !looksLikeRuishu(hit.status, hit.body)
+            if (hit == null) error("请求失败，请检查网络连接")
+            val issue = hit?.let { CampusHttp.classifyResponse(it.status, it.body) }
+            if (issue == CampusResponseIssue.PortalClosed) {
+                val label = RsSites.ofHost(host)?.label ?: host
+                error("${label}夜间关闭或不在服务时间")
+            }
+            if (issue == CampusResponseIssue.NetworkFailure) error("请求失败，请检查网络连接")
+            if (issue == CampusResponseIssue.HttpFailure || issue == CampusResponseIssue.AuthenticationExpired) return hit!!
+            val passed = hit != null && issue == null
             if (passed) s.wafOkAt = System.currentTimeMillis() else {
                 s.wafOkAt = 0
                 CampusHttp.cookies.removeWaf(host)
@@ -268,8 +292,11 @@ class RsGateway(private val app: Context) {
             SwunLog.took(t0, "$method $path 结束")
             if (hit != null && hit.usable) return hit
             if (passed) return hit!!
-            SwunLog.api("网关仍被拦截", hit?.status ?: 0, url, hit?.body.orEmpty())
-            error("网关仍被拦截")
+            if (issue == CampusResponseIssue.GatewayBlocked) {
+                SwunLog.api("网关仍被拦截", hit?.status ?: 0, url, hit?.body.orEmpty())
+                error("网关仍被拦截")
+            }
+            error("HTTP ${hit?.status ?: 0}")
         }
     }
 
@@ -280,6 +307,27 @@ class RsGateway(private val app: Context) {
         body: String? = null,
         pageUrl: String? = null,
     ): RsHit = call(method, url, headers, body, inPage = true, pageUrl = pageUrl)
+
+    suspend fun clearSession() = withContext(Dispatchers.Main) {
+        slots.values.forEach { slot ->
+            slot.view?.let { view ->
+                view.stopLoading()
+                view.removeJavascriptInterface("SwunRs")
+                (view.parent as? ViewGroup)?.removeView(view)
+                view.destroy()
+            }
+            slot.view = null
+        }
+        slots.clear()
+        rsHosts.clear()
+        WebStorage.getInstance().deleteAllData()
+        suspendCancellableCoroutine<Unit> { continuation ->
+            CookieManager.getInstance().removeAllCookies {
+                if (continuation.isActive) continuation.resume(Unit)
+            }
+        }
+        CookieManager.getInstance().flush()
+    }
 
     fun prepareSites() {
         main.post {
@@ -310,7 +358,7 @@ class RsGateway(private val app: Context) {
             got = site.extract(blob)
             android.util.Log.d("swun", "[rs] sso hop $i HTTP ${r.code} loc=$loc token=${got?.length ?: 0}")
             if (!got.isNullOrEmpty()) break
-            if (looksLikeRuishu(r.code, body)) {
+            if (CampusHttp.looksRuishu(r.code, body)) {
                 open(url, RsWait.Token, site)
                 got = token(site)
                 usedWeb = true
@@ -329,6 +377,7 @@ class RsGateway(private val app: Context) {
         }
         var i = 0
         while (got.isNullOrEmpty() && i < 20) {
+            RequestCancellation.check()
             got = token(site)
             if (got.isNullOrEmpty()) Thread.sleep(200)
             i++
@@ -354,7 +403,9 @@ class RsGateway(private val app: Context) {
         site.storeKeys.forEach { k ->
             try {
                 writeLocalStorage(k, value, site.host)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
             }
         }
     }
@@ -363,6 +414,8 @@ class RsGateway(private val app: Context) {
         try {
             unlock(url)
         } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
             android.util.Log.w("swun", "[rs] unlock $url $e")
         }
     }
@@ -444,7 +497,9 @@ class RsGateway(private val app: Context) {
                 hasRs = o.optBoolean("rs"),
                 text = o.optString("text"),
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
             PageSnap("", 0, false, "")
         }
     }
@@ -454,6 +509,7 @@ class RsGateway(private val app: Context) {
         val until = System.currentTimeMillis() + if (wait == RsWait.Token) 18_000 else 16_000
         var last = PageSnap("", 0, false, "")
         while (System.currentTimeMillis() < until) {
+            RequestCancellation.check()
             pullCookies(site.home)
             last = snapshot(host)
             val nowHost = last.href.toHttpUrlOrNull()?.host.orEmpty()
@@ -493,7 +549,9 @@ class RsGateway(private val app: Context) {
         """.trimIndent()
         return try {
             jsCall(s, script, 6_000)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
             ""
         }
     }
@@ -569,7 +627,7 @@ class RsGateway(private val app: Context) {
         return s
     }
 
-    private fun sslClient(slot: RsSlot, onFinished: (() -> Unit)? = null) = object : WebViewClient() {
+    private fun sslClient(slot: RsSlot, onFinished: ((String?) -> Unit)? = null) = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
             request?.url?.toString()?.let { slot.note(it) }
             return false
@@ -584,7 +642,7 @@ class RsGateway(private val app: Context) {
         override fun onPageFinished(view: WebView?, url: String?) {
             slot.loading = false
             url?.let { slot.note(it) }
-            onFinished?.invoke()
+            onFinished?.invoke(url)
         }
 
         override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
@@ -592,20 +650,26 @@ class RsGateway(private val app: Context) {
         }
     }
 
-    private fun load(slot: RsSlot, url: String, waitMs: Long, noCache: Boolean = false): Boolean {
-        val latch = CountDownLatch(1)
+    private fun load(
+        slot: RsSlot,
+        url: String,
+        waitMs: Long,
+        noCache: Boolean = false,
+        completion: CountDownLatch = CountDownLatch(1),
+    ): Boolean {
+        val latch = completion
         val target = url.substringBefore('#').substringBefore('?')
         onMain(2_000) {
             val view = slot.view ?: return@onMain
             if (noCache) view.settings.cacheMode = WebSettings.LOAD_NO_CACHE
-            view.webViewClient = sslClient(slot) {
-                val cur = slot.lastUrl.substringBefore('#').substringBefore('?')
+            view.webViewClient = sslClient(slot) { finishedUrl ->
+                val cur = finishedUrl.orEmpty().substringBefore('#').substringBefore('?')
                 if (cur == target || cur.startsWith("$target/")) latch.countDown()
             }
-            val here = slot.lastUrl.substringBefore('#').substringBefore('?')
+            val here = view.url.orEmpty().substringBefore('#').substringBefore('?')
             if (here == target || here.startsWith("$target/")) view.reload() else view.loadUrl(url)
         }
-        return latch.await(waitMs, TimeUnit.MILLISECONDS)
+        return RequestCancellation.await(latch, waitMs)
     }
 
     private fun refreshChallenge(url: String, keepUrl: String?) {
@@ -677,7 +741,9 @@ class RsGateway(private val app: Context) {
                 else -> CampusHttp.get(url, headers)
             }
             RsHit(r.code, CampusHttp.text(r), CampusHttp.location(r).ifEmpty { url })
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
             null
         }
     }
@@ -868,7 +934,8 @@ class RsGateway(private val app: Context) {
     }
 
     private fun wafReady(slot: RsSlot, url: String): Boolean {
-        if (System.currentTimeMillis() - slot.wafOkAt > 20_000L) return false
+        // Reuse cookies until the server rejects them; age alone does not invalidate WAF state.
+        if (slot.wafOkAt <= 0L) return false
         val http = url.toHttpUrlOrNull() ?: return false
         return CampusHttp.cookies.loadForRequest(http).any {
             CampusHttp.isWafCookieName(it.name) && it.name.endsWith("P") && it.value.length >= 300
@@ -881,9 +948,10 @@ class RsGateway(private val app: Context) {
         val ready = CountDownLatch(1)
         slot.bridge.readyLatch = ready
         return try {
-            load(slot, page, 8_000, noCache = true)
+            load(slot, page, 8_000, noCache = true, completion = ready)
             val deadline = System.nanoTime() + 2_000_000_000L
             while (System.nanoTime() < deadline) {
+                RequestCancellation.check()
                 val hasP = slot.bridge.lastPLen >= 300 && hasNewP(page, staleP)
                 if (hasP && slot.bridge.readyKind.isNotEmpty()) {
                     slot.bridgeReturn = "跳转"
@@ -993,7 +1061,7 @@ class RsGateway(private val app: Context) {
                 }
             }
         }
-        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) error("WebView 请求超时")
+        if (!RequestCancellation.await(latch, timeoutMs)) error("WebView 请求超时")
         return slot.bridge.json
     }
 
@@ -1001,7 +1069,9 @@ class RsGateway(private val app: Context) {
         if (value.isNullOrBlank() || value == "null") return ""
         return try {
             org.json.JSONTokener(value).nextValue()?.toString() ?: value
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
             if (value.length >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
                 value.substring(1, value.length - 1).replace("\\\"", "\"").replace("\\n", "\n")
             } else value
@@ -1021,8 +1091,10 @@ class RsGateway(private val app: Context) {
         val latch = CountDownLatch(1)
         var result: T? = null
         var err: Throwable? = null
+        val owner = RequestCancellation.current()
         main.post {
             try {
+                owner?.checkActive()
                 result = fn()
             } catch (t: Throwable) {
                 err = t
@@ -1030,7 +1102,7 @@ class RsGateway(private val app: Context) {
                 latch.countDown()
             }
         }
-        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) error("主线程超时")
+        if (!RequestCancellation.await(latch, timeoutMs)) error("主线程超时")
         err?.let { throw it }
         @Suppress("UNCHECKED_CAST")
         return result as T

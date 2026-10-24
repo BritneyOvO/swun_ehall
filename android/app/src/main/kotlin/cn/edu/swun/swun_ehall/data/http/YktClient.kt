@@ -24,8 +24,7 @@ class YktClient(private val rs: RsGateway) {
         if (CampusHttp.looksNightClosed(hit.status, hit.body) || CampusHttp.looksRuishu(hit.status, hit.body) || payloadOf(hit.body) == null) {
             SwunLog.api("一卡通二维码", hit.status, hit.url, hit.body)
         }
-        if (CampusHttp.looksNightClosed(hit.status, hit.body)) error("一卡通夜间关闭或不在服务时间")
-        if (CampusHttp.looksRuishu(hit.status, hit.body)) error("一卡通二维码仍被网关拦截")
+        throwYktResponseIssue(hit, "二维码")
         return payloadOf(hit.body) ?: error("用户无卡片，无法生成二维码")
     }
 
@@ -43,8 +42,7 @@ class YktClient(private val rs: RsGateway) {
         if (CampusHttp.looksNightClosed(hit.status, hit.body) || CampusHttp.looksRuishu(hit.status, hit.body)) {
             SwunLog.api("一卡通明细", hit.status, hit.url, hit.body)
         }
-        if (CampusHttp.looksNightClosed(hit.status, hit.body)) error("一卡通夜间关闭或不在服务时间")
-        if (CampusHttp.looksRuishu(hit.status, hit.body)) error("一卡通明细仍被网关拦截")
+        throwYktResponseIssue(hit, "明细")
         val items = parseYktBills(hit.body)
         val bal = items.firstOrNull { it.balanceYuan != null }?.balanceYuan
         return bal to items
@@ -82,13 +80,54 @@ class YktClient(private val rs: RsGateway) {
     )
 
     private fun openFunction(studentId: String, schoolId: String, menu: String): String {
+        val started = System.nanoTime()
         rs.open(K_YKT_MENU, RsWait.Ready, RsSites.YKT)
+        val menuOpened = System.nanoTime()
+        if (menuIsClosed()) error("一卡通夜间关闭或不在服务时间")
         val ts = menuTimestamp()
-        if (ts.isEmpty()) error("一卡通页面未就绪")
+        val timestampRead = System.nanoTime()
+        Log.d("swun", "[ykt] $menu menu=${(menuOpened - started) / 1_000_000}ms timestamp=${(timestampRead - menuOpened) / 1_000_000}ms")
+        if (ts.isEmpty()) {
+            val state = rs.evalJs(
+                "ykth5.swun.edu.cn",
+                """
+                try {
+                  var h = document.documentElement ? document.documentElement.innerHTML : '';
+                  var t = document.body ? (document.body.innerText || '') : '';
+                  return JSON.stringify({title: document.title || '', ready: document.readyState || '',
+                    global: typeof timestamp, hasToken: /timestamp/i.test(h),
+                    single: /timestamp\\s*=\\s*'/.test(h), double: /timestamp\\s*=\\s*\"/.test(h),
+                    input: !!document.querySelector('[name=timestamp]'), closed: /服务时间|夜间|维护中/.test(t),
+                    blocked: /访问验证|访问受限|安全检查|网关/.test(t), login: /登录|认证|会话过期/.test(t)});
+                } catch (e) { return String(e); }
+                """.trimIndent(),
+            )
+            Log.w("swun", "[ykt] menu timestamp unavailable state=$state")
+            error("一卡通页面未就绪")
+        }
         val fn = "$K_YKT/menu/function.do?expire=$ts&stu_code=$studentId&acco_id=$studentId&school_id=$schoolId&menu=$menu"
         Log.d("swun", "[ykt] open $menu ts=$ts")
         rs.open(fn, RsWait.Ready, RsSites.YKT)
+        Log.d("swun", "[ykt] $menu function page=${(System.nanoTime() - timestampRead) / 1_000_000}ms")
         return fn
+    }
+
+    private fun menuIsClosed(): Boolean {
+        val marker = rs.evalJs(
+            "ykth5.swun.edu.cn",
+            """
+            try {
+              var title = document.title || '';
+              var text = document.body ? (document.body.innerText || '') : '';
+              return /(?:403|系统已关闭|夜间关闭|不在服务时间|维护中)/i.test(title + ' ' + text) ? '1' : '';
+            } catch (e) { return ''; }
+            """.trimIndent(),
+        ).trim()
+        if (marker == "1") {
+            Log.w("swun", "[ykt] menu reports scheduled closure")
+            return true
+        }
+        return false
     }
 
     private fun menuTimestamp(): String {
@@ -109,6 +148,17 @@ class YktClient(private val rs: RsGateway) {
             Thread.sleep(250)
         }
         return ""
+    }
+}
+
+private fun throwYktResponseIssue(hit: RsHit, action: String) {
+    when (CampusHttp.classifyResponse(hit.status, hit.body)) {
+        CampusResponseIssue.PortalClosed -> error("一卡通夜间关闭或不在服务时间")
+        CampusResponseIssue.GatewayBlocked -> error("一卡通${action}仍被网关拦截")
+        CampusResponseIssue.AuthenticationExpired -> error("一卡通登录已过期，请重试")
+        CampusResponseIssue.NetworkFailure -> error("请求失败，请检查网络连接")
+        CampusResponseIssue.HttpFailure -> error("一卡通 HTTP ${hit.status}")
+        null -> Unit
     }
 }
 

@@ -8,6 +8,9 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.X509TrustManager
+import okhttp3.Call
+import okhttp3.EventListener
+import java.io.IOException
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.Dns
@@ -23,6 +26,14 @@ import java.util.concurrent.TimeUnit
 
 const val K_UA =
     "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+
+enum class CampusResponseIssue {
+    PortalClosed,
+    GatewayBlocked,
+    AuthenticationExpired,
+    NetworkFailure,
+    HttpFailure,
+}
 
 class MemoryCookieJar : CookieJar {
     private val store = ConcurrentHashMap<String, MutableList<Cookie>>()
@@ -41,19 +52,24 @@ class MemoryCookieJar : CookieJar {
     }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        var changed = false
         cookies.forEach { c ->
             val key = "${c.domain}|${c.name}|${c.path}"
             store.getOrPut(c.domain) { mutableListOf() }.let { list ->
                 synchronized(list) {
-                    list.removeAll { it.name == c.name && it.path == c.path }
-                    list.add(c)
+                    val old = list.firstOrNull { it.name == c.name && it.path == c.path }
+                    if (old != c) {
+                        list.removeAll { it.name == c.name && it.path == c.path }
+                        list.add(c)
+                        changed = true
+                    }
                 }
             }
         }
-        if (cookies.isNotEmpty()) onChanged?.invoke()
+        if (changed) onChanged?.invoke()
     }
 
-    fun all(): List<Cookie> = store.values.flatten()
+    fun all(): List<Cookie> = store.values.flatMap { list -> synchronized(list) { list.toList() } }
 
     fun clear() = store.clear()
 
@@ -116,8 +132,51 @@ object CampusHttp {
             .build()
     }
 
+    val imageClient: OkHttpClient by lazy {
+        followClient.newBuilder()
+            .callTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
     val client: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookies)
+        .eventListenerFactory { call ->
+            val started = System.nanoTime()
+            val cancellation = RequestCancellation.current()?.onCancel { call.cancel() }
+            object : EventListener() {
+                private var dnsStarted = 0L
+                private var sentAt = 0L
+
+                override fun dnsStart(call: Call, domainName: String) {
+                    dnsStarted = System.nanoTime()
+                }
+
+                override fun dnsEnd(call: Call, domainName: String, inetAddressList: List<InetAddress>) {
+                    SwunLog.took(dnsStarted, "DNS " + domainName)
+                }
+
+                override fun requestHeadersEnd(call: Call, request: Request) {
+                    sentAt = System.nanoTime()
+                }
+
+                override fun responseHeadersStart(call: Call) {
+                    if (sentAt != 0L) SwunLog.took(sentAt, "首响应 " + call.request().url.host + call.request().url.encodedPath)
+                }
+
+                override fun callEnd(call: Call) {
+                    cancellation?.close()
+                    val request = call.request()
+                    SwunLog.took(started, "HTTP " + request.method + " " + request.url.host + request.url.encodedPath)
+                }
+
+                override fun callFailed(call: Call, ioe: IOException) {
+                    cancellation?.close()
+                    val request = call.request()
+                    SwunLog.took(started, "HTTP失败 " + request.method + " " + request.url.host + request.url.encodedPath)
+                }
+            }
+        }
         .dns(ipv4Dns)
         .sslSocketFactory(sslFactory, trustAll)
         .hostnameVerifier { _, _ -> true }
@@ -126,6 +185,7 @@ object CampusHttp {
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .addInterceptor { chain ->
+            RequestCancellation.check()
             val req = chain.request().newBuilder()
                 .header("User-Agent", K_UA)
                 .header("Accept-Language", "zh-CN,zh;q=0.9")
@@ -184,12 +244,24 @@ object CampusHttp {
             .replace("http://ykth5.swun.edu.cn", "https://ykth5.swun.edu.cn")
     }
 
-    fun looksRuishu(code: Int, body: String): Boolean = looksLikeRuishu(code, body)
-
-    fun looksNightClosed(code: Int, body: String): Boolean {
-        if (code == 403 && (body.contains("关闭") || body.contains("维护") || body.contains("夜间"))) return true
-        return body.contains("系统已关闭") || body.contains("夜间关闭") || body.contains("不在服务时间")
+    fun classifyResponse(code: Int, body: String): CampusResponseIssue? = when {
+        code == 0 -> CampusResponseIssue.NetworkFailure
+        // Campus systems use 403 for scheduled shutdown, even when the body is a gateway page.
+        code == 403 -> CampusResponseIssue.PortalClosed
+        code == 412 -> CampusResponseIssue.GatewayBlocked
+        body.contains("系统已关闭") || body.contains("夜间关闭") || body.contains("不在服务时间") ->
+            CampusResponseIssue.PortalClosed
+        looksLikeRuishu(code, body) -> CampusResponseIssue.GatewayBlocked
+        code == 401 -> CampusResponseIssue.AuthenticationExpired
+        code !in 200..299 -> CampusResponseIssue.HttpFailure
+        else -> null
     }
+
+    fun looksRuishu(code: Int, body: String): Boolean =
+        classifyResponse(code, body) == CampusResponseIssue.GatewayBlocked
+
+    fun looksNightClosed(code: Int, body: String): Boolean =
+        classifyResponse(code, body) == CampusResponseIssue.PortalClosed
 
     fun isWafCookieName(name: String): Boolean {
         return name.contains("3AAFGrVH") ||

@@ -54,18 +54,26 @@ import cn.edu.swun.swun_ehall.data.model.YktBill
 import cn.edu.swun.swun_ehall.data.update.UpdateClient
 import java.io.File
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
+import cn.edu.swun.swun_ehall.data.http.RequestCancellation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class Session(app: Application) : AndroidViewModel(app) {
+    private val requests = AccountRequests(viewModelScope)
+    private val casLock = Any()
+    private val ktkqLock = Any()
+    private val gyLock = Any()
     private val prefs = app.getSharedPreferences("swun_session", 0)
     private val creds = CredentialStore(app)
     val accounts = AccountStore(app, creds)
     val slotPicks = SlotChoiceStore(prefs)
     private val teachers = TeacherCache(File(app.filesDir, "kb_teachers.json"))
     private val locator = Locator(app)
-    private val rs = RsGateway(app).also { it.prepareSites() }
+    private val rs = RsGateway(app)
     private val cas = CasClient()
     private val ehall = EhallClient()
     private val lantu = LantuClient(File(app.filesDir, "lantu.json"))
@@ -123,10 +131,10 @@ class Session(app: Application) : AndroidViewModel(app) {
     val xkCourses = mutableStateListOf<XkCourse>()
     init {
         CampusHttp.cookies.onChanged = { persistCookieFile() }
-        ktkqClient.onToken = { prefs.edit().putString(ktkqTokenKey(), it).apply() }
-        gy.onToken = { prefs.edit().putString(gyTokenKey(), it).apply() }
         accounts.load()
         studentId = accounts.currentId.ifBlank { creds.username }
+        bindTokenCallbacks(studentId)
+        ktkqClient.bindAccount(studentId)
         slotPicks.load(studentId)
         teachers.load(studentId)
         bindAvatars(studentId)
@@ -153,7 +161,9 @@ class Session(app: Application) : AndroidViewModel(app) {
                 lastUpdateCheckAt = System.currentTimeMillis()
                 val got = UpdateClient.latest()
                 withContext(Dispatchers.Main) { latestRelease = got }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
             }
         }
     }
@@ -168,6 +178,9 @@ class Session(app: Application) : AndroidViewModel(app) {
     }
 
     fun enterDemo() {
+        val owner = requests.begin()
+        clearAccountData()
+        viewModelScope.launch { requests.transition(owner) { clearClientSession() } }
         demoMode = true
         loggedIn = true
         error = null
@@ -198,69 +211,117 @@ class Session(app: Application) : AndroidViewModel(app) {
             error = "请输入学号和密码"
             return
         }
+        val owner = requests.begin()
         busy = true
         error = null
         demoMode = false
-        bindAvatars(user.trim())
+        clearAccountData()
+        studentId = user.trim()
+        bindAvatars(studentId)
         try {
-            withContext(Dispatchers.IO) {
-                CampusHttp.cookies.clear()
-                lantu.clear()
-                lantu.login(user.trim(), pass)
-                try {
-                    cas.login(user.trim(), pass)
-                } catch (e: Exception) {
-                    lantu.clear()
-                    throw Exception("统一身份登录失败，请重试")
+            requests.transition(owner) {
+                clearClientSession()
+                bindTokenCallbacks(user.trim())
+                ktkqClient.bindAccount(user.trim())
+                withContext(Dispatchers.IO) {
+                    lantu.login(user.trim(), pass)
+                    try {
+                        cas.login(user.trim(), pass)
+                    } catch (e: Exception) {
+                        if (e is java.util.concurrent.CancellationException) throw e
+                        RequestCancellation.check()
+                        lantu.clear()
+                        throw Exception("统一身份登录失败，请重试", e)
+                    }
+                    persistSession(user.trim(), pass)
                 }
-                try {
-                    val info = lantu.getUserInfo()
-                    info.optJSONObject("userBaseInfo")?.let { lantu.userBase = it }
-                    info.optJSONObject("userLoginInfo")?.let { lantu.userLogin = it }
-                } catch (_: Exception) {
-                }
-                persistSession(user.trim(), pass)
+                applyLantu()
+                loggedIn = true
             }
-            applyLantu()
-            loggedIn = true
-            viewModelScope.launch(Dispatchers.IO) { refreshLiveData() }
+            if (requests.isCurrent(owner)) requests.launch("startup") { refreshLiveData() }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            loggedIn = false
-            error = publicError(e)
-            Log.e("swun", "login", e)
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
+            if (requests.isCurrent(owner)) {
+                loggedIn = false
+                error = publicError(e)
+                Log.e("swun", "login", e)
+            }
         } finally {
-            busy = false
+            if (requests.isCurrent(owner)) busy = false
         }
     }
 
-    fun logout() {
-        loggedIn = false
-        demoMode = false
-        error = null
+    private fun clearAccountData() {
         lastPunch = null
         loadHint = null
-        yktQr = null
         displayName = "同学"
         profile = Profile()
-        schedule.clear(); grades.clear(); exams.clear(); ktkq.clear(); ktkqCourses.clear(); yktBills.clear(); clockRecords.clear(); clockFences.clear()
+        schedule.clear(); grades.clear(); exams.clear(); ktkq.clear(); ktkqCourses.clear()
+        yktBills.clear(); clockRecords.clear(); clockFences.clear(); xkRounds.clear(); xkCourses.clear()
         ktkqWeekNum = 1
         ktkqXnxqmc = ""
         pendingKtkqSlot = null
-        xkRounds.clear(); xkCourses.clear()
         yktBalance = null
         credits = null
         yktQr = null
         yktError = null
+        xkPanel = emptyMap()
+        xkProfile = emptyMap()
+        curWeek = 1
+        totalWeek = 16
+        week1Monday = null
+        pendingCropPath = null
         localAvatarPath = null
         remoteAvatarPath = null
         avatarEpoch++
-        ktkqClient.token = null
-        gy.token = null
-        prefs.edit().remove(ktkqTokenKey()).remove(gyTokenKey()).apply()
-        viewModelScope.launch(Dispatchers.IO) {
-            try { lantu.clear() } catch (_: Exception) {}
+    }
+
+    private suspend fun clearClientSession() {
+        // transition() has already cancelled and drained all old account requests.
+        rs.clearSession()
+        ktkqClient.reset()
+        gy.reset()
+        jwxt.reset()
+        withContext(Dispatchers.IO) {
+            lantu.clear()
             CampusHttp.cookies.clear()
             cookieFile.delete()
+        }
+    }
+
+    private fun bindTokenCallbacks(id: String) {
+        ktkqClient.onToken = { token ->
+            requests.commit { prefs.edit().putString("ktkqToken_" + id, token).apply() }
+        }
+        gy.onToken = { token ->
+            requests.commit { prefs.edit().putString("gyToken_" + id, token).apply() }
+        }
+    }
+
+    fun logout() {
+        val oldId = studentId.ifBlank { accounts.currentId }
+        val owner = requests.begin()
+        prefs.edit().putBoolean("loggedOut", true).commit()
+        loggedIn = false
+        demoMode = false
+        busy = false
+        error = null
+        clearAccountData()
+        studentId = ""
+        prefs.edit().remove("ktkqToken_" + oldId).remove("gyToken_" + oldId).apply()
+        viewModelScope.launch {
+            try {
+                requests.transition(owner) { clearClientSession() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
+                Log.e("swun", "logout cleanup", e)
+            }
         }
     }
 
@@ -276,9 +337,11 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     fun removeAccount(id: String) {
         val wasCurrent = id == accounts.currentId || id == studentId
-        deleteAccountAvatars(id)
-        accounts.remove(id)
         if (wasCurrent) logout()
+        deleteAccountAvatars(id)
+        requests.commit { accounts.remove(id) }
+        prefs.edit().remove("ktkqToken_" + id).remove("gyToken_" + id)
+            .remove("ktkqXnxqdm_" + id).remove("ktkqXnxqmc_" + id).apply()
     }
 
     fun todayLessons(): List<Lesson> {
@@ -365,37 +428,86 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     suspend fun refreshSchedule() {
         if (demoMode) return
-        withContext(Dispatchers.IO) {
+        accountIo("schedule") {
+            var lantuLessons: List<Lesson> = emptyList()
             try {
                 val started = System.nanoTime()
-                val casAt = System.nanoTime()
-                ensureCas()
-                SwunLog.took(casAt, "课表 统一身份")
-                jwxt.attachCas(cas)
-                val sessionAt = System.nanoTime()
-                jwxt.ensureSession()
-                SwunLog.took(sessionAt, "课表 教务会话")
-                if (jwxt.portalClosed) error("教务夜间关闭或不在服务时间")
-                val fetchAt = System.nanoTime()
-                val page = jwxt.schedulePage()
-                SwunLog.took(fetchAt, "课表 拉取")
-                val kb = jwxtKbList(page)
-                teachers.fillFromJwxt(kb)
-                val lessons = teachers.apply(jwxt.lessonsFromKb(kb))
-                if (lessons.isEmpty()) error("课表没有返回课程")
-                val cal = jwxtCurrentWeek(page)
-                val total = maxOf(cal.total, lessons.maxOfOrNull { it.weeks.length } ?: 16)
-                SwunLog.took(started, "课表 完成 ${lessons.size}门 第${cal.week}周 起始周一=${cal.week1Monday}")
+                val lantuAt = System.nanoTime()
+                val course = lantu.getCourse()
+                lantuLessons = teachers.apply(lantu.mapLessons(course))
+                SwunLog.took(lantuAt, "课表 Lantu ${lantuLessons.size}门")
+                if (lantuLessons.isEmpty()) error("Lantu课表没有返回课程")
+                val week = course.optString("curWeek").toIntOrNull() ?: 1
+                val total = maxOf(
+                    course.optString("totalWeek").toIntOrNull() ?: 16,
+                    lantuLessons.maxOfOrNull { it.weeks.length } ?: 16,
+                )
+                SwunLog.took(started, "课表完成 ${lantuLessons.size}门 第${week}周")
                 withContext(Dispatchers.Main) {
                     schedule.clear()
-                    schedule.addAll(lessons)
-                    curWeek = cal.week.coerceAtLeast(1)
+                    schedule.addAll(lantuLessons)
+                    curWeek = week.coerceAtLeast(1)
                     totalWeek = total
-                    week1Monday = cal.week1Monday
                     loadHint = null
                 }
+
+                // 教务系统只补教师和日历；课表本身已经由 Lantu 提供。
+                try {
+                    ensureCas()
+                    jwxt.attachCas(cas)
+                    jwxt.ensureSession()
+                    if (!jwxt.portalClosed) {
+                        val page = jwxt.schedulePage()
+                        val kb = jwxtKbList(page)
+                        teachers.fillFromJwxt(kb)
+                        val enriched = teachers.apply(lantuLessons)
+                        val cal = jwxtCurrentWeek(page)
+                        withContext(Dispatchers.Main) {
+                            schedule.clear()
+                            schedule.addAll(enriched)
+                            curWeek = cal.week.coerceAtLeast(1)
+                            totalWeek = maxOf(total, cal.total)
+                            week1Monday = cal.week1Monday
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (e is java.util.concurrent.CancellationException) throw e
+                    RequestCancellation.check()
+                    Log.w("swun", "课表教务补充失败，保留 Lantu 课表", e)
+                }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "schedule", e)
+                if (lantuLessons.isEmpty()) {
+                    // Lantu unavailable: retain the existing Jwxt fallback.
+                    try {
+                        val started = System.nanoTime()
+                        ensureCas()
+                        jwxt.attachCas(cas)
+                        jwxt.ensureSession()
+                        if (jwxt.portalClosed) error("教务夜间关闭或不在服务时间")
+                        val page = jwxt.schedulePage()
+                        val kb = jwxtKbList(page)
+                        teachers.fillFromJwxt(kb)
+                        val lessons = teachers.apply(jwxt.lessonsFromKb(kb))
+                        if (lessons.isEmpty()) error("课表没有返回课程")
+                        val cal = jwxtCurrentWeek(page)
+                        withContext(Dispatchers.Main) {
+                            schedule.clear(); schedule.addAll(lessons)
+                            curWeek = cal.week.coerceAtLeast(1)
+                            totalWeek = maxOf(cal.total, lessons.maxOfOrNull { it.weeks.length } ?: 16)
+                            week1Monday = cal.week1Monday
+                            loadHint = null
+                        }
+                        SwunLog.took(started, "课表教务回退完成 ${lessons.size}门")
+                        return@accountIo
+                    } catch (fallback: Exception) {
+                        if (fallback is java.util.concurrent.CancellationException) throw fallback
+                        RequestCancellation.check()
+                        Log.e("swun", "schedule fallback", fallback)
+                    }
+                }
                 withContext(Dispatchers.Main) { loadHint = publicError(e) }
             }
         }
@@ -403,14 +515,14 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     suspend fun refreshGrades(term: SchoolTerm = SchoolTerm("", "")) {
         if (demoMode) return
-        withContext(Dispatchers.IO) {
+        accountIo("grades:" + term.xnm + ":" + term.xqm) {
             try {
                 ensureCas()
                 jwxt.attachCas(cas)
                 jwxt.ensureSession()
                 if (jwxt.portalClosed) {
                     withContext(Dispatchers.Main) { loadHint = "教务夜间关闭或不在服务时间" }
-                    return@withContext
+                    return@accountIo
                 }
                 val items = jwxt.grades(term.xnm, term.xqm)
                 withContext(Dispatchers.Main) {
@@ -418,6 +530,8 @@ class Session(app: Application) : AndroidViewModel(app) {
                     grades.addAll(items)
                 }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "grades", e)
                 withContext(Dispatchers.Main) { loadHint = publicError(e) }
             }
@@ -429,7 +543,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             exams.clear(); exams.addAll(DemoData.exams)
             return
         }
-        withContext(Dispatchers.IO) {
+        accountIo("exams") {
             try {
                 ensureCas()
                 jwxt.attachCas(cas)
@@ -440,6 +554,8 @@ class Session(app: Application) : AndroidViewModel(app) {
                     exams.addAll(items)
                 }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "exams", e)
                 withContext(Dispatchers.Main) { loadHint = publicError(e) }
             }
@@ -451,13 +567,15 @@ class Session(app: Application) : AndroidViewModel(app) {
             credits = DemoData.credits
             return
         }
-        withContext(Dispatchers.IO) {
+        accountIo("credits") {
             try {
                 if (grades.isEmpty()) refreshGrades()
                 val snapshot = withContext(Dispatchers.Main) { grades.toList() }
                 val p = jwxt.creditFromGrades(snapshot)
                 withContext(Dispatchers.Main) { credits = p }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "credits", e)
                 withContext(Dispatchers.Main) { loadHint = publicError(e) }
             }
@@ -471,7 +589,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             xkProfile = DemoData.xkProfile
             return
         }
-        withContext(Dispatchers.IO) {
+        accountIo("selection") {
             try {
                 ensureCas()
                 jwxt.attachCas(cas)
@@ -484,6 +602,8 @@ class Session(app: Application) : AndroidViewModel(app) {
                     if (rounds.isEmpty()) loadHint = "当前没有开放的选课轮次"
                 }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "xk", e)
                 withContext(Dispatchers.Main) { loadHint = publicError(e) }
             }
@@ -496,7 +616,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             xkCourses.addAll(DemoData.xkCourses.filter { keyword.isEmpty() || it.name.contains(keyword) })
             return
         }
-        withContext(Dispatchers.IO) {
+        accountIo {
             try {
                 ensureCas()
                 jwxt.attachCas(cas)
@@ -508,6 +628,8 @@ class Session(app: Application) : AndroidViewModel(app) {
                     xkCourses.addAll(list)
                 }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "xk courses", e)
                 withContext(Dispatchers.Main) { loadHint = publicError(e) }
             }
@@ -516,7 +638,7 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     suspend fun loadXkClasses(round: XkRound, course: XkCourse): List<XkCourse> {
         if (demoMode) return listOf(course)
-        return withContext(Dispatchers.IO) {
+        return accountIo {
             ensureCas()
             jwxt.attachCas(cas)
             val query = buildMap {
@@ -531,7 +653,7 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     suspend fun submitXk(round: XkRound, course: XkCourse, clazz: XkCourse): String {
         if (demoMode) return "示例模式：已模拟选课 ${clazz.jxbName}"
-        return withContext(Dispatchers.IO) {
+        return accountIo {
             ensureCas()
             jwxt.attachCas(cas)
             val rlkz = xkPanel["rlkz"] ?: "0"
@@ -564,7 +686,7 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     suspend fun refreshProfile() {
         if (demoMode) return
-        withContext(Dispatchers.IO) {
+        accountIo("profile") {
             try {
                 if (lantu.isLoggedIn) {
                     val info = lantu.getUserInfo()
@@ -572,6 +694,8 @@ class Session(app: Application) : AndroidViewModel(app) {
                     info.optJSONObject("userLoginInfo")?.let { lantu.userLogin = it }
                 }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "profile lantu", e)
             }
             var next = if (lantu.isLoggedIn) lantu.profile() else Profile(studentId = studentId)
@@ -579,6 +703,8 @@ class Session(app: Application) : AndroidViewModel(app) {
                 ensureCas()
                 next = next.merge(ehall.profile(cas))
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "profile ehall", e)
             }
             withContext(Dispatchers.Main) {
@@ -596,7 +722,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             applyKtkqWeek(DemoData.ktkqWeek)
             return
         }
-        withContext(Dispatchers.IO) {
+        accountIo("ktkq:" + force) {
             try {
                 ensureKtkq()
                 val weekNum = curWeek.takeIf { it > 0 }
@@ -604,11 +730,13 @@ class Session(app: Application) : AndroidViewModel(app) {
                 val items = week.flatten()
                 teachers.fillFromKtkq(items, week.week)
                 val patched = teachers.apply(schedule.toList())
-                prefs.edit()
-                    .putString(ktkqTokenKey(), ktkqClient.token.orEmpty())
-                    .putString(ktkqTermKey(), ktkqClient.knownXnxqdm)
-                    .putString(ktkqTermNameKey(), week.xnxqmc)
-                    .apply()
+                requests.commit {
+                    prefs.edit()
+                        .putString(ktkqTokenKey(), ktkqClient.token.orEmpty())
+                        .putString(ktkqTermKey(), ktkqClient.knownXnxqdm)
+                        .putString(ktkqTermNameKey(), week.xnxqmc)
+                        .apply()
+                }
                 withContext(Dispatchers.Main) {
                     loadHint = null
                     applyKtkqWeek(week)
@@ -618,6 +746,8 @@ class Session(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "ktkq", e)
                 withContext(Dispatchers.Main) { loadHint = publicError(e) }
             }
@@ -654,7 +784,7 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     suspend fun signForLesson(slot: SignActivity, refresh: Boolean = false): SignActivity {
         if (demoMode) return DemoData.signFor(slot)
-        return withContext(Dispatchers.IO) {
+        return accountIo {
             ensureKtkq()
             ktkqClient.signForLesson(slot, week = slot.week.takeIf { it > 0 } ?: ktkqWeekNum, refresh = refresh)
         }
@@ -668,45 +798,63 @@ class Session(app: Application) : AndroidViewModel(app) {
             yktError = null
             return
         }
-        withContext(Dispatchers.IO) {
+        accountIo("ykt") {
             withContext(Dispatchers.Main) { yktError = null }
             try {
                 lantu.cardBalanceYuan()?.let { bal ->
                     withContext(Dispatchers.Main) { yktBalance = bal }
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
             }
             try {
                 ensureCas()
                 val sid = studentId.ifBlank { creds.username }
                 val school = "${lantu.schoolId}"
                 var lastErr: String? = null
+                var menuReady = true
                 try {
                     val qr = yktClient.fetchQr(sid, school)
                     withContext(Dispatchers.Main) { yktQr = qr }
                 } catch (e: Exception) {
+                    if (e is java.util.concurrent.CancellationException) throw e
+                    RequestCancellation.check()
                     Log.e("swun", "ykt qr", e)
                     lastErr = publicError(e)
+                    if (e.message?.contains("一卡通页面未就绪") == true ||
+                        e.message?.contains("一卡通夜间关闭") == true
+                    ) menuReady = false
                 }
-                try {
-                    val bal = yktClient.fetchBalance(sid, school)
-                    if (bal != null) withContext(Dispatchers.Main) { yktBalance = bal }
-                } catch (e: Exception) {
-                    Log.e("swun", "ykt bal", e)
-                }
-                try {
-                    val (bal, bills) = yktClient.fetchLedger(sid, school)
-                    withContext(Dispatchers.Main) {
-                        if (bal != null) yktBalance = bal
-                        yktBills.clear()
-                        yktBills.addAll(bills)
+                if (menuReady) {
+                    try {
+                        val bal = yktClient.fetchBalance(sid, school)
+                        if (bal != null) withContext(Dispatchers.Main) { yktBalance = bal }
+                    } catch (e: Exception) {
+                        if (e is java.util.concurrent.CancellationException) throw e
+                        RequestCancellation.check()
+                        Log.e("swun", "ykt bal", e)
                     }
-                } catch (e: Exception) {
-                    Log.e("swun", "ykt bills", e)
-                    lastErr = lastErr ?: publicError(e)
+                    try {
+                        val (bal, bills) = yktClient.fetchLedger(sid, school)
+                        withContext(Dispatchers.Main) {
+                            if (bal != null) yktBalance = bal
+                            yktBills.clear()
+                            yktBills.addAll(bills)
+                        }
+                    } catch (e: Exception) {
+                        if (e is java.util.concurrent.CancellationException) throw e
+                        RequestCancellation.check()
+                        Log.e("swun", "ykt bills", e)
+                        lastErr = lastErr ?: publicError(e)
+                    }
+                } else {
+                    Log.w("swun", "[ykt] skip balance and ledger because menu is not ready")
                 }
                 if (lastErr != null) withContext(Dispatchers.Main) { yktError = lastErr; loadHint = lastErr }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "ykt", e)
                 withContext(Dispatchers.Main) {
                     yktError = publicError(e)
@@ -722,13 +870,15 @@ class Session(app: Application) : AndroidViewModel(app) {
             clockFences.clear(); clockFences.addAll(DemoData.clockFences)
             return
         }
-        withContext(Dispatchers.IO) {
+        accountIo("clock") {
             try {
                 ensureGy()
                 var hint: String? = null
                 val rec = try {
                     gy.records()
                 } catch (e: Exception) {
+                    if (e is java.util.concurrent.CancellationException) throw e
+                    RequestCancellation.check()
                     Log.e("swun", "clock", e)
                     hint = publicError(e)
                     null
@@ -744,6 +894,8 @@ class Session(app: Application) : AndroidViewModel(app) {
                     clockFences.addAll(fences)
                 }
             } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
                 Log.e("swun", "clock", e)
                 withContext(Dispatchers.Main) { loadHint = publicError(e) }
             }
@@ -765,7 +917,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             lastPunch = "示例模式：已模拟签到 · GCJ-02 ${"%.5f".format(g.first)}, ${"%.5f".format(g.second)}"
             return lastPunch!!
         }
-        return withContext(Dispatchers.IO) {
+        return accountIo {
             ensureKtkq()
             var act = activity
             val rawId = act.activityId
@@ -776,7 +928,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             if (id.isEmpty() || id.contains("|")) {
                 val msg = act.message.ifBlank { "没有签到活动" }
                 withContext(Dispatchers.Main) { lastPunch = msg }
-                return@withContext msg
+                return@accountIo msg
             }
             val punchCode = code.ifBlank { act.signCode }
             val r = ktkqClient.submitSign(id, g.first, g.second, acc, punchCode)
@@ -828,13 +980,15 @@ class Session(app: Application) : AndroidViewModel(app) {
         if (!demoMode && ktkq.isEmpty()) {
             try {
                 refreshKtkq(force = true)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
             }
         }
         val targets = fenceProbeTargets(slot)
         if (targets.isEmpty()) return "课堂考勤没有课班号，无法向服务器预检"
         if (demoMode) return "示例模式不请求服务器"
-        return withContext(Dispatchers.IO) {
+        return accountIo {
             ensureKtkq()
             targets.joinToString("\n") { item -> probeFencePoint(item) }
         }
@@ -901,6 +1055,8 @@ class Session(app: Application) : AndroidViewModel(app) {
             val whenText = if (day in 1..7) kWeekdayLabels[day] else ""
             "${item.classroom} ${item.course} $whenText $label ${"%.6f".format(lat)}, ${"%.6f".format(lng)}${if (msg.isNotBlank() && msg != label) " $msg" else ""}"
         } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
             "${item.classroom} 预检失败 ${e.message?.removePrefix("Exception: ").orEmpty()}"
         }
     }
@@ -917,7 +1073,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             lastPunch = if (useCampusFence) "示例模式：已模拟校内打卡" else "示例模式：已模拟打卡成功 · ${"%.5f".format(lat)}, ${"%.5f".format(lng)}"
             return lastPunch!!
         }
-        return withContext(Dispatchers.IO) {
+        return accountIo {
             ensureGy()
             val (lat, lng, address) = if (useCampusFence) {
                 val f = gy.campusFence() ?: DemoData.clockFence
@@ -942,45 +1098,48 @@ class Session(app: Application) : AndroidViewModel(app) {
                     clockRecords.clear()
                     clockRecords.addAll(rec)
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
             }
             out
         }
     }
 
-    private suspend fun refreshLiveData() {
-        try { refreshProfile() } catch (_: Exception) {}
-        refreshSchedule()
-        try { refreshGrades() } catch (_: Exception) {}
-        try {
-            rs.warmup("https://ktkq.swun.edu.cn/")
-        } catch (_: Exception) {
-        }
+    private suspend fun refreshLiveData() = coroutineScope {
+        // Profile enrichment and avatar downloads must not delay the course table.
+        launch { refreshSchedule() }
+        launch { refreshGrades() }
+        launch { refreshProfile() }
     }
 
     private fun restoreFromDisk() {
+        if (prefs.getBoolean("loggedOut", false)) return
         try {
             if (cookieFile.exists()) CampusHttp.importCookies(cookieFile.readText())
             if (!lantu.restoreLocal()) return
             applyLantu()
             loggedIn = true
             demoMode = false
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    lantu.refreshUser()
-                    withContext(Dispatchers.Main) { applyLantu() }
-                } catch (e: Exception) {
-                    Log.e("swun", "restore user", e)
-                }
-                try {
-                    refreshLiveData()
-                } catch (e: Exception) {
-                    Log.e("swun", "restore data", e)
-                }
-            }
+            requests.launch("startup") { refreshLiveData() }
         } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
             Log.e("swun", "restore", e)
         }
+    }
+
+    private suspend fun <T> accountIo(
+        key: String? = null,
+        block: suspend CoroutineScope.() -> T,
+    ): T = requests.run(key) {
+        if (!loggedIn || demoMode) throw CancellationException("账号未登录")
+        withContext(Dispatchers.IO, block)
+    }
+
+    override fun onCleared() {
+        requests.close()
+        super.onCleared()
     }
 
     private fun applyLantu() {
@@ -1000,12 +1159,12 @@ class Session(app: Application) : AndroidViewModel(app) {
         val file = remoteAvatarFileFor(owner)
         try {
             val req = okhttp3.Request.Builder().url(url).header("Accept", "image/*").build()
-            val ok = CampusHttp.followClient.newCall(req).execute().use { r ->
+            val ok = CampusHttp.imageClient.newCall(req).execute().use { r ->
                 if (r.code !in 200..399) return@use false
                 val bytes = r.body?.bytes() ?: return@use false
                 if (bytes.size < 64) return@use false
                 file.parentFile?.mkdirs()
-                file.writeBytes(bytes)
+                requests.commit { file.writeBytes(bytes) }
                 true
             }
             if (!ok) return
@@ -1015,31 +1174,36 @@ class Session(app: Application) : AndroidViewModel(app) {
                 avatarEpoch++
             }
         } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
             Log.e("swun", "avatar", e)
         }
     }
 
-    private fun persistSession(user: String, pass: String) {
+    private fun persistSession(user: String, pass: String) = requests.commit {
         creds.username = user
         creds.password = pass
         accounts.upsert(user, lantu.profile().name, pass)
         cookieFile.writeText(CampusHttp.exportCookies())
+        prefs.edit().putBoolean("loggedOut", false).commit()
     }
 
-    private fun ensureCas() {
-        if (cas.hasTgt() || cas.tgtAlive()) return
+    private fun ensureCas() = synchronized(casLock) {
+        RequestCancellation.check()
+        if (cas.hasTgt() || cas.tgtAlive()) return@synchronized
         val id = studentId.ifBlank { accounts.currentId }.ifBlank { creds.username }
         val pwd = accounts.password(id).ifBlank { creds.password }
         if (id.isBlank() || pwd.isBlank()) error("统一身份已过期，请重新登录")
         cas.login(id, pwd)
-        cookieFile.writeText(CampusHttp.exportCookies())
+        requests.commit { cookieFile.writeText(CampusHttp.exportCookies()) }
     }
 
     private fun ktkqTokenKey() = "ktkqToken_${studentId.ifBlank { accounts.currentId }}"
     private fun ktkqTermKey() = "ktkqXnxqdm_${studentId.ifBlank { accounts.currentId }}"
     private fun ktkqTermNameKey() = "ktkqXnxqmc_${studentId.ifBlank { accounts.currentId }}"
 
-    private fun ensureKtkq() {
+    private fun ensureKtkq() = synchronized(ktkqLock) {
+        RequestCancellation.check()
         ensureCas()
         ktkqClient.attachCas(cas)
         if (ktkqClient.token.isNullOrEmpty()) {
@@ -1050,13 +1214,16 @@ class Session(app: Application) : AndroidViewModel(app) {
         }
         if (ktkqClient.token.isNullOrEmpty()) {
             ktkqClient.loginWithCas(cas)
-            prefs.edit().putString(ktkqTokenKey(), ktkqClient.token.orEmpty()).apply()
+            requests.commit {
+                prefs.edit().putString(ktkqTokenKey(), ktkqClient.token.orEmpty()).apply()
+            }
         }
     }
 
     private fun gyTokenKey() = "gyToken_${studentId.ifBlank { accounts.currentId }}"
 
-    private fun ensureGy() {
+    private fun ensureGy() = synchronized(gyLock) {
+        RequestCancellation.check()
         ensureCas()
         gy.attachCas(cas)
         gy.username = studentId.ifEmpty { gy.username }
@@ -1069,8 +1236,10 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     private fun persistCookieFile() {
         try {
-            cookieFile.writeText(CampusHttp.exportCookies())
-        } catch (_: Exception) {
+            requests.commit { cookieFile.writeText(CampusHttp.exportCookies()) }
+        } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
         }
     }
 

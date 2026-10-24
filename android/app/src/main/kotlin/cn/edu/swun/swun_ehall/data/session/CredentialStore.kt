@@ -10,39 +10,48 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class CredentialStore(app: Context) {
+interface AccountCredentials {
+    var username: String
+    var password: String
+    fun passwordFor(id: String): String
+    fun setPasswordFor(id: String, value: String)
+    fun removePasswordFor(id: String)
+    fun clearPassword()
+}
+
+class CredentialStore(app: Context) : AccountCredentials {
     private val prefs = app.getSharedPreferences("swun_session", 0)
 
-    var username: String
+    override var username: String
         get() = prefs.getString("user", "").orEmpty()
         set(value) {
             prefs.edit().putString("user", value).apply()
         }
 
-    var password: String
+    override var password: String
         get() = decrypt(prefs.getString("pass_blob", "").orEmpty())
         set(value) {
             prefs.edit().putString("pass_blob", encrypt(value)).apply()
         }
 
-    fun passwordFor(id: String): String {
+    override fun passwordFor(id: String): String {
         val key = "pass_blob_${id.trim()}"
         val blob = prefs.getString(key, "").orEmpty()
         if (blob.isNotEmpty()) return decrypt(blob)
         return if (id.trim() == username) password else ""
     }
 
-    fun setPasswordFor(id: String, value: String) {
+    override fun setPasswordFor(id: String, value: String) {
         prefs.edit().putString("pass_blob_${id.trim()}", encrypt(value)).apply()
         if (id.trim() == username) password = value
     }
 
-    fun removePasswordFor(id: String) {
+    override fun removePasswordFor(id: String) {
         prefs.edit().remove("pass_blob_${id.trim()}").apply()
         if (id.trim() == username) clearPassword()
     }
 
-    fun clearPassword() {
+    override fun clearPassword() {
         prefs.edit().remove("pass_blob").apply()
     }
 

@@ -21,6 +21,12 @@ class GyClient(private val rs: RsGateway) {
     var onToken: ((String) -> Unit)? = null
     private var cas: CasClient? = null
 
+    fun reset() {
+        token = null
+        username = null
+        cas = null
+    }
+
     fun attachCas(c: CasClient) {
         cas = c
     }
@@ -128,6 +134,14 @@ class GyClient(private val rs: RsGateway) {
         val sep = if (path.contains('?')) "&" else "?"
         val url = "$K_GY$path${sep}t=${System.currentTimeMillis()}"
         val hit = rs.call(method, url, headers(), body)
+        when (CampusHttp.classifyResponse(hit.status, hit.body)) {
+            CampusResponseIssue.PortalClosed -> error("公寓系统夜间关闭或不在服务时间")
+            CampusResponseIssue.GatewayBlocked -> error("公寓系统仍被网关拦截")
+            CampusResponseIssue.AuthenticationExpired -> Unit
+            CampusResponseIssue.NetworkFailure -> error("请求失败，请检查网络连接")
+            CampusResponseIssue.HttpFailure -> error("公寓 HTTP ${hit.status}")
+            null -> Unit
+        }
         val map = try {
             hit.asJson()
         } catch (_: Exception) {
