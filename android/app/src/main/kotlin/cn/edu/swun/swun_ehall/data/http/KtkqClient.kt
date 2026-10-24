@@ -180,7 +180,7 @@ class KtkqClient(private val rs: RsGateway) {
             weekCourses(week = week, refresh = refresh)
         } catch (e: Exception) {
             Log.w("swun", "[ktkq] week for sign $e")
-            if (ktkqLooksAuthError(e)) throw e
+            if (ktkqLooksAuthError(e) || ktkqLooksPortalClosed(e)) throw e
             KtkqWeek()
         }
         if (weekData.flatten().isEmpty()) {
@@ -188,7 +188,7 @@ class KtkqClient(private val rs: RsGateway) {
                 weekData = weekCourses(week = week, refresh = true)
             } catch (e: Exception) {
                 Log.w("swun", "[ktkq] week retry $e")
-                if (ktkqLooksAuthError(e)) throw e
+                if (ktkqLooksAuthError(e) || ktkqLooksPortalClosed(e)) throw e
             }
         }
         val weekNum = week ?: weekData.week
@@ -753,6 +753,13 @@ fun ktkqXnxqdmNow(now: Calendar = Calendar.getInstance()): String {
 fun ktkqLooksAuthError(e: Throwable): Boolean {
     val s = e.message.orEmpty() + e.toString()
     return s.contains("认证失败") || s.contains("未登录") || s.contains("登录过期") || s.contains("课堂考勤认证失败")
+}
+
+fun ktkqLooksPortalClosed(e: Throwable): Boolean {
+    val s = e.message.orEmpty() + e.toString()
+    return s.contains("课堂考勤夜间关闭") ||
+        s.contains("夜间关闭") ||
+        s.contains("不在服务时间")
 }
 
 fun truthyKq(v: Any?): Boolean = v == true || v == 1 || v == "1" || v == "true"

@@ -176,7 +176,9 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
     LaunchedEffect(activityId, session.loggedIn, session.demoMode) {
         if (slot == null) {
             loading = false
-            error = "没有这个签到活动"
+            error = session.loadHint?.takeIf {
+                it.contains("课堂考勤夜间关闭") || it.contains("不在服务时间")
+            } ?: "没有这个签到活动"
             return@LaunchedEffect
         }
         reload()

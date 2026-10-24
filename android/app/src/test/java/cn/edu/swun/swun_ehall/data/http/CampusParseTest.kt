@@ -27,6 +27,12 @@ class CampusParseTest {
     }
 
     @Test
+    fun ktkqPortalClosedIsNotTreatedAsMissingClass() {
+        assertTrue(ktkqLooksPortalClosed(IllegalStateException("课堂考勤夜间关闭或不在服务时间")))
+        assertFalse(ktkqLooksPortalClosed(IllegalStateException("课堂考勤没有这节课")))
+    }
+
+    @Test
     fun parseApkAssetNameReadsVersionCode() {
         assertEquals(
             cn.edu.swun.swun_ehall.data.update.ApkAssetMeta("1.0.5", 0),
