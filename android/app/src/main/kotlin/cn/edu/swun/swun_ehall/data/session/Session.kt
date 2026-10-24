@@ -100,6 +100,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     var yktQr by mutableStateOf<String?>(null)
     var yktError by mutableStateOf<String?>(null)
     var loadHint by mutableStateOf<String?>(null)
+    var clockError by mutableStateOf<String?>(null)
     var curWeek by mutableStateOf(1)
     var totalWeek by mutableStateOf(16)
     var week1Monday by mutableStateOf<java.time.LocalDate?>(null)
@@ -268,6 +269,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         credits = null
         yktQr = null
         yktError = null
+        clockError = null
         xkPanel = emptyMap()
         xkProfile = emptyMap()
         curWeek = 1
@@ -868,36 +870,27 @@ class Session(app: Application) : AndroidViewModel(app) {
         if (demoMode) {
             clockRecords.clear(); clockRecords.addAll(DemoData.clockRecords)
             clockFences.clear(); clockFences.addAll(DemoData.clockFences)
+            clockError = null
             return
         }
         accountIo("clock") {
+            withContext(Dispatchers.Main) { clockError = null }
             try {
                 ensureGy()
-                var hint: String? = null
-                val rec = try {
-                    gy.records()
-                } catch (e: Exception) {
-                    if (e is java.util.concurrent.CancellationException) throw e
-                    RequestCancellation.check()
-                    Log.e("swun", "clock", e)
-                    hint = publicError(e)
-                    null
-                }
+                val rec = gy.records()
                 val fences = gy.positions()
                 withContext(Dispatchers.Main) {
-                    if (hint != null) loadHint = hint
-                    if (rec != null) {
-                        clockRecords.clear()
-                        clockRecords.addAll(rec)
-                    }
+                    clockRecords.clear()
+                    clockRecords.addAll(rec)
                     clockFences.clear()
                     clockFences.addAll(fences)
+                    clockError = null
                 }
             } catch (e: Exception) {
                 if (e is java.util.concurrent.CancellationException) throw e
                 RequestCancellation.check()
                 Log.e("swun", "clock", e)
-                withContext(Dispatchers.Main) { loadHint = publicError(e) }
+                withContext(Dispatchers.Main) { clockError = publicError(e) }
             }
         }
     }

@@ -116,7 +116,7 @@ fun ClockScreen(session: Session, nav: NavHostController) {
                 }
             }
             CampusMap(me, session.clockFences.toList(), modifier = Modifier.padding(top = 12.dp))
-            session.loadHint?.let { FeatureHint(it, error = true) }
+            session.clockError?.let { FeatureHint(it, error = true) }
             msg?.let { FeatureHint(it) }
             FeatureSection("最近记录")
             Card(modifier = Modifier.fillMaxWidth()) {
