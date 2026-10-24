@@ -104,7 +104,12 @@ class GyClient(private val rs: RsGateway) {
         val uid = studentNo()
         val json = try {
             api("GET", "/appao/appApi/getMobileScheduleByDate?userId=$uid")
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            val message = e.message.orEmpty()
+            if (message.contains("夜间关闭") || message.contains("不在服务时间") ||
+                message.contains("网关拦截")
+            ) throw e
             return null
         }
         val list = json.optJSONArray("list") ?: return null

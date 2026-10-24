@@ -1068,8 +1068,12 @@ class Session(app: Application) : AndroidViewModel(app) {
         }
         return accountIo {
             ensureGy()
+            // Going through the positions API first primes the apartment host's WAF session.
+            // The campus-fence button already did this as part of campusFence(); keep both
+            // punch paths on the same request sequence.
+            val positions = gy.positions()
             val (lat, lng, address) = if (useCampusFence) {
-                val f = gy.campusFence() ?: DemoData.clockFence
+                val f = positions.firstOrNull()?.let { it.latitude to it.longitude } ?: DemoData.clockFence
                 Triple(f.first, f.second, "西南民族大学（校内）")
             } else {
                 val fix = withContext(Dispatchers.Main) { locateCampus() }
