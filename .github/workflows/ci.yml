@@ -68,28 +68,34 @@ jobs:
         run: ./gradlew :app:assembleRelease
       - name: Name artifacts
         run: |
-          mkdir -p dist
-          DEBUG=$(find android/app/build/outputs/apk -name '*debug*.apk' | head -1)
-          cp "$DEBUG" dist/swun_ehall-debug-arm64.apk
-          REL=$(find android/app/build/outputs/apk -name '*release*.apk' | head -1 || true)
-          if [ -n "$REL" ] && [ -f "$REL" ]; then
-            cp "$REL" dist/swun_ehall-release-arm64.apk
-          fi
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            ver="${GITHUB_REF_NAME#v}"
-            mv dist/swun_ehall-debug-arm64.apk "dist/swun_ehall-${ver}-arm64-debug.apk"
-            if [ -f dist/swun_ehall-release-arm64.apk ]; then
-              mv dist/swun_ehall-release-arm64.apk "dist/swun_ehall-${ver}-arm64-release.apk"
-            fi
-          fi
+          python3 - <<'PY'
+          import json
+          import os
+          import shutil
+          from pathlib import Path
+          dist = Path("dist")
+          dist.mkdir(exist_ok=True)
+          tagged = os.environ["GITHUB_REF"].startswith("refs/tags/v")
+          for mode in (("debug", "release") if tagged else ("debug",)):
+              folder = Path("android/app/build/outputs/apk") / mode
+              meta = json.loads((folder / "output-metadata.json").read_text())
+              element, = meta["elements"]
+              suffix = f"{element['versionName']}-{element['versionCode']}-" if tagged else ""
+              if tagged and element["versionName"] != os.environ["GITHUB_REF_NAME"][1:]:
+                  raise SystemExit("APK version does not match release tag")
+              shutil.copyfile(folder / element["outputFile"], dist / f"swun_ehall-{suffix}arm64-{mode}.apk")
+          PY
           ls -lh dist
       - name: Release notes from CHANGELOG
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           python3 - <<'PY'
+          import json
           import os
           from pathlib import Path
           ver = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          meta = json.loads(Path("android/app/build/outputs/apk/release/output-metadata.json").read_text())
+          code = meta["elements"][0]["versionCode"]
           lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
           start = next((i for i, l in enumerate(lines) if l.strip() == f"## {ver}"), None)
           notes = ""
@@ -112,8 +118,8 @@ jobs:
               [
                   "## 下载 | Downloads",
                   "",
-                  f"- `swun_ehall-{ver}-arm64-release.apk` — 正式包 / Release",
-                  f"- `swun_ehall-{ver}-arm64-debug.apk` — 调试包 / Debug",
+                  f"- `swun_ehall-{ver}-{code}-arm64-release.apk` — 正式包 / Release",
+                  f"- `swun_ehall-{ver}-{code}-arm64-debug.apk` — 调试包 / Debug",
                   "",
                   "仅学生账号 · Student accounts only",
                   "非官方应用 · Unofficial app",

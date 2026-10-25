@@ -4,6 +4,7 @@
 
 ### 更新内容
 
+- 重发修复版（versionCode 12）：修复课堂考勤冷启动恢复时登录会话未同步、重载后请求凭证未更新导致的持续网关拦截；公共修复覆盖公寓和一卡通，校验日志不再记录完整凭证。
 - 公共瑞数网关复用页面校验环境，减少课堂考勤、公寓和一卡通请求的重复校验；首次加载或校验失效时自动回退。
 - 课堂签到优先显示签到状态，再加载教师和历史记录，减少重复课表请求。
 - 统一操作提示：简短结果使用 Toast，错误和详细结果使用弹窗；使用说明和空状态保留在页面上。
@@ -15,6 +16,7 @@
 
 ### What's New
 
+- Reissued as versionCode 12: restore login cookies before cold-start gateway recovery and sign the actual API request after reloading. The shared fix also covers apartment and campus-card requests, and verification logs no longer include full credentials.
 - Reuse the Ruishu verification runtime across attendance, apartment, and campus-card requests, with fallback when initialization or verification is needed.
 - Show classroom sign-in status before loading teachers and history, and avoid redundant timetable requests.
 - Use Toasts for short results and dialogs for errors or detailed results; keep usage guidance and empty states on the page.
