@@ -194,11 +194,11 @@ object CampusHttp {
             if (resp.code == 412) {
                 val waf = cookies.loadForRequest(req.url)
                     .filter { isWafCookieName(it.name) }
-                    .joinToString("; ") { "${it.name}=${it.value}" }
+                    .joinToString("; ") { "${it.name}:${it.value.length}" }
                 val set = resp.headers("Set-Cookie").mapNotNull { header ->
                     val pair = header.substringBefore(';')
                     val name = pair.substringBefore('=')
-                    if (!isWafCookieName(name)) null else pair
+                    if (!isWafCookieName(name)) null else "$name:${pair.substringAfter('=', "").length}"
                 }.joinToString("; ")
                 SwunLog.w("瑞数412 ${resp.protocol} ${req.url.encodedPath} cookie=[$waf] set=[$set]")
             }

@@ -76,7 +76,7 @@ class RsJsBridge {
         if (name.isEmpty() || name.any { !it.isLetterOrDigit() && it != '_' }) return
         val len = value.length
         val ms = if (traceStartNs == 0L) 0 else (System.nanoTime() - traceStartNs) / 1_000_000
-        synchronized(writes) { writes.add("#${writes.size + 1} $name=$value @${ms}ms") }
+        synchronized(writes) { writes.add("#${writes.size + 1} $name:${len} @${ms}ms") }
         lastWriteNs = System.nanoTime()
         if (name.startsWith("enable")) {
             enableName = name
@@ -241,7 +241,7 @@ class RsGateway(private val app: Context) {
                 val sent = url.toHttpUrlOrNull()?.let { http ->
                     CampusHttp.cookies.loadForRequest(http)
                         .filter { CampusHttp.isWafCookieName(it.name) }
-                        .joinToString("; ") { "${it.name}=${it.value}" }
+                        .joinToString("; ") { "${it.name}:${it.value.length}" }
                 }.orEmpty()
                 SwunLog.w("瑞数沿用 $path [$sent]")
                 SwunLog.took(httpAt, "$method $path 沿用cookie HTTP ${reused?.status ?: 0} ${reused?.body?.length ?: 0}b")
@@ -977,6 +977,10 @@ class RsGateway(private val app: Context) {
 
     /** 脚本本轮写完并要跳转时返回，不再跟着 location.replace 重载。 */
     private fun awaitCookie(slot: RsSlot, page: String, staleP: Set<String>): Boolean {
+        // Disk-restored native sessions must reach WebView before a cold challenge load.
+        pushCookies(page)
+        pushCookies("https://authserver.swun.edu.cn/")
+        pushCookies("https://authserver.swun.edu.cn/authserver/")
         slot.bridge.beginTrace()
         val ready = CountDownLatch(1)
         slot.bridge.readyLatch = ready
@@ -1014,6 +1018,12 @@ class RsGateway(private val app: Context) {
         body: String?,
         path: String,
     ): RsHit? {
+        // A page-load P is not necessarily signed for this API request.
+        val preparedAt = System.nanoTime()
+        if (prepareRequest(slot, method, url)) {
+            SwunLog.took(preparedAt, "$method $path 重载后更新请求凭证")
+            return dioOnce(method, url, headers, body)
+        }
         val sample = slot.bridge.samples().lastOrNull() ?: return null
         val jar = collectWaf(listOf(page))
         val oName = jar.keys.firstOrNull { it.endsWith("O") } ?: return null
@@ -1022,7 +1032,7 @@ class RsGateway(private val app: Context) {
         val pairs = linkedMapOf(oName to oValue, sample.name to sample.value)
         if (sample.enableName.isNotEmpty() && sample.enable.isNotEmpty()) pairs[sample.enableName] = sample.enable
         putExact(host, page, pairs)
-        SwunLog.w("瑞数发送 $path [" + pairs.entries.joinToString("; ") { "${it.key}=${it.value}" } + "]")
+        SwunLog.w("瑞数发送 $path [" + pairs.entries.joinToString("; ") { "${it.key}:${it.value.length}" } + "]")
         val httpAt = System.nanoTime()
         val hit = dioOnce(method, url, headers, body)
         SwunLog.took(httpAt, "$method $path 接口 P:${sample.value.length} HTTP ${hit?.status ?: 0} ${hit?.body?.length ?: 0}b")
