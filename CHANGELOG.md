@@ -1,5 +1,29 @@
 # 更新说明 | Changelog
 
+## 1.1.0
+
+### 更新内容
+
+- 公共瑞数网关复用页面校验环境，减少课堂考勤、公寓和一卡通请求的重复校验；首次加载或校验失效时自动回退。
+- 课堂签到优先显示签到状态，再加载教师和历史记录，减少重复课表请求。
+- 统一操作提示：简短结果使用 Toast，错误和详细结果使用弹窗；使用说明和空状态保留在页面上。
+- 提示按页面和账号隔离，离开页面时清理积压提示，避免重复弹出或跨页面残留。
+- 改进夜间关闭、登录失效和网关错误的识别与展示，公寓、考勤和选课错误分别处理。
+- 公寓两种打卡方式统一先获取围栏，再查询任务并提交。
+- 修复选课页重复加载课程，以及相同关键词无法重新搜索的问题。
+- 改进账号切换时的请求取消与会话清理、课表和教师信息加载，并补充回归测试。
+
+### What's New
+
+- Reuse the Ruishu verification runtime across attendance, apartment, and campus-card requests, with fallback when initialization or verification is needed.
+- Show classroom sign-in status before loading teachers and history, and avoid redundant timetable requests.
+- Use Toasts for short results and dialogs for errors or detailed results; keep usage guidance and empty states on the page.
+- Scope notices to each screen and account, and discard queued notices when leaving a screen.
+- Improve service-closure, expired-login, and gateway error handling, with separate errors for apartment, attendance, and course selection.
+- Fetch apartment fences before looking up the task and submitting through either punch mode.
+- Fix duplicate course-selection loading and allow retrying the same search keyword.
+- Improve request cancellation and session cleanup during account switching, timetable and teacher loading, and regression coverage.
+
 ## 1.0.9
 
 ### 更新内容
