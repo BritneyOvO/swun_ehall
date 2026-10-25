@@ -44,6 +44,9 @@ import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Mutex
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -60,6 +63,11 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
     var locating by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<SignActivity?>(null) }
+    var extrasLoading by remember { mutableStateOf(false) }
+    var extrasError by remember { mutableStateOf<String?>(null) }
+    var extrasJob by remember { mutableStateOf<Job?>(null) }
+    var reloadVersion by remember { mutableStateOf(0) }
+    val reloadMutex = remember { Mutex() }
     var pos by remember { mutableStateOf<GeoFix?>(null) }
     var locError by remember { mutableStateOf<String?>(null) }
     var punchingId by remember { mutableStateOf<String?>(null) }
@@ -80,6 +88,7 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
             locError = null
             if (fix.accuracy > 80) toast("精度偏大，教室里建议打开 Wi‑Fi 后再定位")
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (pos == null) locError = e.message ?: "定位失败，请打开系统定位后重试"
         } finally {
             locating = false
@@ -87,17 +96,40 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
     }
 
     suspend fun reload(refresh: Boolean = false) {
-        val base = slot ?: return
+        val base = info ?: slot ?: return
+        if (!reloadMutex.tryLock()) return
+        val version = ++reloadVersion
+        extrasJob?.cancel()
         loading = true
         error = null
+        extrasError = null
         try {
-            info = session.signForLesson(base, refresh = refresh)
+            val current = session.signForLesson(base, refresh = refresh)
+            info = current
+            loading = false
+            extrasLoading = true
+            if (!locating) scope.launch { locate() }
+            extrasJob = scope.launch {
+                try {
+                    val extra = session.ktkqSignExtras(current)
+                    if (version == reloadVersion) info = extra
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    if (version == reloadVersion) {
+                        extrasError = e.message?.removePrefix("Exception: ") ?: "记录加载失败"
+                    }
+                } finally {
+                    if (version == reloadVersion) extrasLoading = false
+                }
+            }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             error = e.message?.removePrefix("Exception: ") ?: "加载失败"
         } finally {
             loading = false
+            if (error != null) extrasLoading = false
+            reloadMutex.unlock()
         }
-        locate()
     }
 
     suspend fun punch(
@@ -271,7 +303,11 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
                     }
                 }
                 FeatureSection("本课记录")
-                if (data.history.isEmpty()) {
+                if (extrasLoading) {
+                    FeatureHint("正在加载本课记录…")
+                } else if (extrasError != null) {
+                    FeatureHint(extrasError!!, error = true)
+                } else if (data.history.isEmpty()) {
                     FeatureHint("暂无签到记录")
                 } else {
                     Card(modifier = Modifier.fillMaxWidth()) {

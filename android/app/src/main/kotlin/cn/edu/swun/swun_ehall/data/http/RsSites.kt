@@ -5,7 +5,7 @@ package cn.edu.swun.swun_ehall.data.http
  *
  * 1. unlock — 打开首页，瑞数 cookie 由页面自己维护
  * 2. open   — 推 CASTGC，加载 URL（可过 CAS），等到 [RsWait]
- * 3. call   — 每次请求都用该站共用 WebView 重新打开挑战页，只拿这一次新写的 cookie 发一次 OkHttp，用完即删。公寓挑战页是 /wxweb/，考勤是 /jwmobile/index
+ * 3. call   — 各站优先在自己的已加载 WebView 中更新请求凭证，再用 OkHttp 请求；脚本不支持或网关拒绝时重载挑战页。公寓挑战页是 /wxweb/，考勤是 /jwmobile/index
  * 4. token  — 跳转 URL / Cookie / localStorage
  * [RsGateway.followSso] 把 CAS ticket 和 1–4 串起来。
  */

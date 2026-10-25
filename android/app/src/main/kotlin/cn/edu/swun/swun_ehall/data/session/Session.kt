@@ -787,8 +787,27 @@ class Session(app: Application) : AndroidViewModel(app) {
     suspend fun signForLesson(slot: SignActivity, refresh: Boolean = false): SignActivity {
         if (demoMode) return DemoData.signFor(slot)
         return accountIo {
+            val started = System.nanoTime()
             ensureKtkq()
-            ktkqClient.signForLesson(slot, week = slot.week.takeIf { it > 0 } ?: ktkqWeekNum, refresh = refresh)
+            val teacher = slot.teacher.ifBlank {
+                schedule.firstOrNull {
+                    it.name == slot.course && it.weekday == slot.weekDay && it.start == slot.startNode
+                }?.teacher.orEmpty()
+            }
+            ktkqClient.signForLesson(
+                slot.copy(teacher = teacher),
+                week = slot.week.takeIf { it > 0 } ?: ktkqWeekNum,
+                refresh = refresh,
+                includeExtras = false,
+            ).also { SwunLog.took(started, "课堂签到活动可用") }
+        }
+    }
+
+    suspend fun ktkqSignExtras(slot: SignActivity): SignActivity {
+        if (demoMode) return slot
+        return accountIo {
+            ensureKtkq()
+            ktkqClient.signExtras(slot)
         }
     }
 

@@ -141,6 +141,7 @@ class KtkqClient(private val rs: RsGateway) {
                 xnxqdm = pickKtkqXnxqdm(data, emptyList())
             } catch (e: Exception) {
                 Log.w("swun", "[ktkq] schoolTime $e")
+                rethrowKtkqFailure(e)
             }
             if (xnxqdm.isEmpty()) {
                 try {
@@ -149,6 +150,7 @@ class KtkqClient(private val rs: RsGateway) {
                     xnxqdm = pickKtkqXnxqdm(data, rows)
                 } catch (e: Exception) {
                     Log.w("swun", "[ktkq] termList $e")
+                    rethrowKtkqFailure(e)
                 }
             }
             if (xnxqdm.isEmpty()) xnxqdm = ktkqXnxqdmNow()
@@ -175,22 +177,20 @@ class KtkqClient(private val rs: RsGateway) {
         }
     }
 
-    fun signForLesson(lesson: SignActivity, week: Int? = null, refresh: Boolean = false): SignActivity {
-        var weekData = try {
+    fun signForLesson(
+        lesson: SignActivity,
+        week: Int? = null,
+        refresh: Boolean = false,
+        includeExtras: Boolean = true,
+    ): SignActivity {
+        // A complete slot can query live attendance directly, even on manual refresh.
+        val weekData = if (ktkqIdsOf(lesson).incomplete) try {
             weekCourses(week = week, refresh = refresh)
         } catch (e: Exception) {
             Log.w("swun", "[ktkq] week for sign $e")
-            if (ktkqLooksAuthError(e) || ktkqLooksPortalClosed(e)) throw e
+            rethrowKtkqFailure(e)
             KtkqWeek()
-        }
-        if (weekData.flatten().isEmpty()) {
-            try {
-                weekData = weekCourses(week = week, refresh = true)
-            } catch (e: Exception) {
-                Log.w("swun", "[ktkq] week retry $e")
-                if (ktkqLooksAuthError(e) || ktkqLooksPortalClosed(e)) throw e
-            }
-        }
+        } else KtkqWeek(week = lesson.week.coerceAtLeast(1))
         val weekNum = week ?: weekData.week
         val slots = weekData.flatten()
         var hit = lesson
@@ -213,12 +213,18 @@ class KtkqClient(private val rs: RsGateway) {
                 history = emptyList(),
             )
         }
-        val probed = probeSlot(hit, weekNum)
+        val probed = probeSlot(hit, weekNum, includeTeacher = false)
+        return if (includeExtras) signExtras(probed) else probed
+    }
+
+    fun signExtras(item: SignActivity): SignActivity {
+        val probed = if (item.teacher.isBlank()) teacherDetail(item) else item
         val id = probed.teachClassId
         val history = if (id.isNotEmpty()) {
             try {
-                historyRows(studentHistory(id), probed.course.ifBlank { hit.course })
-            } catch (_: Exception) {
+                historyRows(studentHistory(id), probed.course)
+            } catch (e: Exception) {
+                rethrowKtkqFailure(e)
                 emptyList()
             }
         } else {
@@ -229,7 +235,7 @@ class KtkqClient(private val rs: RsGateway) {
 
     fun probe(activity: SignActivity): SignActivity = probeSlot(activity, activity.week.coerceAtLeast(1))
 
-    fun probeSlot(item: SignActivity, week: Int): SignActivity {
+    fun probeSlot(item: SignActivity, week: Int, includeTeacher: Boolean = true): SignActivity {
         val ids = ktkqIdsOf(item)
         val day = if (item.weekDay in 1..7) item.weekDay else 1
         val start = item.startNode
@@ -246,20 +252,7 @@ class KtkqClient(private val rs: RsGateway) {
         )
         if (ids.incomplete) return entry
         return try {
-            try {
-                val detail = post(
-                    "/jwmobile/biz/v410/schedule/queryScheduleDetail",
-                    JSONObject()
-                        .put("jxbid", ids.jxbid)
-                        .put("kbid", ids.kbid)
-                        .put("jxblx", ids.jxblx)
-                        .put("wid", ""),
-                )
-                val teachers = kqObjList(detail.optJSONObject("data")?.opt("teacherInfo"))
-                val xm = teachers.firstOrNull()?.kqStr("xm").orEmpty()
-                if (xm.isNotEmpty()) entry = entry.copy(teacher = xm)
-            } catch (_: Exception) {
-            }
+            if (includeTeacher && entry.teacher.isBlank()) entry = teacherDetail(entry)
             val current = post(
                 "/jwmobile/biz/v410/lesson/queryCurrentLesson",
                 JSONObject()
@@ -290,10 +283,29 @@ class KtkqClient(private val rs: RsGateway) {
                 title = pending?.title ?: entry.title,
             )
         } catch (e: Exception) {
+            rethrowKtkqFailure(e)
             entry.copy(
                 status = "inactive",
                 message = e.message?.removePrefix("Exception: ").orEmpty().ifBlank { ktkqStatusLabel("inactive") },
             )
+        }
+    }
+
+    private fun teacherDetail(item: SignActivity): SignActivity {
+        val ids = ktkqIdsOf(item)
+        if (ids.incomplete) return item
+        return try {
+            val detail = post(
+                "/jwmobile/biz/v410/schedule/queryScheduleDetail",
+                JSONObject().put("jxbid", ids.jxbid).put("kbid", ids.kbid)
+                    .put("jxblx", ids.jxblx).put("wid", ""),
+            )
+            val name = kqObjList(detail.optJSONObject("data")?.opt("teacherInfo"))
+                .firstOrNull()?.kqStr("xm").orEmpty()
+            if (name.isNotBlank()) item.copy(teacher = name) else item
+        } catch (e: Exception) {
+            rethrowKtkqFailure(e)
+            item
         }
     }
 
@@ -349,12 +361,14 @@ class KtkqClient(private val rs: RsGateway) {
             try {
                 query = post("/jwmobile/biz/v410/signin/querySigninDetail", JSONObject().put("activityId", id))
                     .optJSONObject("data") ?: JSONObject()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                rethrowKtkqFailure(e)
             }
             try {
                 detail = post("/jwmobile/biz/v410/signin/detail", JSONObject().put("activityId", id))
                     .optJSONObject("data") ?: JSONObject()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                rethrowKtkqFailure(e)
             }
         }
         val status = ktkqActivityStatus(activity, query, detail)
@@ -760,6 +774,12 @@ fun ktkqLooksPortalClosed(e: Throwable): Boolean {
     return s.contains("课堂考勤夜间关闭") ||
         s.contains("夜间关闭") ||
         s.contains("不在服务时间")
+}
+
+internal fun rethrowKtkqFailure(e: Exception) {
+    if (e is java.util.concurrent.CancellationException) throw e
+    RequestCancellation.check()
+    if (ktkqLooksAuthError(e) || ktkqLooksPortalClosed(e) || e.message.orEmpty().contains("网关")) throw e
 }
 
 fun truthyKq(v: Any?): Boolean = v == true || v == 1 || v == "1" || v == "true"

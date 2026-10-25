@@ -33,6 +33,23 @@ class CampusParseTest {
     }
 
     @Test
+    fun attendanceFallbacksPropagateClosureAuthenticationAndGatewayFailures() {
+        for (message in listOf("课堂考勤夜间关闭或不在服务时间", "课堂考勤认证失败", "网关仍被拦截")) {
+            val failure = IllegalStateException(message)
+            val actual = runCatching { rethrowKtkqFailure(failure) }.exceptionOrNull()
+            org.junit.Assert.assertSame(failure, actual)
+        }
+        rethrowKtkqFailure(IllegalStateException("可选教师详情暂不可用"))
+    }
+
+    @Test
+    fun attendanceFallbacksNeverSwallowAccountCancellation() {
+        val failure = java.util.concurrent.CancellationException("账号会话已切换")
+        val actual = runCatching { rethrowKtkqFailure(failure) }.exceptionOrNull()
+        org.junit.Assert.assertSame(failure, actual)
+    }
+
+    @Test
     fun parseApkAssetNameReadsVersionCode() {
         assertEquals(
             cn.edu.swun.swun_ehall.data.update.ApkAssetMeta("1.0.5", 0),

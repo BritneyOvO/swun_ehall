@@ -232,7 +232,10 @@ class RsGateway(private val app: Context) {
             val page = challengePage(url)
             val retryHeaders = LinkedHashMap(headers)
             if (retryHeaders.keys.none { it.equals("Referer", true) }) retryHeaders["Referer"] = page
-            if (wafReady(s, url)) {
+            val prepareAt = System.nanoTime()
+            val prepared = prepareRequest(s, method, url)
+            SwunLog.took(prepareAt, "$method $path 更新请求凭证=$prepared")
+            if (prepared || wafReady(s, url)) {
                 val httpAt = System.nanoTime()
                 val reused = dioOnce(method, url, retryHeaders, body)
                 val sent = url.toHttpUrlOrNull()?.let { http ->
@@ -939,6 +942,36 @@ class RsGateway(private val app: Context) {
         val http = url.toHttpUrlOrNull() ?: return false
         return CampusHttp.cookies.loadForRequest(http).any {
             CampusHttp.isWafCookieName(it.name) && it.name.endsWith("P") && it.value.length >= 300
+        }
+    }
+
+    /** Opening an unsent XHR lets the loaded site's script sign this request. */
+    private fun prepareRequest(slot: RsSlot, method: String, url: String): Boolean {
+        val http = url.toHttpUrlOrNull() ?: return false
+        if (slot.loading || slot.lastUrl.toHttpUrlOrNull()?.host != http.host) return false
+        val page = challengePage(url)
+        return try {
+            val raw = jsCall(slot, """
+                (function(){
+                  if (location.origin !== ${JSONObject.quote("https://${http.host}")}) return '{}';
+                  var before = document.cookie;
+                  var xhr = new XMLHttpRequest();
+                  xhr.open(${JSONObject.quote(method.uppercase())}, ${JSONObject.quote(http.encodedPath + if (http.encodedQuery != null) "?${http.encodedQuery}" else "")}, true);
+                  xhr.abort();
+                  return JSON.stringify({before: before, after: document.cookie});
+                })();
+            """.trimIndent(), 2_000)
+            if (raw.isBlank()) return false
+            val snapshot = JSONObject(raw)
+            val stored = collectWaf(listOf("https://${http.host}/"))
+                .mapValues { it.value.lastOrNull().orEmpty() }
+            val pairs = rsRequestCookies(snapshot.optString("before"), snapshot.optString("after"), stored)
+                ?: return false
+            putExact(http.host, page, pairs) > 0
+        } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
+            false
         }
     }
 
