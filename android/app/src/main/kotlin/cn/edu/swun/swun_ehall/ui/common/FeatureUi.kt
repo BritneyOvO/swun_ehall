@@ -82,15 +82,14 @@ fun FeatureLoading(card: Boolean = true) {
 }
 
 @Composable
-fun FeatureHint(text: String, error: Boolean = false) {
+fun FeatureHint(text: String) {
     val cs = MiuixTheme.colorScheme
-    Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
-        Text(
-            text,
-            modifier = Modifier.padding(16.dp),
-            color = if (error) cs.error else cs.onSurfaceVariantSummary,
-        )
-    }
+    Text(
+        text,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 28.dp),
+        color = cs.onSurfaceVariantSummary,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
 }
 
 @Composable

@@ -101,6 +101,8 @@ class Session(app: Application) : AndroidViewModel(app) {
     var yktError by mutableStateOf<String?>(null)
     var loadHint by mutableStateOf<String?>(null)
     var clockError by mutableStateOf<String?>(null)
+    var ktkqError by mutableStateOf<String?>(null)
+    var xkError by mutableStateOf<String?>(null)
     var curWeek by mutableStateOf(1)
     var totalWeek by mutableStateOf(16)
     var week1Monday by mutableStateOf<java.time.LocalDate?>(null)
@@ -186,6 +188,8 @@ class Session(app: Application) : AndroidViewModel(app) {
         loggedIn = true
         error = null
         loadHint = null
+        ktkqError = null
+        xkError = null
         profile = DemoData.profile
         displayName = profile.name
         studentId = profile.studentId
@@ -258,6 +262,8 @@ class Session(app: Application) : AndroidViewModel(app) {
     private fun clearAccountData() {
         lastPunch = null
         loadHint = null
+        ktkqError = null
+        xkError = null
         displayName = "同学"
         profile = Profile()
         schedule.clear(); grades.clear(); exams.clear(); ktkq.clear(); ktkqCourses.clear()
@@ -592,6 +598,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             return
         }
         accountIo("selection") {
+            withContext(Dispatchers.Main) { xkError = null }
             try {
                 ensureCas()
                 jwxt.attachCas(cas)
@@ -601,13 +608,13 @@ class Session(app: Application) : AndroidViewModel(app) {
                     xkRounds.clear()
                     xkRounds.addAll(rounds)
                     xkProfile = profile
-                    if (rounds.isEmpty()) loadHint = "当前没有开放的选课轮次"
+                    xkError = null
                 }
             } catch (e: Exception) {
                 if (e is java.util.concurrent.CancellationException) throw e
                 RequestCancellation.check()
                 Log.e("swun", "xk", e)
-                withContext(Dispatchers.Main) { loadHint = publicError(e) }
+                withContext(Dispatchers.Main) { xkError = publicError(e) }
             }
         }
     }
@@ -619,6 +626,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             return
         }
         accountIo {
+            withContext(Dispatchers.Main) { xkError = null }
             try {
                 ensureCas()
                 jwxt.attachCas(cas)
@@ -633,7 +641,7 @@ class Session(app: Application) : AndroidViewModel(app) {
                 if (e is java.util.concurrent.CancellationException) throw e
                 RequestCancellation.check()
                 Log.e("swun", "xk courses", e)
-                withContext(Dispatchers.Main) { loadHint = publicError(e) }
+                withContext(Dispatchers.Main) { xkError = publicError(e) }
             }
         }
     }
@@ -725,6 +733,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             return
         }
         accountIo("ktkq:" + force) {
+            withContext(Dispatchers.Main) { ktkqError = null }
             try {
                 ensureKtkq()
                 val weekNum = curWeek.takeIf { it > 0 }
@@ -740,7 +749,7 @@ class Session(app: Application) : AndroidViewModel(app) {
                         .apply()
                 }
                 withContext(Dispatchers.Main) {
-                    loadHint = null
+                    ktkqError = null
                     applyKtkqWeek(week)
                     if (patched.any { it.teacher.isNotEmpty() }) {
                         schedule.clear()
@@ -751,7 +760,7 @@ class Session(app: Application) : AndroidViewModel(app) {
                 if (e is java.util.concurrent.CancellationException) throw e
                 RequestCancellation.check()
                 Log.e("swun", "ktkq", e)
-                withContext(Dispatchers.Main) { loadHint = publicError(e) }
+                withContext(Dispatchers.Main) { ktkqError = publicError(e) }
             }
         }
     }

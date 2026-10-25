@@ -6,16 +6,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.fences.CampusFences
 import cn.edu.swun.swun_ehall.data.geo.Geo
 import cn.edu.swun.swun_ehall.data.session.Session
+import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -27,7 +25,8 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 
 @Composable
 fun LocateTestScreen(session: Session, nav: NavHostController) {
-    var log by remember { mutableStateOf("") }
+    val notices = rememberFeatureNotices(session.studentId, session.demoMode)
+    FeatureNoticeHost(notices)
     val rooms = listOf("BS-223", "BW-106", "H-206", "BX-317")
     Scaffold(
         topBar = {
@@ -59,20 +58,16 @@ fun LocateTestScreen(session: Session, nav: NavHostController) {
                             val gps = Geo.campusGcj02(wgs.first, wgs.second, "gps")
                             val fused = Geo.campusGcj02(wgs.first, wgs.second, "fused")
                             val skip = Geo.campusGcj02(wgs.first, wgs.second, "gps", datum = "gcj02")
-                            log = buildString {
+                            val log = buildString {
                                 appendLine("$room ${fence.name} 中心 ${fence.centerLat}, ${fence.centerLng}")
                                 appendLine("模拟 WGS ${wgs.first}, ${wgs.second}")
                                 appendLine("gps  ${gps.first}, ${gps.second}  距中心 ${"%.1f".format(Geo.meters(gps.first, gps.second, fence.centerLat, fence.centerLng))} m")
                                 appendLine("fused ${fused.first}, ${fused.second}  距中心 ${"%.1f".format(Geo.meters(fused.first, fused.second, fence.centerLat, fence.centerLng))} m")
                                 appendLine("不转  ${skip.first}, ${skip.second}  距中心 ${"%.0f".format(Geo.meters(skip.first, skip.second, fence.centerLat, fence.centerLng))} m")
                             }
+                            notices.details("$room 定位测试", log)
                         },
                     )
-                }
-            }
-            if (log.isNotEmpty()) {
-                Card(modifier = Modifier.padding(top = 12.dp)) {
-                    Text(log, modifier = Modifier.padding(14.dp))
                 }
             }
         }

@@ -22,10 +22,13 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.FeatureStatus
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -42,23 +45,37 @@ fun SelectionScreen(session: Session, nav: NavHostController) {
     var tab by remember { mutableIntStateOf(0) }
     var keyword by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
-    var msg by remember { mutableStateOf<String?>(null) }
+    var ready by remember(session.studentId, session.demoMode) { mutableStateOf(false) }
+    var searchVersion by remember { mutableIntStateOf(0) }
+    val notices = rememberFeatureNotices(session.studentId, session.demoMode)
+    FeatureNoticeHost(notices)
     var picking by remember { mutableStateOf<XkCourse?>(null) }
     var classes by remember { mutableStateOf<List<XkCourse>>(emptyList()) }
     val scope = rememberCoroutineScope()
     val cs = MiuixTheme.colorScheme
     LaunchedEffect(session.loggedIn, session.demoMode) {
+        ready = false
         loading = true
-        session.refreshXk()
-        val first = session.xkRounds.firstOrNull()
-        if (first != null) session.loadXkCourses(first)
-        loading = false
+        try {
+            session.refreshXk()
+            session.xkError?.let { notices.error(it, "选课暂不可用") }
+            ready = session.xkError == null
+        } finally {
+            loading = false
+        }
     }
-    LaunchedEffect(tab, query, session.xkRounds.size) {
+    LaunchedEffect(ready, tab, query, searchVersion) {
+        if (!ready) return@LaunchedEffect
         val round = session.xkRounds.getOrNull(tab) ?: return@LaunchedEffect
         loading = true
-        session.loadXkCourses(round, query)
-        loading = false
+        picking = null
+        classes = emptyList()
+        try {
+            session.loadXkCourses(round, query)
+            session.xkError?.let { notices.error(it, "课程加载失败") }
+        } finally {
+            loading = false
+        }
     }
     Scaffold(
         topBar = {
@@ -90,14 +107,17 @@ fun SelectionScreen(session: Session, nav: NavHostController) {
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(10.dp))
-                    Button(onClick = { query = keyword.trim() }, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = {
+                        query = keyword.trim()
+                        searchVersion++
+                    }, modifier = Modifier.fillMaxWidth()) {
                         Text("搜索")
                     }
                 }
             }
             when {
-                session.xkRounds.isEmpty() -> FeatureHint(session.loadHint ?: "当前没有开放的选课轮次")
-                session.xkCourses.isEmpty() -> FeatureHint("没有匹配的课程")
+                session.xkRounds.isEmpty() -> FeatureHint(if (session.xkError == null) "当前没有开放的选课轮次" else "选课数据暂未加载")
+                session.xkCourses.isEmpty() -> FeatureHint(if (session.xkError == null) "没有匹配的课程" else "课程暂未加载，请重新搜索")
                 else -> Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                     session.xkCourses.forEachIndexed { i, c ->
                         if (i > 0) HorizontalDivider()
@@ -110,7 +130,9 @@ fun SelectionScreen(session: Session, nav: NavHostController) {
                                     classes = try {
                                         session.loadXkClasses(round, c)
                                     } catch (e: Exception) {
-                                        msg = e.message
+                                        if (e is CancellationException) throw e
+                                        notices.error(e.message ?: "教学班加载失败")
+                                        picking = null
                                         emptyList()
                                     }
                                 }
@@ -165,10 +187,11 @@ fun SelectionScreen(session: Session, nav: NavHostController) {
                                     onClick = {
                                         scope.launch {
                                             val round = session.xkRounds.getOrNull(tab) ?: return@launch
-                                            msg = try {
-                                                session.submitXk(round, course, jxb)
+                                            try {
+                                                notices.details("选课结果", session.submitXk(round, course, jxb))
                                             } catch (e: Exception) {
-                                                e.message ?: "选课失败"
+                                                if (e is CancellationException) throw e
+                                                notices.error(e.message ?: "选课失败", "选课未完成")
                                             }
                                         }
                                     },
@@ -179,7 +202,6 @@ fun SelectionScreen(session: Session, nav: NavHostController) {
                     }
                 }
             }
-            msg?.let { FeatureHint(it) }
             FeatureBottomSpace()
         }
     }

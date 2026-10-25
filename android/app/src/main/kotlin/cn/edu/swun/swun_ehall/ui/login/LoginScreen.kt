@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.edu.swun.swun_ehall.data.session.SavedAccount
 import cn.edu.swun.swun_ehall.data.session.Session
+import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -54,6 +56,8 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
 fun LoginScreen(session: Session) {
+    val notices = rememberFeatureNotices(session)
+    FeatureNoticeHost(notices)
     var user by remember { mutableStateOf(session.studentId) }
     var pass by remember { mutableStateOf("") }
     var hide by remember { mutableStateOf(true) }
@@ -69,6 +73,8 @@ fun LoginScreen(session: Session) {
         pickSaved = false
     }
     LaunchedEffect(Unit) {
+        // A failed account switch can navigate here before its original screen shows the error.
+        session.error?.let { notices.error(it, "登录未完成") }
         val id = user.trim()
         if (id.isNotEmpty() && pass.isEmpty()) {
             val pwd = session.accounts.password(id)
@@ -78,7 +84,10 @@ fun LoginScreen(session: Session) {
     fun submit() {
         if (session.busy) return
         focus.clearFocus()
-        scope.launch { session.login(user, pass) }
+        scope.launch {
+            session.login(user, pass)
+            session.error?.let { notices.error(it, "登录未完成") }
+        }
     }
     Column(
         Modifier
@@ -150,10 +159,6 @@ fun LoginScreen(session: Session) {
                 }
             },
         )
-        session.error?.let {
-            Spacer(Modifier.height(12.dp))
-            Text(it, color = cs.error, fontSize = 13.sp)
-        }
         Spacer(Modifier.height(28.dp))
         Button(
             onClick = { submit() },

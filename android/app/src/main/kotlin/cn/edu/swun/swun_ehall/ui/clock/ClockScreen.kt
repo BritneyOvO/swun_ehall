@@ -20,11 +20,13 @@ import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
-import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -36,18 +38,39 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun ClockScreen(session: Session, nav: NavHostController) {
-    var msg by remember { mutableStateOf(session.lastPunch) }
+    val notices = rememberFeatureNotices(session.studentId, session.demoMode)
+    FeatureNoticeHost(notices)
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(!session.demoMode) }
     var me by remember { mutableStateOf<GeoFix?>(null) }
-    LaunchedEffect(session.loggedIn, session.demoMode) {
+    suspend fun refresh() {
         loading = true
-        session.refreshClock()
-        loading = false
+        try {
+            session.refreshClock()
+            session.clockError?.let { notices.error(it, "公寓服务暂不可用") }
+        } finally {
+            loading = false
+        }
+    }
+    suspend fun punch(useCampusFence: Boolean) {
+        if (busy) return
+        busy = true
+        try {
+            notices.message(session.dormPunch(useCampusFence))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            notices.error(e.message ?: "打卡失败", "打卡未完成")
+        } finally {
+            busy = false
+        }
+    }
+    LaunchedEffect(session.loggedIn, session.demoMode) {
+        refresh()
         me = try {
             session.locateCampus()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
             null
         }
     }
@@ -59,11 +82,7 @@ fun ClockScreen(session: Session, nav: NavHostController) {
                 navigationIcon = { BackNav { nav.popBackStack() } },
                 actions = {
                     RefreshNav {
-                        scope.launch {
-                            loading = true
-                            session.refreshClock()
-                            loading = false
-                        }
+                        scope.launch { refresh() }
                     }
                 },
             )
@@ -81,15 +100,7 @@ fun ClockScreen(session: Session, nav: NavHostController) {
                     Button(
                         onClick = {
                             if (busy) return@Button
-                            scope.launch {
-                                busy = true
-                                msg = try {
-                                    session.dormPunch(useCampusFence = false)
-                                } catch (e: Exception) {
-                                    e.message ?: "打卡失败"
-                                }
-                                busy = false
-                            }
+                            scope.launch { punch(useCampusFence = false) }
                         },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !busy,
@@ -99,15 +110,7 @@ fun ClockScreen(session: Session, nav: NavHostController) {
                         TextButton(
                             text = "一键校内打卡",
                             onClick = {
-                                scope.launch {
-                                    busy = true
-                                    msg = try {
-                                        session.dormPunch(useCampusFence = true)
-                                    } catch (e: Exception) {
-                                        e.message ?: "打卡失败"
-                                    }
-                                    busy = false
-                                }
+                                scope.launch { punch(useCampusFence = true) }
                             },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !busy,
@@ -116,12 +119,10 @@ fun ClockScreen(session: Session, nav: NavHostController) {
                 }
             }
             CampusMap(me, session.clockFences.toList(), modifier = Modifier.padding(top = 12.dp))
-            session.clockError?.let { FeatureHint(it, error = true) }
-            msg?.let { FeatureHint(it) }
             FeatureSection("最近记录")
             Card(modifier = Modifier.fillMaxWidth()) {
                 if (session.clockRecords.isEmpty()) {
-                    Text("暂无打卡记录", modifier = Modifier.padding(16.dp), color = cs.onSurfaceVariantSummary)
+                    Text(if (session.clockError == null) "暂无打卡记录" else "记录暂未加载，点击右上角重试", modifier = Modifier.padding(16.dp), color = cs.onSurfaceVariantSummary)
                 } else {
                     session.clockRecords.forEachIndexed { i, r ->
                         if (i > 0) HorizontalDivider()

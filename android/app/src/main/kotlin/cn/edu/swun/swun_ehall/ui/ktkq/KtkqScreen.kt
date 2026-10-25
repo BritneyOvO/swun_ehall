@@ -25,9 +25,12 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -40,16 +43,24 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun KtkqScreen(session: Session, nav: NavHostController) {
     var loading by remember { mutableStateOf(!session.demoMode && session.ktkqCourses.isEmpty()) }
     var testing by remember { mutableStateOf(false) }
-    var testResult by remember { mutableStateOf<String?>(null) }
+    val notices = rememberFeatureNotices(session.studentId, session.demoMode)
+    FeatureNoticeHost(notices)
     val scope = rememberCoroutineScope()
+    suspend fun refresh(force: Boolean = false) {
+        loading = true
+        try {
+            session.refreshKtkq(force)
+            session.ktkqError?.let { notices.error(it, "课堂考勤暂不可用") }
+        } finally {
+            loading = false
+        }
+    }
     LaunchedEffect(session.loggedIn, session.demoMode) {
         if (session.ktkqCourses.isNotEmpty()) {
             loading = false
             return@LaunchedEffect
         }
-        loading = true
-        session.refreshKtkq()
-        loading = false
+        refresh()
     }
     val cs = MiuixTheme.colorScheme
     val week = session.ktkqWeekNum
@@ -61,11 +72,7 @@ fun KtkqScreen(session: Session, nav: NavHostController) {
                 navigationIcon = { BackNav { nav.popBackStack() } },
                 actions = {
                     RefreshNav {
-                        scope.launch {
-                            loading = true
-                            session.refreshKtkq(force = true)
-                            loading = false
-                        }
+                        scope.launch { refresh(force = true) }
                     }
                 },
             )
@@ -76,36 +83,34 @@ fun KtkqScreen(session: Session, nav: NavHostController) {
             return@Scaffold
         }
         FeatureColumn(padding) {
-            session.loadHint?.let { FeatureHint(it, error = true) }
-            run {
-                Text(
-                    title,
-                    style = MiuixTheme.textStyles.title3,
-                    modifier = Modifier.padding(top = 16.dp, start = 4.dp, end = 4.dp, bottom = 4.dp),
-                )
-            }
+            Text(
+                title,
+                style = MiuixTheme.textStyles.title3,
+                modifier = Modifier.padding(top = 16.dp, start = 4.dp, end = 4.dp, bottom = 4.dp),
+            )
             if (session.developerMode) {
                 Button(
                     onClick = {
                         if (testing) return@Button
                         scope.launch {
                             testing = true
-                            testResult = try {
-                                session.testFencePunch()
+                            try {
+                                notices.details("课堂打卡预检", session.testFencePunch())
                             } catch (e: Exception) {
-                                e.message?.removePrefix("Exception: ") ?: "预检失败"
+                                if (e is CancellationException) throw e
+                                notices.error(e.message ?: "预检失败", "预检未完成")
+                            } finally {
+                                testing = false
                             }
-                            testing = false
                         }
                     },
                     modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
                     enabled = !testing,
                 ) { Text(if (testing) "预检中…" else "测试课堂打卡") }
-                testResult?.let { FeatureHint(it) }
             }
             when {
-                session.ktkqCourses.isEmpty() && session.loadHint == null ->
-                    FeatureHint("本周暂无课程")
+                session.ktkqCourses.isEmpty() ->
+                    FeatureHint(if (session.ktkqError == null) "本周暂无课程" else "课程暂未加载，点击右上角重试")
                 session.ktkqCourses.isNotEmpty() -> session.ktkqCourses.forEach { course ->
                     WeekCourseCard(course) { slot ->
                         nav.navigate(session.prepareKtkqSign(slot = slot, week = week))

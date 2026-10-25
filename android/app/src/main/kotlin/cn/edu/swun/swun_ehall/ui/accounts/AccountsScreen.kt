@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.session.SavedAccount
 import cn.edu.swun.swun_ehall.data.session.Session
+import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -48,6 +50,8 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
 fun AccountsScreen(session: Session, nav: NavHostController) {
+    val notices = rememberFeatureNotices(session)
+    FeatureNoticeHost(notices)
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<SavedAccount?>(null) }
     val cs = MiuixTheme.colorScheme
@@ -105,7 +109,10 @@ fun AccountsScreen(session: Session, nav: NavHostController) {
                             }
                             IconButton(
                                 onClick = {
-                                    if (!on && !session.busy) scope.launch { session.switchTo(acc.id) }
+                                    if (!on && !session.busy) scope.launch {
+                                        session.switchTo(acc.id)
+                                        session.error?.let { notices.error(it, "切换账号未完成") }
+                                    }
                                 },
                                 enabled = !on && !session.busy,
                             ) {
@@ -121,10 +128,6 @@ fun AccountsScreen(session: Session, nav: NavHostController) {
                         }
                     }
                 }
-            }
-            session.error?.let {
-                Spacer(Modifier.height(8.dp))
-                Text(it, color = cs.error)
             }
             Spacer(Modifier.height(12.dp))
             Button(
@@ -167,6 +170,8 @@ fun AccountsScreen(session: Session, nav: NavHostController) {
 
 @Composable
 fun AddAccountScreen(session: Session, nav: NavHostController) {
+    val notices = rememberFeatureNotices(session)
+    FeatureNoticeHost(notices)
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var hide by remember { mutableStateOf(true) }
@@ -208,17 +213,15 @@ fun AddAccountScreen(session: Session, nav: NavHostController) {
                     }
                 },
             )
-            session.error?.let {
-                Spacer(Modifier.height(10.dp))
-                Text(it, color = MiuixTheme.colorScheme.error)
-            }
             Spacer(Modifier.height(20.dp))
             Button(
                 onClick = {
                     if (session.busy) return@Button
                     scope.launch {
                         session.login(user, pass)
-                        if (session.loggedIn && !session.demoMode) nav.popBackStack()
+                        val failure = session.error
+                        if (failure != null) notices.error(failure, "添加账号未完成")
+                        else if (session.loggedIn && !session.demoMode) nav.popBackStack()
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),

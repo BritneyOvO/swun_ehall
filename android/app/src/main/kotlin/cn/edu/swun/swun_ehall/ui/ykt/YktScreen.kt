@@ -32,6 +32,8 @@ import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoading
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
+import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
@@ -45,10 +47,19 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun YktScreen(session: Session, nav: NavHostController) {
     var loading by remember { mutableStateOf(!session.demoMode && session.yktQr == null) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(session.loggedIn, session.demoMode) {
+    val notices = rememberFeatureNotices(session.studentId, session.demoMode)
+    FeatureNoticeHost(notices)
+    suspend fun refresh() {
         loading = true
-        session.refreshYkt()
-        loading = false
+        try {
+            session.refreshYkt()
+            session.yktError?.let { notices.error(it, "一卡通暂不可用") }
+        } finally {
+            loading = false
+        }
+    }
+    LaunchedEffect(session.loggedIn, session.demoMode) {
+        refresh()
     }
     val qr = session.yktQr
     val bmp = remember(qr) { qr?.takeIf { it.isNotBlank() }?.let { Qr.bitmap(it, 512) } }
@@ -60,11 +71,7 @@ fun YktScreen(session: Session, nav: NavHostController) {
                 navigationIcon = { BackNav { nav.popBackStack() } },
                 actions = {
                     RefreshNav {
-                        scope.launch {
-                            loading = true
-                            session.refreshYkt()
-                            loading = false
-                        }
+                        scope.launch { refresh() }
                     }
                 },
             )
@@ -118,8 +125,8 @@ fun YktScreen(session: Session, nav: NavHostController) {
                             Text("请向收款设备出示", color = cs.onSurfaceVariantSummary, fontSize = 13.sp)
                         }
                         else -> Text(
-                            session.yktError ?: "暂无二维码",
-                            color = if (session.yktError != null) cs.error else cs.onSurfaceVariantSummary,
+                            if (session.yktError == null) "暂无二维码" else "付款码暂不可用，点击右上角重试",
+                            color = cs.onSurfaceVariantSummary,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(32.dp),
                         )

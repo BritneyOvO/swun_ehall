@@ -1,6 +1,5 @@
 package cn.edu.swun.swun_ehall.ui.ktkq
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,7 +17,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,6 +38,10 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureNotices
+import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
+import cn.edu.swun.swun_ehall.ui.common.FeatureLoading
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
@@ -73,11 +75,12 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
     var punchingId by remember { mutableStateOf<String?>(null) }
     val codes = remember { mutableStateMapOf<String, String>() }
     val scope = rememberCoroutineScope()
-    val ctx = LocalContext.current
+    val notices = rememberFeatureNotices(activityId, session.studentId, session.demoMode)
+    FeatureNoticeHost(notices)
     val cs = MiuixTheme.colorScheme
 
     fun toast(m: String) {
-        Toast.makeText(ctx, m, Toast.LENGTH_SHORT).show()
+        notices.message(m)
     }
 
     suspend fun locate(force: Boolean = false) {
@@ -90,6 +93,7 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (pos == null) locError = e.message ?: "定位失败，请打开系统定位后重试"
+            notices.message(e.message ?: "定位失败，请打开系统定位后重试")
         } finally {
             locating = false
         }
@@ -106,6 +110,9 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
         try {
             val current = session.signForLesson(base, refresh = refresh)
             info = current
+            if (current.status == "inactive" && current.message != ktkqStatusLabel("inactive")) {
+                notices.error(current.message, "签到信息加载失败")
+            }
             loading = false
             extrasLoading = true
             if (!locating) scope.launch { locate() }
@@ -117,6 +124,7 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
                     if (e is CancellationException) throw e
                     if (version == reloadVersion) {
                         extrasError = e.message?.removePrefix("Exception: ") ?: "记录加载失败"
+                        notices.error(extrasError!!, "记录加载失败")
                     }
                 } finally {
                     if (version == reloadVersion) extrasLoading = false
@@ -125,6 +133,8 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             error = e.message?.removePrefix("Exception: ") ?: "加载失败"
+            info = null
+            notices.error(error!!, "课堂签到暂不可用")
         } finally {
             loading = false
             if (error != null) extrasLoading = false
@@ -199,7 +209,8 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
                 reload(refresh = true)
             }
         } catch (e: Exception) {
-            toast(e.message?.removePrefix("Exception: ") ?: "签到失败")
+            if (e is CancellationException) throw e
+            notices.error(e.message?.removePrefix("Exception: ") ?: "签到失败", "签到未完成")
         } finally {
             punchingId = null
         }
@@ -208,9 +219,10 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
     LaunchedEffect(activityId, session.loggedIn, session.demoMode) {
         if (slot == null) {
             loading = false
-            error = session.loadHint?.takeIf {
+            error = session.ktkqError?.takeIf {
                 it.contains("课堂考勤夜间关闭") || it.contains("不在服务时间")
             } ?: "没有这个签到活动"
+            notices.error(error!!, "课堂签到暂不可用")
             return@LaunchedEffect
         }
         reload()
@@ -239,10 +251,10 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
         }
         FeatureColumn(padding) {
             if (session.developerMode) {
-                FenceProbeButton(session, slot)
+                FenceProbeButton(session, slot, notices)
             }
-            error?.let { FeatureHint(it, error = true) }
             if (data == null && error != null) {
+                FeatureHint("签到信息暂未加载，点击右上角重试")
                 FeatureBottomSpace()
                 return@FeatureColumn
             }
@@ -274,7 +286,7 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
                 }
                 FeatureSection("签到活动")
                 if (data.activities.isEmpty()) {
-                    FeatureHint(data.message.ifBlank { "无签到活动" })
+                    FeatureHint(if (data.status == "inactive") "签到活动暂不可用" else data.message.ifBlank { "无签到活动" })
                 } else {
                     data.activities.forEach { act ->
                         ActivityCard(
@@ -304,9 +316,9 @@ fun KtkqSignScreen(session: Session, nav: NavHostController, activityId: String)
                 }
                 FeatureSection("本课记录")
                 if (extrasLoading) {
-                    FeatureHint("正在加载本课记录…")
+                    FeatureLoading(card = false)
                 } else if (extrasError != null) {
-                    FeatureHint(extrasError!!, error = true)
+                    FeatureHint("记录暂未加载，点击右上角重试")
                 } else if (data.history.isEmpty()) {
                     FeatureHint("暂无签到记录")
                 } else {
@@ -395,11 +407,11 @@ private fun LocCard(
                     enabled = !locating,
                 )
             }
-            locError?.let {
-                Text(it, color = cs.error, modifier = Modifier.padding(top = 4.dp))
-            }
-            if (pos == null && locError == null) {
-                Text(if (locating) "正在定位…" else "尚未定位", color = cs.onSurfaceVariantSummary)
+            if (pos == null) {
+                Text(
+                    if (locating) "正在定位…" else if (locError != null) "位置暂不可用，请重新定位" else "尚未定位",
+                    color = cs.onSurfaceVariantSummary,
+                )
             }
             pos?.let { p ->
                 Text(
@@ -487,27 +499,27 @@ private fun ActivityCard(
 }
 
 @Composable
-private fun FenceProbeButton(session: Session, slot: SignActivity?) {
+private fun FenceProbeButton(session: Session, slot: SignActivity?, notices: FeatureNotices) {
     var testing by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     Button(
         onClick = {
             if (testing) return@Button
             scope.launch {
                 testing = true
-                result = try {
-                    session.testFencePunch(slot)
+                try {
+                    notices.details("课堂打卡预检", session.testFencePunch(slot))
                 } catch (e: Exception) {
-                    e.message?.removePrefix("Exception: ") ?: "预检失败"
+                    if (e is CancellationException) throw e
+                    notices.error(e.message?.removePrefix("Exception: ") ?: "预检失败", "预检未完成")
+                } finally {
+                    testing = false
                 }
-                testing = false
             }
         },
         modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
         enabled = !testing,
     ) { Text(if (testing) "预检中…" else "测试课堂打卡") }
-    result?.let { FeatureHint(it) }
 }
 
 private enum class PunchSpot { Gps, Fence, Building }
