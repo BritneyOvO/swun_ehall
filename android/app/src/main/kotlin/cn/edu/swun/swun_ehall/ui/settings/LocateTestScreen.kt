@@ -54,16 +54,15 @@ fun LocateTestScreen(session: Session, nav: NavHostController) {
                         summary = CampusFences.forRoom(room)?.let { "${it.name} 中心" },
                         onClick = {
                             val fence = CampusFences.forRoom(room) ?: return@ArrowPreference
-                            val wgs = Geo.gcj02ToWgs84(fence.centerLat, fence.centerLng)
-                            val gps = Geo.campusGcj02(wgs.first, wgs.second, "gps")
-                            val fused = Geo.campusGcj02(wgs.first, wgs.second, "fused")
-                            val skip = Geo.campusGcj02(wgs.first, wgs.second, "gps", datum = "gcj02")
+                            val wgs = fence.centerLat to fence.centerLng
+                            val gcj = Geo.wgs84ToGcj02(wgs.first, wgs.second)
+                            val gps = Geo.campusWgs84(wgs.first, wgs.second, "gps", datum = "wgs84")
+                            val amap = Geo.campusWgs84(gcj.first, gcj.second, "amap", datum = "gcj02")
                             val log = buildString {
-                                appendLine("$room ${fence.name} 中心 ${fence.centerLat}, ${fence.centerLng}")
-                                appendLine("模拟 WGS ${wgs.first}, ${wgs.second}")
-                                appendLine("gps  ${gps.first}, ${gps.second}  距中心 ${"%.1f".format(Geo.meters(gps.first, gps.second, fence.centerLat, fence.centerLng))} m")
-                                appendLine("fused ${fused.first}, ${fused.second}  距中心 ${"%.1f".format(Geo.meters(fused.first, fused.second, fence.centerLat, fence.centerLng))} m")
-                                appendLine("不转  ${skip.first}, ${skip.second}  距中心 ${"%.0f".format(Geo.meters(skip.first, skip.second, fence.centerLat, fence.centerLng))} m")
+                                appendLine("$room ${fence.name} 签到围栏 WGS-84 ${wgs.first}, ${wgs.second}")
+                                appendLine("地图显示 GCJ-02 ${gcj.first}, ${gcj.second}")
+                                appendLine("GPS提交 ${gps.first}, ${gps.second}  距围栏 ${"%.1f".format(Geo.meters(gps.first, gps.second, fence.centerLat, fence.centerLng))} m")
+                                appendLine("高德反算提交 ${amap.first}, ${amap.second}  距围栏 ${"%.1f".format(Geo.meters(amap.first, amap.second, fence.centerLat, fence.centerLng))} m")
                             }
                             notices.details("$room 定位测试", log)
                         },

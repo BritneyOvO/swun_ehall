@@ -8,8 +8,8 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Campus check-in fences are GCJ-02. GPS/fused chips emit WGS-84.
- * Amap and CN-ROM network are already GCJ-02.
+ * Classroom check-in requests use WGS-84. GPS/fused chips emit WGS-84;
+ * AMap and CN-ROM network locations use GCJ-02.
  */
 object Geo {
     private const val A = 6378245.0
@@ -49,6 +49,17 @@ object Geo {
     ): Pair<Double, Double> {
         if (!isWgs84(source, datum, provider)) return lat to lng
         return wgs84ToGcj02(lat, lng)
+    }
+
+    fun campusWgs84(
+        lat: Double,
+        lng: Double,
+        source: String,
+        datum: String? = null,
+        provider: String? = null,
+    ): Pair<Double, Double> {
+        if (isWgs84(source, datum, provider)) return lat to lng
+        return gcj02ToWgs84(lat, lng)
     }
 
     fun gcj02ToWgs84(lat: Double, lng: Double): Pair<Double, Double> {

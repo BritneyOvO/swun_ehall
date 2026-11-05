@@ -932,10 +932,10 @@ class Session(app: Application) : AndroidViewModel(app) {
         code: String = "",
         accuracy: Double = 8.0,
     ): String {
-        val g = Geo.campusGcj02(lat, lng, source, datum)
+        val g = Geo.campusWgs84(lat, lng, source, datum)
         val acc = if (accuracy.isFinite()) accuracy.roundToInt().coerceAtLeast(0) else 8
         if (demoMode) {
-            lastPunch = "示例模式：已模拟签到 · GCJ-02 ${"%.5f".format(g.first)}, ${"%.5f".format(g.second)}"
+            lastPunch = "示例模式：已模拟签到 · WGS-84 ${"%.5f".format(g.first)}, ${"%.5f".format(g.second)}"
             return lastPunch!!
         }
         return accountIo {
@@ -957,7 +957,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             val msg = r.optString("msg").trim()
             val ok = rc == "0" || rc == "200" || msg.contains("成功") || msg.contains("已签到")
             val out = if (ok) {
-                if (msg.isEmpty() || msg == "success") "签到成功 · GCJ-02 ${"%.5f".format(g.first)}, ${"%.5f".format(g.second)}" else msg
+                if (msg.isEmpty() || msg == "success") "签到成功 · WGS-84 ${"%.5f".format(g.first)}, ${"%.5f".format(g.second)}" else msg
             } else {
                 msg.ifBlank { "签到失败" }
             }
@@ -974,7 +974,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             fence.centerLat,
             fence.centerLng,
             source = "demo",
-            datum = "gcj02",
+            datum = "wgs84",
             code = code,
             accuracy = 8.0,
         )
@@ -990,7 +990,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             lat,
             lng,
             source = "demo",
-            datum = "gcj02",
+            datum = "wgs84",
             code = code,
             accuracy = 8.0,
         )
@@ -1009,9 +1009,15 @@ class Session(app: Application) : AndroidViewModel(app) {
         val targets = fenceProbeTargets(slot)
         if (targets.isEmpty()) return "课堂考勤没有课班号，无法向服务器预检"
         if (demoMode) return "示例模式不请求服务器"
+        val mapFix = try {
+            locateCampus()
+        } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            null
+        }
         return accountIo {
             ensureKtkq()
-            targets.joinToString("\n") { item -> probeFencePoint(item) }
+            targets.joinToString("\n") { item -> probeFencePoint(item, mapFix) }
         }
     }
 
@@ -1048,14 +1054,14 @@ class Session(app: Application) : AndroidViewModel(app) {
         return byFence.values.toList()
     }
 
-    private fun probeFencePoint(item: SignActivity): String {
+    private fun probeFencePoint(item: SignActivity, mapFix: GeoFix?): String {
         val fence = CampusFences.forRoom(item.classroom) ?: return item.classroom
         val (lat, lng) = fence.randomInside()
         val week = item.week.takeIf { it > 0 } ?: ktkqWeekNum
         val day = if (item.weekDay in 1..7) item.weekDay else 1
         val activityId = item.activityId.takeIf { it.isNotBlank() && !it.contains("|") }.orEmpty()
         return try {
-            val r = ktkqClient.checkAllowSign(
+            fun checkAt(pointLat: Double, pointLng: Double) = ktkqClient.checkAllowSign(
                 teachClassId = item.teachClassId,
                 scheduleId = item.scheduleId,
                 week = week,
@@ -1063,18 +1069,30 @@ class Session(app: Application) : AndroidViewModel(app) {
                 startNode = item.startNode.coerceAtLeast(1),
                 endNode = item.endNode.coerceAtLeast(item.startNode.coerceAtLeast(1)),
                 activityId = activityId,
-                lat = lat,
-                lng = lng,
+                lat = pointLat,
+                lng = pointLng,
             )
-            val status = r.optJSONObject("data")?.optString("status").orEmpty()
-            val msg = r.optString("msg")
-            val label = when (status) {
-                "IS_ALLOW" -> "在范围内"
-                "NOT_IN_SCOPE" -> "不在范围"
-                else -> status.ifBlank { msg }.ifBlank { "无结果" }
+            fun summary(r: org.json.JSONObject): String {
+                val data = r.opt("data")
+                val status = (data as? org.json.JSONObject)?.optString("status").orEmpty()
+                val label = when (status) {
+                    "IS_ALLOW" -> "在范围内"
+                    "NOT_IN_SCOPE" -> "不在范围"
+                    else -> "判定未知"
+                }
+                return "$label code=${r.opt("code")} msg=${r.optString("msg")} data=${data?.toString()?.take(300) ?: "null"}"
             }
+            val raw = checkAt(lat, lng)
+            val converted = Geo.wgs84ToGcj02(lat, lng)
+            val shifted = checkAt(converted.first, converted.second)
+            val deviceCheck = mapFix?.let { fix ->
+                val wgs = Geo.gcj02ToWgs84(fix.latitude, fix.longitude)
+                val amapResult = checkAt(fix.latitude, fix.longitude)
+                val wgsResult = checkAt(wgs.first, wgs.second)
+                "；高德原值 ${"%.6f".format(fix.latitude)}, ${"%.6f".format(fix.longitude)} ${summary(amapResult)}；反算WGS-84 ${"%.6f".format(wgs.first)}, ${"%.6f".format(wgs.second)} ${summary(wgsResult)}"
+            }.orEmpty()
             val whenText = if (day in 1..7) kWeekdayLabels[day] else ""
-            "${item.classroom} ${item.course} $whenText $label ${"%.6f".format(lat)}, ${"%.6f".format(lng)}${if (msg.isNotBlank() && msg != label) " $msg" else ""}"
+            "${item.classroom} ${item.course} $whenText 围栏原值 ${"%.6f".format(lat)}, ${"%.6f".format(lng)} ${summary(raw)}；转GCJ-02 ${"%.6f".format(converted.first)}, ${"%.6f".format(converted.second)} ${summary(shifted)}$deviceCheck"
         } catch (e: Exception) {
             if (e is java.util.concurrent.CancellationException) throw e
             RequestCancellation.check()

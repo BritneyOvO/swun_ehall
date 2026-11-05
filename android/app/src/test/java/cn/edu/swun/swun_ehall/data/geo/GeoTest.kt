@@ -46,6 +46,20 @@ class GeoTest {
     }
 
     @Test
+    fun campusWgs84ConvertsAmapAndNetworkButNotGps() {
+        val gcjLat = 30.56829
+        val gcjLng = 103.96972
+        val wgs = Geo.gcj02ToWgs84(gcjLat, gcjLng)
+        val amap = Geo.campusWgs84(gcjLat, gcjLng, "amap", datum = "gcj02")
+        val network = Geo.campusWgs84(gcjLat, gcjLng, "network", datum = "gcj02")
+        val gps = Geo.campusWgs84(wgs.first, wgs.second, "gps", datum = "wgs84")
+        assertTrue(Geo.meters(wgs.first, wgs.second, amap.first, amap.second) < 1)
+        assertTrue(Geo.meters(wgs.first, wgs.second, network.first, network.second) < 1)
+        assertEquals(wgs.first, gps.first, 0.0)
+        assertEquals(wgs.second, gps.second, 0.0)
+    }
+
+    @Test
     fun geoIsWgs84TreatsFusedAliasesAsWgs() {
         assertTrue(Geo.isWgs84("fused"))
         assertTrue(Geo.isWgs84("gps", provider = "fused"))

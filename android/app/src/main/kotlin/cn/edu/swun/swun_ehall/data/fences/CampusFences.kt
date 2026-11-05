@@ -90,7 +90,7 @@ object CampusFences {
 
     val all = listOf(bs, bw, bx, h)
 
-    /** 70 m grid from checkAllowSign. Left edge south to north, then right edge back. */
+    /** WGS-84 checkAllowSign samples, about 70 m apart; convert before drawing on AMap. */
     val outlines: Map<String, List<Pair<Double, Double>>> = mapOf(
         "H" to listOf(
             30.557773 to 103.968572,
