@@ -1,6 +1,6 @@
 package cn.edu.swun.swun_ehall.ui.bus
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,14 +19,16 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.model.BusDayType
+import cn.edu.swun.swun_ehall.data.model.BusTimetable
 import cn.edu.swun.swun_ehall.data.model.nextBus
 import cn.edu.swun.swun_ehall.data.model.swunBusTimetables
 import cn.edu.swun.swun_ehall.ui.common.BackNav
@@ -36,8 +39,8 @@ import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -77,41 +80,40 @@ fun BusScreen(nav: NavHostController) {
         Column(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         ) {
+            TabRow(
+                tabs = swunBusTimetables.map { it.compactLabel() },
+                selectedTabIndex = lineIndex,
+                onTabSelected = {
+                    lineIndex = it
+                    reverse = false
+                },
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            TabRow(
+                tabs = listOf("去${line.toName.shortName()}", "去${line.fromName.shortName()}"),
+                selectedTabIndex = if (reverse) 1 else 0,
+                onTabSelected = { reverse = it == 1 },
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            TabRow(
+                tabs = BusDayType.entries.map { if (it == BusDayType.Holiday) "节假日" else it.label },
+                selectedTabIndex = BusDayType.entries.indexOf(day),
+                onTabSelected = { day = BusDayType.entries[it] },
+                modifier = Modifier.padding(top = 10.dp),
+            )
             Card(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                 Column(Modifier.padding(18.dp)) {
+                    Text("下一班", color = MiuixTheme.colorScheme.onSurfaceVariantSummary, fontSize = 13.sp)
                     Text(
-                        next?.let { "下一班 ${it.time}" } ?: "今日已收班",
+                        next?.time?.toString() ?: "今日已收班",
                         fontWeight = FontWeight.Bold,
                         fontSize = 24.sp,
-                        color = MiuixTheme.colorScheme.primary,
+                        color = MiuixTheme.colorScheme.onBackground,
                     )
                     Text("$from → $to · ${day.label}", modifier = Modifier.padding(top = 5.dp))
                     next?.let {
                         Text("距发车约 ${it.minutes} 分钟", color = MiuixTheme.colorScheme.onSurfaceVariantSummary, modifier = Modifier.padding(top = 4.dp))
                     }
-                }
-            }
-
-            ChoiceTitle("线路")
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                swunBusTimetables.forEachIndexed { index, item ->
-                    ChoiceButton(item.label, lineIndex == index) {
-                        lineIndex = index
-                        reverse = false
-                    }
-                }
-            }
-
-            ChoiceTitle("方向")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChoiceButton("${line.fromName} → ${line.toName}", !reverse, Modifier.weight(1f)) { reverse = false }
-                ChoiceButton("${line.toName} → ${line.fromName}", reverse, Modifier.weight(1f)) { reverse = true }
-            }
-
-            ChoiceTitle("日期")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                BusDayType.entries.forEach { mode ->
-                    ChoiceButton(mode.label, day == mode, Modifier.weight(1f)) { day = mode }
                 }
             }
 
@@ -121,12 +123,17 @@ fun BusScreen(nav: NavHostController) {
                     times.chunked(4).forEach { row ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             row.forEach { time ->
+                                val selected = next?.time == time
                                 Text(
                                     time.toString(),
-                                    Modifier.weight(1f).padding(vertical = 8.dp),
+                                    Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (selected) MiuixTheme.colorScheme.primary else Color.Transparent)
+                                        .padding(vertical = 8.dp),
                                     textAlign = TextAlign.Center,
-                                    color = if (next?.time == time) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onBackground,
-                                    fontWeight = if (next?.time == time) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onBackground,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                                 )
                             }
                             repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -142,21 +149,14 @@ fun BusScreen(nav: NavHostController) {
                     Text("临时调整以学校后勤处通知为准。", color = MiuixTheme.colorScheme.onSurfaceVariantSummary, fontSize = 12.sp, modifier = Modifier.padding(top = 7.dp))
                 }
             }
-            Spacer(Modifier.height(90.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
 
-@Composable
-private fun ChoiceTitle(text: String) {
-    Text(text, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp, start = 4.dp))
-}
+private fun BusTimetable.compactLabel(): String =
+    fromName.tabName() + toName.tabName()
 
-@Composable
-private fun ChoiceButton(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    TextButton(
-        text = if (selected) "✓ $text" else text,
-        onClick = onClick,
-        modifier = modifier,
-    )
-}
+private fun String.shortName(): String = removeSuffix("校区")
+
+private fun String.tabName(): String = shortName().replace("航空港", "空港").replace("太平园", "太平")

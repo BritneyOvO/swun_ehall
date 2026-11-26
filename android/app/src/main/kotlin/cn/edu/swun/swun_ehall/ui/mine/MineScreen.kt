@@ -39,9 +39,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.session.Session
+import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
@@ -87,7 +89,7 @@ fun MineScreen(session: Session, nav: NavHostController) {
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 16.dp),
         ) {
             Card(
                 modifier = Modifier
@@ -154,40 +156,45 @@ fun MineScreen(session: Session, nav: NavHostController) {
                     ) {
                         Text(title, style = MiuixTheme.textStyles.title2)
                         Text(
-                            when {
-                                session.demoMode -> "预览模式"
-                                session.profile.role.isNotBlank() -> session.profile.role
-                                else -> "已登录"
-                            },
+                            listOf(
+                                session.studentId,
+                                if (session.demoMode) "预览模式" else session.profile.major.ifBlank { session.profile.role },
+                            ).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "已登录" },
                             color = cs.onSurfaceVariantSummary,
+                            fontSize = 13.sp,
                         )
-                        if (session.studentId.isNotEmpty()) {
-                            Text(session.studentId, color = cs.onSurfaceVariantSummary)
-                        }
                     }
                     Text("›", color = cs.onSurfaceVariantSummary, fontSize = 18.sp)
                 }
             }
-            MineEntryCard(
-                title = "个人信息",
-                summary = "姓名、学号、学院",
-                icon = MiuixIcons.Contacts,
-            ) { nav.navigate("profile") }
-            MineEntryCard(
-                title = "账号管理",
-                summary = "多账号切换、添加、删除",
-                icon = MiuixIcons.ContactsBook,
-            ) { nav.navigate("accounts") }
-            MineEntryCard(
-                title = "主题外观",
-                summary = "深浅色、莫奈取色、液态玻璃",
-                icon = MiuixIcons.Theme,
-            ) { nav.navigate("theme") }
-            MineEntryCard(
-                title = "关于",
-                summary = "版本与检查更新",
-                icon = MiuixIcons.Info,
-            ) { nav.navigate("about") }
+            FeatureSection("账号")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                MineEntry(
+                    title = "个人信息",
+                    summary = "姓名、学号、学院",
+                    icon = MiuixIcons.Contacts,
+                ) { nav.navigate("profile") }
+                HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                MineEntry(
+                    title = "账号管理",
+                    summary = "多账号切换、添加和删除",
+                    icon = MiuixIcons.ContactsBook,
+                ) { nav.navigate("accounts") }
+            }
+            FeatureSection("设置")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                MineEntry(
+                    title = "主题外观",
+                    summary = "深浅色、主题色与界面缩放",
+                    icon = MiuixIcons.Theme,
+                ) { nav.navigate("theme") }
+                HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                MineEntry(
+                    title = "关于",
+                    summary = "版本、更新与开源仓库",
+                    icon = MiuixIcons.Info,
+                ) { nav.navigate("about") }
+            }
             Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                 TextButton(
                     text = "退出登录",
@@ -195,7 +202,7 @@ fun MineScreen(session: Session, nav: NavHostController) {
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                 )
             }
-            Spacer(Modifier.height(96.dp))
+            Spacer(Modifier.height(20.dp))
         }
     }
     if (avatarMenu) {
@@ -255,30 +262,24 @@ fun MineScreen(session: Session, nav: NavHostController) {
 }
 
 @Composable
-private fun MineEntryCard(
+private fun MineEntry(
     title: String,
     summary: String,
     icon: ImageVector,
     onClick: () -> Unit,
 ) {
     val cs = MiuixTheme.colorScheme
-    Card(
-        modifier = Modifier
-            .padding(top = 12.dp)
-            .fillMaxWidth(),
-    ) {
-        ArrowPreference(
-            title = title,
-            summary = summary,
-            startAction = {
-                Icon(
-                    icon,
-                    contentDescription = title,
-                    tint = cs.onBackground,
-                    modifier = Modifier.padding(end = 6.dp),
-                )
-            },
-            onClick = onClick,
-        )
-    }
+    ArrowPreference(
+        title = title,
+        summary = summary,
+        startAction = {
+            Icon(
+                icon,
+                contentDescription = title,
+                tint = cs.primary,
+                modifier = Modifier.padding(end = 6.dp),
+            )
+        },
+        onClick = onClick,
+    )
 }

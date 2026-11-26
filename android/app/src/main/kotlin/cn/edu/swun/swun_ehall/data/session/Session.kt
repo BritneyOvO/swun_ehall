@@ -1759,6 +1759,22 @@ class Session(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun publicError(e: Exception): String =
-        e.message?.removePrefix("Exception: ")?.removePrefix("java.lang.Exception: ") ?: "请求失败"
+    private fun publicError(e: Exception): String {
+        val raw = e.message
+            ?.removePrefix("Exception: ")
+            ?.removePrefix("java.lang.Exception: ")
+            ?.trim()
+            .orEmpty()
+        val lower = raw.lowercase()
+        return when {
+            raw.isBlank() -> "请求失败，请稍后重试"
+            "failed to fetch" in lower || "network request failed" in lower -> "网络连接失败，请稍后重试"
+            "unable to resolve host" in lower || "unknownhost" in lower -> "当前网络无法连接学校服务"
+            "timeout" in lower || "timed out" in lower -> "请求超时，请稍后重试"
+            "connection refused" in lower || "connect failed" in lower -> "学校服务暂时无法连接"
+            raw.startsWith("<html", ignoreCase = true) || raw.startsWith("<!doctype", ignoreCase = true) ->
+                "学校服务返回异常，请稍后重试"
+            else -> raw
+        }
+    }
 }

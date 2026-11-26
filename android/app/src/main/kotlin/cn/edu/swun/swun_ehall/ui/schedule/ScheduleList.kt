@@ -87,7 +87,7 @@ fun ScheduleList(
                 }
             }
         }
-        item { Spacer(Modifier.padding(bottom = 80.dp)) }
+        item { Spacer(Modifier.padding(bottom = 16.dp)) }
     }
 }
 

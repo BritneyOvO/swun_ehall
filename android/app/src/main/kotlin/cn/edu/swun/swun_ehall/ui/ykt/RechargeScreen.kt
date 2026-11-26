@@ -28,7 +28,9 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
+import cn.edu.swun.swun_ehall.ui.common.FeatureMutedPanel
 import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -93,7 +95,8 @@ fun RechargeScreen(session: Session, nav: NavHostController) {
                     )
                 }
             }
-            QuickAmounts(listOf(5, 10, 20, 50, 100, 200)) { amount = it.toString() }
+            FeatureSection("充值金额")
+            QuickAmounts(listOf(5, 10, 20, 50, 100, 200), amount) { amount = it.toString() }
             Spacer(Modifier.height(8.dp))
             TextField(
                 value = amount,
@@ -131,11 +134,10 @@ fun RechargeScreen(session: Session, nav: NavHostController) {
             PaymentResultCard(result) { order ->
                 openCcbOrder(context, order).onFailure { notices.error("无法打开建行收银台") }
             }
-            Text(
-                "每天 00:30–23:50 可充值。创建订单不代表付款成功，支付结果请以一卡通余额和账单为准。",
-                color = cs.onSurfaceVariantSummary,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp),
+            FeatureMutedPanel(
+                title = "充值说明",
+                summary = "每天 00:30–23:50 可充值。创建订单不代表付款成功，支付结果以一卡通余额和账单为准。",
+                modifier = Modifier.padding(top = 14.dp),
             )
             FeatureBottomSpace()
         }

@@ -23,6 +23,7 @@ import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
+import cn.edu.swun.swun_ehall.ui.common.FeatureProgressBar
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -61,10 +62,12 @@ fun CreditsScreen(session: Session, nav: NavHostController) {
                     Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                         Column(Modifier.padding(20.dp)) {
                             Text("已修学分", color = cs.onSurfaceVariantSummary)
-                            Text("${formatXf(p.taken)} 学分", style = MiuixTheme.textStyles.title1)
+                            Text(
+                                if (p.required > 0) "${formatXf(p.taken)} / ${formatXf(p.required)}" else formatXf(p.taken),
+                                style = MiuixTheme.textStyles.title1,
+                            )
                             Text(
                                 buildString {
-                                    if (p.required > 0) append("要求 ${formatXf(p.required)}  ·  ")
                                     p.gpa?.let { append("GPA ${"%.3f".format(it)}  ·  ") }
                                     append("已修 ${p.planPassed} 门")
                                     if (p.planFailed > 0) append("  ·  未过 ${p.planFailed} 门")
@@ -72,6 +75,12 @@ fun CreditsScreen(session: Session, nav: NavHostController) {
                                 color = cs.onSurfaceVariantSummary,
                                 modifier = Modifier.padding(top = 6.dp),
                             )
+                            if (p.required > 0) {
+                                FeatureProgressBar(
+                                    progress = (p.taken / p.required).toFloat(),
+                                    modifier = Modifier.padding(top = 14.dp),
+                                )
+                            }
                         }
                     }
                     FeatureSection("学分详情")
@@ -90,21 +99,31 @@ fun CreditsScreen(session: Session, nav: NavHostController) {
                                     Column(Modifier.weight(1f)) {
                                         Text(b.name)
                                         Text(
-                                            "已修 ${formatXf(b.credits)} · ${b.courses} 门" +
-                                                if (b.failed > 0) " · 未过 ${formatXf(b.failed)}" else "",
+                                            buildString {
+                                                append("已修 ${formatXf(b.credits)}")
+                                                if (b.required > 0) append(" / 要求 ${formatXf(b.required)}")
+                                                append(" · ${b.courses} 门")
+                                                if (b.failed > 0) append(" · 未过 ${formatXf(b.failed)}")
+                                            },
                                             color = cs.onSurfaceVariantSummary,
                                         )
                                     }
-                                    Text(if (b.name in open) "收起" else "展开", color = cs.primary)
+                                    Text(
+                                        if (b.required > 0) "${(b.credits / b.required * 100).toInt().coerceIn(0, 999)}%  ›" else "›",
+                                        color = if (b.name in open) cs.primary else cs.onSurfaceVariantSummary,
+                                    )
                                 }
                                 AnimatedVisibility(visible = b.name in open) {
                                     Column(Modifier.padding(top = 8.dp)) {
                                         b.items.forEach { c ->
-                                            Text(
-                                                "${c.name}  ${c.status}  ${c.score}",
-                                                color = cs.onSurfaceVariantSummary,
-                                                modifier = Modifier.padding(vertical = 2.dp),
-                                            )
+                                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                                Text(
+                                                    "${c.name} · ${formatXf(c.credits)} 学分 · ${c.status}",
+                                                    color = cs.onSurfaceVariantSummary,
+                                                    modifier = Modifier.weight(1f),
+                                                )
+                                                if (c.score.isNotBlank()) Text(c.score, color = cs.primary)
+                                            }
                                         }
                                     }
                                 }

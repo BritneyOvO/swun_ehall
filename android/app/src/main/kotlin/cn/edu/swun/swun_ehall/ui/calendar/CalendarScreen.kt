@@ -11,8 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -99,6 +99,9 @@ private fun CalendarContent(calendar: SchoolCalendar, modifier: Modifier = Modif
     val months = remember(calendar.startDate, calendar.endDate) {
         monthsBetween(calendar.startDate, calendar.endDate)
     }
+    val shownMonth = remember(months, today) {
+        YearMonth.from(today).takeIf { it in months } ?: months.firstOrNull()
+    }
     LazyColumn(modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         item {
             Card(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
@@ -120,6 +123,11 @@ private fun CalendarContent(calendar: SchoolCalendar, modifier: Modifier = Modif
                 }
             }
         }
+        shownMonth?.let { month ->
+            item {
+                MonthCard(month, classDays, today)
+            }
+        }
         if (calendar.events.isNotEmpty()) {
             item {
                 Text("校历事件", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 18.dp, start = 4.dp, bottom = 7.dp))
@@ -130,10 +138,7 @@ private fun CalendarContent(calendar: SchoolCalendar, modifier: Modifier = Modif
                 }
             }
         }
-        items(months, key = { it.toString() }) { month ->
-            MonthCard(month, classDays, today)
-        }
-        item { Spacer(Modifier.height(90.dp)) }
+        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
@@ -179,23 +184,28 @@ private fun MonthCard(month: YearMonth, classDays: Set<LocalDate>, today: LocalD
 private fun androidx.compose.foundation.layout.RowScope.DayCell(date: LocalDate?, classDay: Boolean, today: Boolean) {
     val primary = MiuixTheme.colorScheme.primary
     Box(
-        Modifier.weight(1f).aspectRatio(1f).padding(3.dp).clip(CircleShape)
-            .background(
-                when {
-                    today -> primary
-                    classDay -> primary.copy(alpha = 0.14f)
-                    else -> Color.Transparent
-                },
-            ),
+        Modifier.weight(1f).aspectRatio(1f).padding(3.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (date != null) {
-            Text(
-                "${date.dayOfMonth}",
-                color = if (today) Color.White else MiuixTheme.colorScheme.onBackground,
-                fontSize = 12.sp,
-                fontWeight = if (today || classDay) FontWeight.SemiBold else FontWeight.Normal,
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    Modifier.size(28.dp).clip(CircleShape).background(if (today) primary else Color.Transparent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "${date.dayOfMonth}",
+                        color = if (today) Color.White else MiuixTheme.colorScheme.onBackground,
+                        fontSize = 12.sp,
+                        fontWeight = if (today) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
+                Text(
+                    if (classDay) "" else "休",
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 8.sp,
+                )
+            }
         }
     }
 }

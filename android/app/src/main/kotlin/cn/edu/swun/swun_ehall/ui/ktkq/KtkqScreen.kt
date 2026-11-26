@@ -21,6 +21,7 @@ import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.model.KtkqCourse
 import cn.edu.swun.swun_ehall.data.model.SignActivity
 import cn.edu.swun.swun_ehall.data.session.Session
+import cn.edu.swun.swun_ehall.data.http.ktkqStatusLabel
 import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
@@ -28,6 +29,7 @@ import cn.edu.swun.swun_ehall.ui.common.FeatureHint
 import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
 import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
+import cn.edu.swun.swun_ehall.ui.common.FeatureMutedPanel
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
@@ -111,10 +113,20 @@ fun KtkqScreen(session: Session, nav: NavHostController) {
             when {
                 session.ktkqCourses.isEmpty() ->
                     FeatureHint(if (session.ktkqError == null) "本周暂无课程" else "课程暂未加载，点击右上角重试")
-                session.ktkqCourses.isNotEmpty() -> session.ktkqCourses.forEach { course ->
-                    WeekCourseCard(course) { slot ->
-                        nav.navigate(session.prepareKtkqSign(slot = slot, week = week))
+                session.ktkqCourses.isNotEmpty() -> {
+                    Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+                        session.ktkqCourses.forEachIndexed { index, course ->
+                            if (index > 0) HorizontalDivider()
+                            WeekCourseRows(course) { slot ->
+                                nav.navigate(session.prepareKtkqSign(slot = slot, week = week))
+                            }
+                        }
                     }
+                    FeatureMutedPanel(
+                        title = "说明",
+                        summary = "进入课程后查看签到方式、定位范围和历史记录。",
+                        modifier = Modifier.padding(top = 14.dp),
+                    )
                 }
             }
             FeatureBottomSpace()
@@ -123,10 +135,9 @@ fun KtkqScreen(session: Session, nav: NavHostController) {
 }
 
 @Composable
-private fun WeekCourseCard(course: KtkqCourse, onSlot: (SignActivity) -> Unit) {
+private fun WeekCourseRows(course: KtkqCourse, onSlot: (SignActivity) -> Unit) {
     val cs = MiuixTheme.colorScheme
-    Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text(
                 buildString {
                     append(course.name)
@@ -153,11 +164,9 @@ private fun WeekCourseCard(course: KtkqCourse, onSlot: (SignActivity) -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            if (slot.className.isNotEmpty()) {
-                                Text(slot.className, color = cs.primary, fontSize = 13.sp)
-                            }
                             Text(
                                 listOf(
+                                    slot.timeText,
                                     slot.startTime,
                                     slot.classroom,
                                     if (slot.startNode > 0) "节次 ${slot.startNode}~${slot.endNode}" else "",
@@ -166,10 +175,23 @@ private fun WeekCourseCard(course: KtkqCourse, onSlot: (SignActivity) -> Unit) {
                                 fontSize = 13.sp,
                             )
                         }
-                        Text("›", color = cs.onSurfaceVariantSummary, fontSize = 18.sp)
+                        val label = ktkqStatusLabel(slot.status).ifBlank {
+                            if (slot.activityId.isNotBlank()) "签到" else "查看"
+                        }
+                        Text(
+                            label,
+                            color = if (slot.status.contains("signed", true) || label.contains("已签到")) {
+                                androidx.compose.ui.graphics.Color(0xFF347A59)
+                            } else if (slot.activityId.isNotBlank()) {
+                                cs.primary
+                            } else {
+                                cs.onSurfaceVariantSummary
+                            },
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
             }
-        }
     }
 }

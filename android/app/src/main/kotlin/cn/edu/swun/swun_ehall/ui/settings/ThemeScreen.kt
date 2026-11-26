@@ -1,6 +1,7 @@
 package cn.edu.swun.swun_ehall.ui.settings
 
-import androidx.compose.animation.AnimatedVisibility
+import android.app.Activity
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,8 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import android.app.Activity
-import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -34,37 +33,29 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.ui.theme.ThemeColorOptions
-import cn.edu.swun.swun_ehall.ui.theme.ThemePaletteLabels
 import cn.edu.swun.swun_ehall.ui.theme.ThemeSettings
 import cn.edu.swun.swun_ehall.ui.theme.applyPredictiveBack
+import cn.edu.swun.swun_ehall.ui.common.BackNav
+import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.ThemeColorSpec
 
 @Composable
 fun ThemeScreen(settings: ThemeSettings, nav: NavHostController) {
-    val cs = MiuixTheme.colorScheme
     val context = LocalContext.current
     var scale by remember(settings.pageScale) { mutableFloatStateOf(settings.pageScale) }
     Scaffold(
         topBar = {
             SmallTopAppBar(
                 title = "主题外观",
-                navigationIcon = {
-                    IconButton(onClick = { nav.popBackStack() }) {
-                        top.yukonga.miuix.kmp.basic.Icon(MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
+                navigationIcon = { BackNav { nav.popBackStack() } },
             )
         },
     ) { padding ->
@@ -73,9 +64,9 @@ fun ThemeScreen(settings: ThemeSettings, nav: NavHostController) {
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 16.dp),
         ) {
-            ThemePreviewCard(settings)
+            ThemePreviewCard()
             Spacer(Modifier.height(16.dp))
             TabRow(
                 tabs = listOf("跟随系统", "浅色", "深色"),
@@ -87,69 +78,21 @@ fun ThemeScreen(settings: ThemeSettings, nav: NavHostController) {
                     .padding(top = 12.dp)
                     .fillMaxWidth(),
             ) {
+                val colorIndex = ThemeColorOptions.indexOfFirst { it.argb == settings.keyColor }.coerceAtLeast(0)
                 SwitchPreference(
-                    title = "莫奈取色",
-                    summary = "用壁纸颜色生成主题",
+                    title = "跟随壁纸取色",
+                    summary = "开启后由系统壁纸决定界面颜色",
                     checked = settings.monet,
                     onCheckedChange = { settings.persistMonet(it) },
                 )
-                AnimatedVisibility(visible = settings.monet) {
-                    Column {
-                        val colorIndex = ThemeColorOptions.indexOfFirst { it.argb == settings.keyColor }.coerceAtLeast(0)
-                        OverlayDropdownPreference(
-                            title = "主题色",
-                            items = ThemeColorOptions.map { it.label },
-                            selectedIndex = colorIndex,
-                            onSelectedIndexChange = { settings.persistKeyColor(ThemeColorOptions[it].argb) },
-                        )
-                        AnimatedVisibility(visible = settings.keyColor != 0) {
-                            Column {
-                                val styles = ThemePaletteLabels
-                                OverlayDropdownPreference(
-                                    title = "配色风格",
-                                    items = styles.map { it.second },
-                                    selectedIndex = styles.indexOfFirst { it.first == settings.paletteStyle }.coerceAtLeast(0),
-                                    onSelectedIndexChange = { settings.persistPaletteStyle(styles[it].first) },
-                                )
-                                val specs = listOf(ThemeColorSpec.Spec2021 to "2021", ThemeColorSpec.Spec2025 to "2025")
-                                OverlayDropdownPreference(
-                                    title = "色板规格",
-                                    items = specs.map { it.second },
-                                    selectedIndex = specs.indexOfFirst { it.first == settings.colorSpec }.coerceAtLeast(0),
-                                    onSelectedIndexChange = { settings.persistColorSpec(specs[it].first) },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            Card(
-                modifier = Modifier
-                    .padding(top = 12.dp)
-                    .fillMaxWidth(),
-            ) {
-                if (Build.VERSION.SDK_INT >= 33) {
-                    SwitchPreference(
-                        title = "背景模糊",
-                        summary = "顶栏和底栏半透明，透出下层内容",
-                        checked = settings.enableBlur,
-                        onCheckedChange = { settings.persistBlur(it) },
-                    )
-                }
-                SwitchPreference(
-                    title = "悬浮底栏",
-                    summary = "底栏改为悬浮胶囊",
-                    checked = settings.floatingBar,
-                    onCheckedChange = { settings.persistFloatingBar(it) },
+                OverlayDropdownPreference(
+                    title = "主题色",
+                    summary = if (settings.monet) "关闭壁纸取色后可设置" else null,
+                    items = ThemeColorOptions.map { it.label },
+                    selectedIndex = colorIndex,
+                    enabled = !settings.monet,
+                    onSelectedIndexChange = { settings.persistKeyColor(ThemeColorOptions[it].argb) },
                 )
-                AnimatedVisibility(visible = settings.floatingBar) {
-                    SwitchPreference(
-                        title = "液态玻璃",
-                        summary = "悬浮底栏使用半透明玻璃效果",
-                        checked = settings.liquidGlass,
-                        onCheckedChange = { settings.persistLiquidGlass(it) },
-                    )
-                }
             }
             Card(
                 modifier = Modifier
@@ -177,12 +120,13 @@ fun ThemeScreen(settings: ThemeSettings, nav: NavHostController) {
                     onValueChangeFinished = { settings.persistPageScale(scale) },
                 )
             }
+            FeatureBottomSpace()
         }
     }
 }
 
 @Composable
-private fun ThemePreviewCard(settings: ThemeSettings) {
+private fun ThemePreviewCard() {
     val cs = MiuixTheme.colorScheme
     val configuration = LocalConfiguration.current
     val ratio = configuration.screenWidthDp.toFloat() / configuration.screenHeightDp.toFloat()
@@ -243,38 +187,23 @@ private fun ThemePreviewCard(settings: ThemeSettings) {
                             .background(cs.surfaceVariant),
                     )
                 }
-                if (settings.floatingBar) {
-                    Box(
-                        Modifier
-                            .padding(start = 10.dp, end = 10.dp, bottom = 8.dp, top = 4.dp)
-                            .height(18.dp)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(
-                                if (settings.liquidGlass) cs.surfaceContainer.copy(alpha = 0.92f)
-                                else androidx.compose.ui.graphics.lerp(cs.surfaceContainer, Color.Black, 0.045f),
-                            )
-                            .border(0.5.dp, cs.onBackground.copy(alpha = 0.12f), RoundedCornerShape(9.dp)),
-                    )
-                } else {
-                    Box(Modifier.fillMaxWidth().height(0.5.dp).background(cs.onBackground.copy(alpha = 0.1f)))
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(32.dp)
-                            .background(androidx.compose.ui.graphics.lerp(cs.surface, Color.Black, 0.045f))
-                            .padding(bottom = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        repeat(4) {
-                            Box(
-                                Modifier
-                                    .size(12.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(if (it == 0) cs.primary else cs.onSurfaceVariantSummary.copy(alpha = 0.45f)),
-                            )
-                        }
+                Box(Modifier.fillMaxWidth().height(0.5.dp).background(cs.onBackground.copy(alpha = 0.1f)))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(32.dp)
+                        .background(androidx.compose.ui.graphics.lerp(cs.surface, Color.Black, 0.045f))
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    repeat(4) {
+                        Box(
+                            Modifier
+                                .size(12.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(if (it == 0) cs.primary else cs.onSurfaceVariantSummary.copy(alpha = 0.45f)),
+                        )
                     }
                 }
             }

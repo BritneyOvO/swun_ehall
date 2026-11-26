@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
@@ -28,6 +29,7 @@ import cn.edu.swun.swun_ehall.data.update.Versions
 import cn.edu.swun.swun_ehall.data.update.updateNotesMarkdown
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
@@ -57,6 +59,14 @@ fun UpdatePrompt(session: Session) {
                     .heightIn(max = 360.dp)
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = 12.dp),
+            )
+        }
+        if (running) {
+            FeatureProgressBar(progress, Modifier.padding(vertical = 12.dp))
+            Text(
+                "下载中 ${"%.0f".format(progress * 100)}%",
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                textAlign = TextAlign.Center,
             )
         }
         Row(Modifier.fillMaxWidth()) {

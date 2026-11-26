@@ -27,7 +27,9 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
+import cn.edu.swun.swun_ehall.ui.common.FeatureMutedPanel
 import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -92,7 +94,8 @@ fun WaterScreen(session: Session, nav: NavHostController) {
                     )
                 }
             }
-            QuickAmounts(listOf(5, 10, 20)) { amount = it.toString() }
+            FeatureSection("充值金额")
+            QuickAmounts(listOf(5, 10, 20), amount) { amount = it.toString() }
             Spacer(Modifier.height(8.dp))
             TextField(
                 value = amount,
@@ -100,6 +103,11 @@ fun WaterScreen(session: Session, nav: NavHostController) {
                 label = "充值金额（最高 20 元）",
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
+            )
+            FeatureMutedPanel(
+                title = "扣款方式",
+                summary = "从一卡通余额立即扣除，确认后无法在本应用撤销。",
+                modifier = Modifier.padding(top = 14.dp),
             )
             Spacer(Modifier.height(16.dp))
             Button(

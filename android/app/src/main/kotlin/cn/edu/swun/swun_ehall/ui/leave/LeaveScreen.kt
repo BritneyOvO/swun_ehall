@@ -1,7 +1,9 @@
 package cn.edu.swun.swun_ehall.ui.leave
 
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,6 +22,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -30,6 +36,7 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
+import cn.edu.swun.swun_ehall.ui.common.FeatureInlineNotice
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoading
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
@@ -80,6 +87,14 @@ fun LeaveScreen(session: Session, nav: NavHostController) {
             return@Scaffold
         }
         FeatureColumn(padding) {
+            if (session.leaveError != null && session.leaveRecords.isNotEmpty()) {
+                FeatureInlineNotice(
+                    title = "更新失败，正在显示上次数据",
+                    summary = session.leaveError,
+                    tone = Color(0xFF8A5A00),
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
             Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 18.dp),
@@ -90,13 +105,39 @@ fun LeaveScreen(session: Session, nav: NavHostController) {
                     LeaveMetric("待销假", session.leaveSummary.pendingCancel.toString())
                 }
             }
-            Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(session.leaveStudentInfo.name.ifBlank { session.displayName }, style = MiuixTheme.textStyles.title3)
-                    LeaveInfoRow("学号", session.leaveStudentInfo.studentId.ifBlank { session.studentId })
-                    LeaveInfoRow("学院", session.leaveStudentInfo.college)
-                    LeaveInfoRow("班级", session.leaveStudentInfo.klass)
-                    LeaveInfoRow("宿舍", session.leaveStudentInfo.dorm)
+            Card(
+                modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+                onClick = { nav.navigate("profile") },
+            ) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val name = session.leaveStudentInfo.name.ifBlank { session.displayName }
+                    Box(
+                        Modifier.size(38.dp).clip(CircleShape).background(cs.primary.copy(alpha = 0.09f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(name.take(1), color = cs.primary, fontWeight = FontWeight.SemiBold)
+                    }
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(name, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            listOf(
+                                session.leaveStudentInfo.studentId.ifBlank { session.studentId },
+                                session.leaveStudentInfo.klass,
+                            ).filter { it.isNotBlank() }.joinToString(" · "),
+                            color = cs.onSurfaceVariantSummary,
+                            fontSize = 12.sp,
+                        )
+                        val details = listOf(session.leaveStudentInfo.college, session.leaveStudentInfo.dorm)
+                            .filter { it.isNotBlank() }
+                        if (details.isNotEmpty()) {
+                            Text(
+                                details.joinToString(" · "),
+                                color = cs.onSurfaceVariantSummary,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
+                    Text("›", color = cs.onSurfaceVariantSummary, fontSize = 18.sp)
                 }
             }
             Button(
@@ -110,9 +151,12 @@ fun LeaveScreen(session: Session, nav: NavHostController) {
                 session.leaveRecords.isEmpty() -> FeatureHint(
                     if (session.leaveError == null) "暂无请假记录" else "记录暂未加载，请点右上角重试",
                 )
-                else -> session.leaveRecords.forEach { record ->
-                    LeaveRecordCard(record) {
-                        nav.navigate("leave/detail/${Uri.encode(record.leaveNo)}")
+                else -> Card(modifier = Modifier.fillMaxWidth()) {
+                    session.leaveRecords.forEachIndexed { index, record ->
+                        if (index > 0) HorizontalDivider()
+                        LeaveRecordRow(record) {
+                            nav.navigate("leave/detail/${Uri.encode(record.leaveNo)}")
+                        }
                     }
                 }
             }
@@ -137,37 +181,35 @@ private fun LeaveMetric(label: String, value: String) {
 }
 
 @Composable
-private fun LeaveRecordCard(record: LeaveRecord, onClick: () -> Unit) {
+private fun LeaveRecordRow(record: LeaveRecord, onClick: () -> Unit) {
     val cs = MiuixTheme.colorScheme
-    Card(modifier = Modifier.padding(bottom = 10.dp).fillMaxWidth(), onClick = onClick) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    listOf(record.leaveTypeName, record.specificTypeName).filter { it.isNotBlank() }.joinToString(" · ")
-                        .ifBlank { record.leaveName.ifBlank { "请假" } },
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    record.statusName.ifBlank { "处理中" },
-                    color = leaveStatusTone(record.statusCode, cs.primary),
-                    fontSize = 13.sp,
-                )
-            }
+    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "${record.startTime} 至 ${record.endTime}",
-                color = cs.onSurfaceVariantSummary,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(top = 5.dp),
+                listOf(record.leaveTypeName, record.specificTypeName).filter { it.isNotBlank() }.joinToString(" · ")
+                    .ifBlank { record.leaveName.ifBlank { "请假" } },
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
             )
-            Row(Modifier.fillMaxWidth().padding(top = 5.dp)) {
-                Text(formatLeaveDays(record.totalDays.takeIf { it > 0 } ?: record.days), fontSize = 13.sp)
-                Spacer(Modifier.weight(1f))
-                if (record.canCancel) Text("可申请销假", color = cs.primary, fontSize = 12.sp)
-            }
-            if (record.reason.isNotBlank()) {
-                Text(record.reason, color = cs.onSurfaceVariantSummary, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
-            }
+            Text(
+                record.statusName.ifBlank { "处理中" },
+                color = leaveStatusTone(record.statusCode, cs.primary),
+                fontSize = 13.sp,
+            )
+        }
+        Text(
+            "${record.startTime} 至 ${record.endTime}",
+            color = cs.onSurfaceVariantSummary,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 5.dp),
+        )
+        Row(Modifier.fillMaxWidth().padding(top = 5.dp)) {
+            Text(formatLeaveDays(record.totalDays.takeIf { it > 0 } ?: record.days), fontSize = 13.sp)
+            Spacer(Modifier.weight(1f))
+            if (record.canCancel) Text("可申请销假", color = cs.primary, fontSize = 12.sp)
+        }
+        if (record.reason.isNotBlank()) {
+            Text(record.reason, color = cs.onSurfaceVariantSummary, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
         }
     }
 }

@@ -3,13 +3,17 @@ package cn.edu.swun.swun_ehall.ui.settings
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -18,13 +22,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.data.update.K_GITHUB_REPO
 import cn.edu.swun.swun_ehall.data.update.Versions
+import cn.edu.swun.swun_ehall.ui.common.BackNav
+import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
+import cn.edu.swun.swun_ehall.ui.common.FeatureMutedPanel
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
@@ -78,11 +88,7 @@ fun AboutScreen(session: Session, nav: NavHostController) {
         topBar = {
             SmallTopAppBar(
                 title = "关于",
-                navigationIcon = {
-                    IconButton(onClick = { nav.popBackStack() }) {
-                        top.yukonga.miuix.kmp.basic.Icon(MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
+                navigationIcon = { BackNav { nav.popBackStack() } },
             )
         },
     ) { padding ->
@@ -93,16 +99,33 @@ fun AboutScreen(session: Session, nav: NavHostController) {
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
+            Box(
+                Modifier
+                    .padding(top = 12.dp)
+                    .size(76.dp)
+                    .background(MiuixTheme.colorScheme.primary, RoundedCornerShape(18.dp))
+                    .align(Alignment.CenterHorizontally),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("民", color = MiuixTheme.colorScheme.onPrimary, fontSize = 30.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Text(
+                "民大助手",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 19.sp,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp),
+            )
+            Text(
+                "版本 ${Versions.APP}",
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                fontSize = 12.sp,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 3.dp, bottom = 18.dp),
+            )
             Card {
-                ArrowPreference(
-                    title = "民大助手",
-                    summary = Versions.APP,
-                    onClick = {
-                        taps++
-                        if (taps >= 7) session.persistDeveloperMode(true)
-                    },
-                )
-                ArrowPreference(title = "制作者", summary = "Britney")
+                ArrowPreference(title = "制作者", summary = "Britney", onClick = {
+                    taps++
+                    if (taps >= 7) session.persistDeveloperMode(true)
+                })
                 ArrowPreference(
                     title = "开源仓库",
                     summary = K_GITHUB_REPO,
@@ -143,6 +166,11 @@ fun AboutScreen(session: Session, nav: NavHostController) {
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !checking,
             ) { Text(if (checking) "检查中…" else "检查更新") }
+            FeatureMutedPanel(
+                title = "说明",
+                summary = "本应用为非官方校园客户端，仅服务学生账号。学校名称与标识归西南民族大学所有。",
+                modifier = Modifier.padding(top = 14.dp),
+            )
             if (session.developerMode) {
                 Spacer(Modifier.height(12.dp))
                 Card {
@@ -158,6 +186,7 @@ fun AboutScreen(session: Session, nav: NavHostController) {
                     )
                 }
             }
+            FeatureBottomSpace()
         }
     }
 }

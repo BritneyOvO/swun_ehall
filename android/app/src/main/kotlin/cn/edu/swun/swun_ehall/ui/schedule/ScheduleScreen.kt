@@ -30,17 +30,15 @@ import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.model.Lesson
 import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
+import cn.edu.swun.swun_ehall.ui.common.FeatureInlineNotice
 import kotlinx.coroutines.launch
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Undo
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -102,18 +100,16 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (session.schedule.isNotEmpty()) {
-                session.scheduleError?.let { message ->
-                    Text(
-                        "课表更新失败：$message",
-                        color = MiuixTheme.colorScheme.error,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
+            if (session.schedule.isNotEmpty()) session.scheduleError?.let { message ->
+                FeatureInlineNotice(
+                    title = "课表更新失败，正在显示上次数据",
+                    summary = message,
+                    tone = MiuixTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
             }
             WeekBar(
                 week = week,
-                maxWeek = maxW,
                 isCurrent = week == cur,
                 onPrev = if (week > 1) {
                     { scope.launch { pager.animateScrollToPage(week - 2) } }
@@ -223,7 +219,6 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
 @Composable
 private fun WeekBar(
     week: Int,
-    maxWeek: Int,
     isCurrent: Boolean,
     onPrev: (() -> Unit)?,
     onNext: (() -> Unit)?,
@@ -242,14 +237,11 @@ private fun WeekBar(
         IconButton(onClick = { onNext?.invoke() }, enabled = onNext != null) {
             Text("›", color = crimson, fontSize = 26.sp, fontWeight = FontWeight.Medium)
         }
-        Text("/ $maxWeek", color = muted, fontSize = 12.sp)
         Spacer(Modifier.weight(1f))
         if (isCurrent) {
-            Text("本周", color = muted, fontSize = 13.sp)
+            Text("本周", color = crimson, fontSize = 13.sp)
         } else {
-            IconButton(onClick = { onCurrent?.invoke() }) {
-                Icon(MiuixIcons.Undo, contentDescription = "回本周", tint = crimson)
-            }
+            TextButton(text = "回本周", onClick = { onCurrent?.invoke() })
         }
     }
 }

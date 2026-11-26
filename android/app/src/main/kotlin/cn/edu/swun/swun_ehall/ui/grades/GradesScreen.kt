@@ -17,7 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.edu.swun.swun_ehall.data.http.gradePassed
-import cn.edu.swun.swun_ehall.data.model.SchoolTerm
 import cn.edu.swun.swun_ehall.data.model.buildGradeTerms
 import cn.edu.swun.swun_ehall.data.model.currentSchoolTerm
 import cn.edu.swun.swun_ehall.data.model.matches
@@ -27,6 +26,7 @@ import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureHint
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
+import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -114,7 +114,9 @@ fun GradesScreen(session: Session) {
             }
             when {
                 shown.isEmpty() -> FeatureHint("该学期暂无成绩")
-                else -> Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+                else -> {
+                    FeatureSection("课程成绩")
+                    Card(modifier = Modifier.fillMaxWidth()) {
                     shown.forEachIndexed { i, g ->
                         if (i > 0) HorizontalDivider()
                         Row(
@@ -147,6 +149,7 @@ fun GradesScreen(session: Session) {
                             )
                         }
                     }
+                }
                 }
             }
             FeatureBottomSpace()

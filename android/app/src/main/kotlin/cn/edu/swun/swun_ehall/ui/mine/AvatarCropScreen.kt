@@ -133,6 +133,11 @@ fun AvatarCropScreen(session: Session, onClose: () -> Unit) {
                 }
             }
         }
+        Text(
+            "拖动和缩放照片，使头像位于圆形区域内",
+            color = Color(0xFFC7C7CB),
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp),
+        )
         Row(
             Modifier
                 .fillMaxWidth()

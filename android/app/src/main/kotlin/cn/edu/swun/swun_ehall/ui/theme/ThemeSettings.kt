@@ -159,9 +159,5 @@ class ThemeSettings(app: Application) : AndroidViewModel(app) {
         prefs.edit().putFloat("pageScale", pageScale).apply()
     }
 
-    fun resolvedKeyColor(): Color? {
-        if (keyColor != 0) return Color(keyColor)
-        if (!monet) return Color(0xFF9B1B30)
-        return null
-    }
+    fun resolvedAccentColor(): Color = Color(keyColor.takeIf { it != 0 } ?: 0xFF9B1B30.toInt())
 }

@@ -2,6 +2,7 @@ package cn.edu.swun.swun_ehall.ui.ykt
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,9 +18,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,13 +35,17 @@ import cn.edu.swun.swun_ehall.ui.common.BackNav
 import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
 import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoading
+import cn.edu.swun.swun_ehall.ui.common.FeatureInlineNotice
+import cn.edu.swun.swun_ehall.ui.common.FeatureMutedPanel
 import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
@@ -87,18 +93,24 @@ fun ElectricScreen(session: Session, nav: NavHostController) {
     ) { padding ->
         FeatureColumn(padding) {
             val cs = MiuixTheme.colorScheme
-            Text(
-                "依次选择校区、电表类型、楼宇、楼层和房间。学校系统会将这组选择写入当前充值会话。",
-                color = cs.onSurfaceVariantSummary,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp),
+            FeatureInlineNotice(
+                title = "请确认宿舍信息",
+                summary = "选择结果将写入学校电费充值会话。",
+                tone = Color(0xFF486A8E),
+                modifier = Modifier.padding(top = 10.dp),
             )
             if (loading && schools.isEmpty()) FeatureLoading()
-            ElectricField(ElectricLevel.School.title, school?.name, schools.isNotEmpty()) { chooser = ElectricLevel.School }
-            ElectricField(ElectricLevel.Building.title, building?.name, school != null && buildings.isNotEmpty()) { chooser = ElectricLevel.Building }
-            ElectricField(ElectricLevel.Floor.title, floor?.name, building != null && floors.isNotEmpty()) { chooser = ElectricLevel.Floor }
-            ElectricField(ElectricLevel.Room.title, room?.name, floor != null && rooms.isNotEmpty()) { chooser = ElectricLevel.Room }
-            QuickAmounts(listOf(10, 20, 50, 100, 200)) { amount = it.toString() }
+            Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+                ElectricField(ElectricLevel.School.title, school?.name, schools.isNotEmpty()) { chooser = ElectricLevel.School }
+                HorizontalDivider()
+                ElectricField(ElectricLevel.Building.title, building?.name, school != null && buildings.isNotEmpty()) { chooser = ElectricLevel.Building }
+                HorizontalDivider()
+                ElectricField(ElectricLevel.Floor.title, floor?.name, building != null && floors.isNotEmpty()) { chooser = ElectricLevel.Floor }
+                HorizontalDivider()
+                ElectricField(ElectricLevel.Room.title, room?.name, floor != null && rooms.isNotEmpty()) { chooser = ElectricLevel.Room }
+            }
+            FeatureSection("充值金额")
+            QuickAmounts(listOf(10, 20, 50, 100, 200), amount) { amount = it.toString() }
             Spacer(Modifier.height(8.dp))
             TextField(
                 value = amount,
@@ -148,11 +160,10 @@ fun ElectricScreen(session: Session, nav: NavHostController) {
             PaymentResultCard(result) { order ->
                 openCcbOrder(context, order).onFailure { notices.error("无法打开建行收银台") }
             }
-            Text(
-                "学校每天 23:50–00:30 对账，期间不能充值。付款结果请以宿舍电表和一卡通账单为准。",
-                color = cs.onSurfaceVariantSummary,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp),
+            FeatureMutedPanel(
+                title = "充值说明",
+                summary = "学校每天 23:50–00:30 对账，期间不能充值。付款结果以宿舍电表和一卡通账单为准。",
+                modifier = Modifier.padding(top = 14.dp),
             )
             FeatureBottomSpace()
         }
@@ -208,13 +219,21 @@ fun ElectricScreen(session: Session, nav: NavHostController) {
 @Composable
 private fun ElectricField(label: String, value: String?, enabled: Boolean, onClick: () -> Unit) {
     val cs = MiuixTheme.colorScheme
-    Card(
-        modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
-        onClick = { if (enabled) onClick() },
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Column(Modifier.weight(1f)) {
             Text(label, color = cs.onSurfaceVariantSummary, fontSize = 12.sp)
-            Text(value ?: if (enabled) "请选择" else "请先完成上一步", modifier = Modifier.padding(top = 3.dp))
+            Text(
+                value ?: if (enabled) "请选择" else "请先完成上一步",
+                color = if (enabled) cs.onBackground else cs.onSurfaceVariantSummary,
+                modifier = Modifier.padding(top = 3.dp),
+            )
         }
+        Text(if (enabled) "选择" else "", color = cs.primary, fontSize = 13.sp)
     }
 }

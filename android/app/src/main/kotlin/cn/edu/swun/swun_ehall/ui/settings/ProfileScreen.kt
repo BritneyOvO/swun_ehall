@@ -11,13 +11,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.ui.common.BackNav
+import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
+import cn.edu.swun.swun_ehall.ui.common.FeatureHint
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
@@ -57,19 +61,21 @@ fun ProfileScreen(session: Session, nav: NavHostController) {
                 .padding(16.dp),
         ) {
             if (rows.isEmpty()) {
-                Card { Text(if (session.demoMode) "预览模式" else "暂无个人信息", modifier = Modifier.padding(16.dp)) }
+                FeatureHint(if (session.demoMode) "预览模式" else "暂无个人信息")
             } else {
                 Card {
-                    Column(Modifier.padding(4.dp)) {
-                        rows.forEach { (k, v) ->
+                    Column {
+                        rows.forEachIndexed { index, (k, v) ->
+                            if (index > 0) HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp))
                             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
                                 Text(k, color = MiuixTheme.colorScheme.onSurfaceVariantSummary, modifier = Modifier.weight(0.3f))
-                                Text(v, modifier = Modifier.weight(0.7f))
+                                Text(v, modifier = Modifier.weight(0.7f), textAlign = TextAlign.End)
                             }
                         }
                     }
                 }
             }
+            FeatureBottomSpace()
         }
     }
 }

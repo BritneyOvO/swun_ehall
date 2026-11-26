@@ -1,10 +1,13 @@
 package cn.edu.swun.swun_ehall.ui.selection
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -98,32 +101,33 @@ fun SelectionScreen(session: Session, nav: NavHostController) {
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
-            Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
+            Row(Modifier.padding(top = 12.dp).fillMaxWidth()) {
                     TextField(
                         value = keyword,
                         onValueChange = { keyword = it },
                         label = "搜索课程名",
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.width(10.dp))
                     Button(onClick = {
                         query = keyword.trim()
                         searchVersion++
-                    }, modifier = Modifier.fillMaxWidth()) {
+                    }, modifier = Modifier.width(92.dp)) {
                         Text("搜索")
                     }
-                }
             }
             when {
                 session.xkRounds.isEmpty() -> FeatureHint(if (session.xkError == null) "当前没有开放的选课轮次" else "选课数据暂未加载")
                 session.xkCourses.isEmpty() -> FeatureHint(if (session.xkError == null) "没有匹配的课程" else "课程暂未加载，请重新搜索")
-                else -> Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
-                    session.xkCourses.forEachIndexed { i, c ->
-                        if (i > 0) HorizontalDivider()
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
+                else -> {
+                    FeatureSection("课程 · 共 ${session.xkCourses.size} 门")
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        session.xkCourses.forEachIndexed { i, c ->
+                            if (i > 0) HorizontalDivider()
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
                                 scope.launch {
                                     val round = session.xkRounds.getOrNull(tab) ?: return@launch
                                     picking = c
@@ -136,21 +140,26 @@ fun SelectionScreen(session: Session, nav: NavHostController) {
                                         emptyList()
                                     }
                                 }
-                            },
-                        ) {
-                            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                                Text(c.name)
-                                Text(
-                                    buildString {
-                                        if (c.credit.isNotEmpty()) append("${c.credit} 学分")
-                                        if (c.teacher.isNotEmpty()) {
-                                            if (isNotEmpty()) append(" · ")
-                                            append(c.teacher)
-                                        }
-                                    },
-                                    color = cs.onSurfaceVariantSummary,
-                                )
-                                if (c.time.isNotEmpty()) Text(c.time, color = cs.onSurfaceVariantSummary)
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(c.name)
+                                    Text(
+                                        buildString {
+                                            if (c.credit.isNotEmpty()) append("${c.credit} 学分")
+                                            if (c.teacher.isNotEmpty()) {
+                                                if (isNotEmpty()) append(" · ")
+                                                append(c.teacher)
+                                            }
+                                            if (c.time.isNotEmpty()) {
+                                                if (isNotEmpty()) append(" · ")
+                                                append(c.time)
+                                            }
+                                        },
+                                        color = cs.onSurfaceVariantSummary,
+                                    )
+                                }
                                 FeatureStatus(
                                     when {
                                         c.remain < 0 -> "余量未知"

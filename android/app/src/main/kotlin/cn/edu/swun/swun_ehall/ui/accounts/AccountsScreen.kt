@@ -1,5 +1,8 @@
 package cn.edu.swun.swun_ehall.ui.accounts
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -7,8 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,13 +24,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.session.SavedAccount
 import cn.edu.swun.swun_ehall.data.session.Session
+import cn.edu.swun.swun_ehall.ui.common.BackNav
+import cn.edu.swun.swun_ehall.ui.common.FeatureMutedPanel
 import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
+import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
@@ -40,10 +51,7 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Hide
-import top.yukonga.miuix.kmp.icon.extended.Replace
 import top.yukonga.miuix.kmp.icon.extended.Show
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
@@ -67,11 +75,7 @@ fun AccountsScreen(session: Session, nav: NavHostController) {
         topBar = {
             SmallTopAppBar(
                 title = "账号管理",
-                navigationIcon = {
-                    IconButton(onClick = { nav.popBackStack() }) {
-                        Icon(MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
+                navigationIcon = { BackNav { nav.popBackStack() } },
             )
         },
     ) { padding ->
@@ -80,11 +84,11 @@ fun AccountsScreen(session: Session, nav: NavHostController) {
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 16.dp),
         ) {
+            FeatureSection("已保存账号 · ${session.accounts.items.size} 个")
             Card(
                 modifier = Modifier
-                    .padding(top = 12.dp)
                     .fillMaxWidth(),
             ) {
                 if (session.accounts.items.isEmpty()) {
@@ -96,11 +100,25 @@ fun AccountsScreen(session: Session, nav: NavHostController) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text(acc.name.ifBlank { acc.id })
+                            Box(
+                                Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(if (on) cs.primary.copy(alpha = 0.1f) else cs.surfaceContainerHighest),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    acc.name.ifBlank { acc.id }.take(1),
+                                    color = if (on) cs.primary else cs.onSurfaceVariantSummary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                            Column(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
+                                Text(acc.name.ifBlank { acc.id }, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     buildString {
                                         append(acc.id)
@@ -109,24 +127,26 @@ fun AccountsScreen(session: Session, nav: NavHostController) {
                                     color = if (on) cs.primary else cs.onSurfaceVariantSummary,
                                 )
                             }
-                            IconButton(
-                                onClick = {
+                            if (!on) {
+                                Text(
+                                    "切换",
+                                    color = cs.primary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.clickable(enabled = !session.busy) {
                                     if (!on && !session.busy) scope.launch {
                                         session.switchTo(acc.id)
                                         session.error?.let { notices.error(it, "切换账号未完成") }
                                     }
-                                },
-                                enabled = !on && !session.busy,
-                            ) {
-                                Icon(
-                                    MiuixIcons.Replace,
-                                    contentDescription = "切换",
-                                    tint = if (on) cs.onSurfaceVariantSummary else cs.onBackground,
+                                    }.padding(8.dp),
                                 )
                             }
-                            IconButton(onClick = { pending = acc }) {
-                                Icon(MiuixIcons.Delete, contentDescription = "删除", tint = cs.onBackground)
-                            }
+                            Text(
+                                "删除",
+                                color = cs.onSurfaceVariantSummary,
+                                fontSize = 13.sp,
+                                modifier = Modifier.clickable { pending = acc }.padding(8.dp),
+                            )
                         }
                     }
                 }
@@ -135,8 +155,15 @@ fun AccountsScreen(session: Session, nav: NavHostController) {
             Button(
                 onClick = { nav.navigate("accounts/add") },
                 modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
             ) { Text("添加账号") }
-            Spacer(Modifier.height(96.dp))
+            Text(
+                "账号凭据仅保存在本机应用数据中。",
+                color = cs.onSurfaceVariantSummary,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+            )
+            Spacer(Modifier.height(24.dp))
         }
         pending?.let { acc ->
             WindowDialog(
@@ -182,11 +209,7 @@ fun AddAccountScreen(session: Session, nav: NavHostController) {
         topBar = {
             SmallTopAppBar(
                 title = "添加账号",
-                navigationIcon = {
-                    IconButton(onClick = { nav.popBackStack() }) {
-                        Icon(MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
+                navigationIcon = { BackNav { nav.popBackStack() } },
             )
         },
     ) { padding ->
@@ -197,6 +220,13 @@ fun AddAccountScreen(session: Session, nav: NavHostController) {
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
+            Text("登录并切换到另一个学生账号", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+            Text(
+                "成功登录后会自动保存到账号管理。",
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 5.dp, bottom = 18.dp),
+            )
             TextField(value = user, onValueChange = { user = it }, label = "学号", modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(12.dp))
             TextField(
@@ -228,7 +258,13 @@ fun AddAccountScreen(session: Session, nav: NavHostController) {
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !session.busy,
+                colors = ButtonDefaults.buttonColorsPrimary(),
             ) { Text(if (session.busy) "登录中…" else "登录并切换") }
+            FeatureMutedPanel(
+                title = "安全提示",
+                summary = "请只登录本人的统一身份认证账号。密码不会上传到项目仓库或第三方服务。",
+                modifier = Modifier.padding(top = 16.dp),
+            )
         }
     }
 }

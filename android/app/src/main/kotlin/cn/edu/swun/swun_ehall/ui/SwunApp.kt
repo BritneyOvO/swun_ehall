@@ -138,7 +138,7 @@ fun SwunApp(
                 },
             ) {
                 composable("login") { LoginScreen(session = session) }
-                composable("shell") { MainShell(session = session, nav = nav, theme = theme) }
+                composable("shell") { MainShell(session = session, nav = nav) }
                 composable("ktkq") { KtkqScreen(session, nav) }
                 composable(
                     "ktkqSign/{id}",

@@ -1,36 +1,38 @@
 package cn.edu.swun.swun_ehall.ui.shell
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.ui.grades.GradesScreen
 import cn.edu.swun.swun_ehall.ui.home.HomeScreen
 import cn.edu.swun.swun_ehall.ui.mine.MineScreen
 import cn.edu.swun.swun_ehall.ui.schedule.ScheduleScreen
-import cn.edu.swun.swun_ehall.ui.theme.ThemeMode
-import cn.edu.swun.swun_ehall.ui.theme.ThemeSettings
-import dev.chrisbanes.haze.HazeInput
-import dev.chrisbanes.haze.blur.HazeBlurStyle
-import dev.chrisbanes.haze.blur.hazeBlur
-import dev.chrisbanes.haze.rememberHazeState
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
-import top.yukonga.miuix.kmp.basic.NavigationBar
-import top.yukonga.miuix.kmp.basic.NavigationBarItem
-import top.yukonga.miuix.kmp.basic.NavigationItem
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Contacts
 import top.yukonga.miuix.kmp.icon.extended.File
@@ -38,82 +40,94 @@ import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.extended.VerticalSplit
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+private data class MainDestination(
+    val label: String,
+    val icon: ImageVector,
+)
+
 @Composable
-fun MainShell(session: Session, nav: NavHostController, theme: ThemeSettings = viewModel()) {
+fun MainShell(session: Session, nav: NavHostController) {
     var index by rememberSaveable { mutableIntStateOf(0) }
     val items = listOf(
-        NavigationItem("首页", MiuixIcons.Home),
-        NavigationItem("课表", MiuixIcons.VerticalSplit),
-        NavigationItem("成绩", MiuixIcons.File),
-        NavigationItem("我的", MiuixIcons.Contacts),
+        MainDestination("首页", MiuixIcons.Home),
+        MainDestination("课表", MiuixIcons.VerticalSplit),
+        MainDestination("成绩", MiuixIcons.File),
+        MainDestination("我的", MiuixIcons.Contacts),
     )
-    val cs = MiuixTheme.colorScheme
-    val dark = when (theme.mode) {
-        ThemeMode.Light -> false
-        ThemeMode.Dark -> true
-        ThemeMode.System -> isSystemInDarkTheme()
-    }
-    val barColor = if (dark) {
-        lerp(cs.background, cs.surfaceContainer, 0.42f)
-    } else {
-        lerp(cs.surfaceContainer, Color.Black, 0.045f)
-    }
-    val hazeState = rememberHazeState()
-    val useGlass = theme.liquidGlass
-    val useFloating = theme.floatingBar || useGlass
-    Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .then(if (useGlass || theme.enableBlur) Modifier.hazeBehind(hazeState) else Modifier),
-        ) {
+
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             when (index) {
-                0 -> HomeScreen(session, nav)
+                0 -> HomeScreen(session, nav, onOpenSchedule = { index = 1 })
                 1 -> ScheduleScreen(session, nav)
                 2 -> GradesScreen(session)
                 else -> MineScreen(session, nav)
             }
         }
-        Box(Modifier.align(Alignment.BottomCenter)) {
-            when {
-                useFloating -> FloatingNavigationBar(
-                    modifier = if (useGlass) Modifier.liquidGlass(hazeState) else Modifier,
-                    color = if (useGlass) Color.Transparent else barColor,
-                    showDivider = false,
-                    shadowElevation = when {
-                        useGlass -> 8.dp
-                        dark -> 2.dp
-                        else -> 10.dp
-                    },
+        MainBottomBar(
+            items = items,
+            selected = index,
+            onSelected = { index = it },
+        )
+    }
+}
+
+@Composable
+private fun MainBottomBar(
+    items: List<MainDestination>,
+    selected: Int,
+    onSelected: (Int) -> Unit,
+) {
+    val cs = MiuixTheme.colorScheme
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(cs.surface),
+    ) {
+        HorizontalDivider()
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(64.dp)
+                .selectableGroup(),
+        ) {
+            items.forEachIndexed { index, item ->
+                val active = index == selected
+                val tone = if (active) cs.primary else cs.onSurfaceVariantSummary
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .selectable(selected = active, role = Role.Tab) { onSelected(index) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    items.forEachIndexed { i, item ->
-                        FloatingNavigationBarItem(
-                            selected = index == i,
-                            onClick = { index = i },
-                            icon = item.icon,
-                            label = item.label,
-                        )
-                    }
-                }
-                else -> NavigationBar(
-                    color = if (theme.enableBlur) barColor.copy(alpha = 0.72f) else barColor,
-                    showDivider = true,
-                    modifier = if (theme.enableBlur) {
-                        Modifier.hazeBlur(
-                            input = HazeInput.Sources(hazeState),
-                            style = HazeBlurStyle { blurRadius(22.dp) },
-                        )
-                    } else {
+                    Box(
                         Modifier
-                    },
-                ) {
-                    items.forEachIndexed { i, item ->
-                        NavigationBarItem(
-                            selected = index == i,
-                            onClick = { index = i },
-                            icon = item.icon,
-                            label = item.label,
-                        )
+                            .height(3.dp)
+                            .fillMaxWidth(0.22f)
+                            .background(if (active) cs.primary else cs.surface),
+                    )
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                item.icon,
+                                contentDescription = null,
+                                tint = tone,
+                                modifier = Modifier.size(23.dp),
+                            )
+                            Text(
+                                item.label,
+                                color = tone,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
                     }
                 }
             }

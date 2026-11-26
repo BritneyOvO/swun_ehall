@@ -1,74 +1,123 @@
 package cn.edu.swun.swun_ehall.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.fences.CampusFences
 import cn.edu.swun.swun_ehall.data.geo.Geo
 import cn.edu.swun.swun_ehall.data.session.Session
-import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
-import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
+import cn.edu.swun.swun_ehall.ui.common.BackNav
+import cn.edu.swun.swun_ehall.ui.common.FeatureBottomSpace
+import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
+import cn.edu.swun.swun_ehall.ui.common.FeatureInlineNotice
+import cn.edu.swun.swun_ehall.ui.common.FeatureSection
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+private data class LocateProbeResult(
+    val room: String,
+    val fenceName: String,
+    val distance: Double,
+    val coordinates: String,
+)
 
 @Composable
 fun LocateTestScreen(session: Session, nav: NavHostController) {
-    val notices = rememberFeatureNotices(session.studentId, session.demoMode)
-    FeatureNoticeHost(notices)
     val rooms = listOf("BS-223", "BW-106", "H-206", "BX-317")
+    var last by remember { mutableStateOf<LocateProbeResult?>(null) }
+    val cs = MiuixTheme.colorScheme
     Scaffold(
         topBar = {
             SmallTopAppBar(
                 title = "测试定位",
-                navigationIcon = {
-                    IconButton(onClick = { nav.popBackStack() }) {
-                        top.yukonga.miuix.kmp.basic.Icon(MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
+                navigationIcon = { BackNav { nav.popBackStack() } },
             )
         },
     ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-        ) {
-            Card {
-                rooms.forEach { room ->
-                    ArrowPreference(
-                        title = room,
-                        summary = CampusFences.forRoom(room)?.let { "${it.name} 中心" },
-                        onClick = {
-                            val fence = CampusFences.forRoom(room) ?: return@ArrowPreference
-                            val wgs = fence.centerLat to fence.centerLng
-                            val gcj = Geo.wgs84ToGcj02(wgs.first, wgs.second)
-                            val gps = Geo.campusWgs84(wgs.first, wgs.second, "gps", datum = "wgs84")
-                            val amap = Geo.campusWgs84(gcj.first, gcj.second, "amap", datum = "gcj02")
-                            val log = buildString {
-                                appendLine("$room ${fence.name} 签到围栏 WGS-84 ${wgs.first}, ${wgs.second}")
-                                appendLine("地图显示 GCJ-02 ${gcj.first}, ${gcj.second}")
-                                appendLine("GPS提交 ${gps.first}, ${gps.second}  距围栏 ${"%.1f".format(Geo.meters(gps.first, gps.second, fence.centerLat, fence.centerLng))} m")
-                                appendLine("高德反算提交 ${amap.first}, ${amap.second}  距围栏 ${"%.1f".format(Geo.meters(amap.first, amap.second, fence.centerLat, fence.centerLng))} m")
+        FeatureColumn(padding) {
+            FeatureInlineNotice(
+                title = "开发者工具",
+                summary = "仅验证坐标转换和教学楼围栏，不会提交签到。",
+                tone = Color(0xFF486A8E),
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            FeatureSection("选择测试地点")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                rooms.forEachIndexed { index, room ->
+                    if (index > 0) HorizontalDivider()
+                    val fence = CampusFences.forRoom(room)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = fence != null) {
+                                val value = fence ?: return@clickable
+                                val wgs = value.centerLat to value.centerLng
+                                val gcj = Geo.wgs84ToGcj02(wgs.first, wgs.second)
+                                val submitted = Geo.campusWgs84(gcj.first, gcj.second, "amap", datum = "gcj02")
+                                last = LocateProbeResult(
+                                    room = room,
+                                    fenceName = value.name,
+                                    distance = Geo.meters(submitted.first, submitted.second, value.centerLat, value.centerLng),
+                                    coordinates = "${"%.5f".format(submitted.first)}, ${"%.5f".format(submitted.second)}",
+                                )
                             }
-                            notices.details("$room 定位测试", log)
-                        },
-                    )
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(room, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                fence?.let { "${it.name} · ${if (CampusFences.outlineFor(room).isNullOrEmpty()) "中心围栏" else "多边形围栏"}" }
+                                    ?: "没有匹配的围栏",
+                                color = cs.onSurfaceVariantSummary,
+                                fontSize = 12.sp,
+                            )
+                        }
+                        Text("测试", color = if (fence == null) cs.onSurfaceVariantSummary else cs.primary, fontSize = 13.sp)
+                    }
                 }
             }
+            last?.let { result ->
+                FeatureSection("最近结果")
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(result.fenceName, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(
+                                if (result.distance < 100) "范围内" else "请检查",
+                                color = if (result.distance < 100) Color(0xFF347A59) else cs.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                            )
+                        }
+                        Text(
+                            "${result.room} · 距围栏中心 ${"%.1f".format(result.distance)} 米",
+                            color = cs.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                        Text(result.coordinates, color = cs.onSurfaceVariantSummary, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+                    }
+                }
+            }
+            FeatureBottomSpace()
         }
     }
 }

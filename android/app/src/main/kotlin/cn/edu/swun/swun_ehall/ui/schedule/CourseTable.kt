@@ -27,11 +27,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -43,15 +45,14 @@ import java.time.LocalDate
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+private data class LessonTone(val fill: Color, val accent: Color)
+
 private val LessonPalette = listOf(
-    Color(0xFFE85D4C),
-    Color(0xFF2BB5A0),
-    Color(0xFF4C8DFF),
-    Color(0xFFA56BFF),
-    Color(0xFFF0923A),
-    Color(0xFF3CBF6E),
-    Color(0xFF5B6CFF),
-    Color(0xFFE86AA8),
+    LessonTone(Color(0xFFF2E5E8), Color(0xFF9B1B30)),
+    LessonTone(Color(0xFFE6F0EB), Color(0xFF4B8A6D)),
+    LessonTone(Color(0xFFE7ECF3), Color(0xFF607A9E)),
+    LessonTone(Color(0xFFF2ECE1), Color(0xFFA77B3D)),
+    LessonTone(Color(0xFFE5EFEF), Color(0xFF4D8785)),
 )
 
 private val DayNames = listOf("", "周一", "周二", "周三", "周四", "周五", "周六", "周日")
@@ -59,7 +60,7 @@ private val PeriodH = 64.dp
 private val TimeW = 36.dp
 private val HeadH = 46.dp
 
-fun lessonColor(name: String): Color {
+private fun lessonTone(name: String): LessonTone {
     var h = 0
     for (c in name) h = (h * 31 + c.code) and 0x7fffffff
     return LessonPalette[h % LessonPalette.size]
@@ -73,7 +74,7 @@ fun mondayOfSchoolWeek(week: Int, curWeek: Int, week1Monday: LocalDate? = null):
 }
 
 @Composable
-private fun NameLabel(name: String, maxHeight: Dp) {
+private fun NameLabel(name: String, maxHeight: Dp, color: Color) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val maxH = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
@@ -105,7 +106,7 @@ private fun NameLabel(name: String, maxHeight: Dp) {
         }
         Text(
             name,
-            color = Color.White,
+            color = color,
             fontSize = size.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = (size + 2f).sp,
@@ -117,7 +118,7 @@ private fun NameLabel(name: String, maxHeight: Dp) {
 }
 
 @Composable
-private fun RoomLabel(room: String, color: Color, maxLines: Int) {
+private fun RoomLabel(room: String, color: Color) {
     val measurer = rememberTextMeasurer()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val maxW = constraints.maxWidth.coerceAtLeast(1)
@@ -126,8 +127,8 @@ private fun RoomLabel(room: String, color: Color, maxLines: Int) {
             text = room,
             style = TextStyle(fontSize = size.sp, lineHeight = (size + 2f).sp, fontWeight = FontWeight.Medium),
             overflow = TextOverflow.Clip,
-            softWrap = true,
-            maxLines = maxLines,
+            softWrap = false,
+            maxLines = 1,
             constraints = Constraints(maxWidth = maxW),
         )
         while (layout.hasVisualOverflow && size > 7.5f) {
@@ -136,8 +137,8 @@ private fun RoomLabel(room: String, color: Color, maxLines: Int) {
                 text = room,
                 style = TextStyle(fontSize = size.sp, lineHeight = (size + 2f).sp, fontWeight = FontWeight.Medium),
                 overflow = TextOverflow.Clip,
-                softWrap = true,
-                maxLines = maxLines,
+                softWrap = false,
+                maxLines = 1,
                 constraints = Constraints(maxWidth = maxW),
             )
         }
@@ -147,9 +148,9 @@ private fun RoomLabel(room: String, color: Color, maxLines: Int) {
             fontSize = size.sp,
             fontWeight = FontWeight.Medium,
             lineHeight = (size + 2f).sp,
-            maxLines = maxLines,
-            overflow = TextOverflow.Clip,
-            softWrap = true,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false,
         )
     }
 }
@@ -175,10 +176,15 @@ fun CourseTable(
     val pickRev = choices.generation
     val monday = remember(week, curWeek, week1Monday) { mondayOfSchoolWeek(week, curWeek, week1Monday) }
     val today = LocalDate.now()
-    val ink = MiuixTheme.colorScheme.onBackground
+    val colors = MiuixTheme.colorScheme
+    val dark = colors.background.luminance() < 0.5f
+    val ink = colors.onBackground
     val line = ink.copy(alpha = 0.14f)
-    val muted = MiuixTheme.colorScheme.onSurfaceVariantSummary
-    val primary = MiuixTheme.colorScheme.primary
+    val muted = colors.onSurfaceVariantSummary
+    val primary = colors.primary
+    val density = LocalDensity.current
+    val teacherHeight = with(density) { 13.sp.toDp() }
+    val roomHeight = with(density) { 14.sp.toDp() }
     Column(modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -263,6 +269,10 @@ fun CourseTable(
                             val l = chosen
                             val start = l?.start ?: group.minOf { it.start }
                             val span = l?.span ?: (group.maxOf { it.end } - start + 1)
+                            val tone = l?.let { lessonTone(it.name) }
+                            val fill = tone?.let {
+                                if (dark) lerp(colors.surfaceVariant, it.accent, 0.25f) else it.fill
+                            }
                             Box(
                                 Modifier
                                     .offset(
@@ -271,12 +281,12 @@ fun CourseTable(
                                     )
                                     .width(colW - 4.dp)
                                     .height(PeriodH * span - 4.dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(5.dp))
                                     .then(
-                                        if (l != null) Modifier.background(lessonColor(l.name))
+                                        if (fill != null) Modifier.background(fill)
                                         else Modifier
                                             .background(muted.copy(alpha = 0.18f))
-                                            .border(1.dp, primary.copy(alpha = 0.45f), RoundedCornerShape(8.dp)),
+                                            .border(1.dp, primary.copy(alpha = 0.45f), RoundedCornerShape(5.dp)),
                                     )
                                     .combinedClickable(
                                         onClick = {
@@ -284,7 +294,7 @@ fun CourseTable(
                                         },
                                         onLongClick = { if (conflict) onConflictTap(group) },
                                     )
-                                    .padding(start = 4.dp, top = 4.dp, end = 3.dp, bottom = 3.dp),
+                                    .padding(start = 7.dp, top = 4.dp, end = 3.dp, bottom = 3.dp),
                             ) {
                                 if (l == null) {
                                     Column {
@@ -292,18 +302,29 @@ fun CourseTable(
                                         Text("${group.size} 门课重叠", color = muted, fontSize = 10.sp)
                                     }
                                 } else {
+                                    tone?.let {
+                                        Box(
+                                            Modifier
+                                                .align(Alignment.CenterStart)
+                                                .offset(x = (-7).dp)
+                                                .width(3.dp)
+                                                .fillMaxHeight()
+                                                .background(it.accent),
+                                        )
+                                    }
                                     Column(Modifier.fillMaxWidth()) {
                                         val reserved = 4.dp +
-                                            (if (l.teacher.isNotEmpty()) 15.dp else 0.dp) +
-                                            (if (l.room.isNotEmpty()) 16.dp else 0.dp)
+                                            (if (l.teacher.isNotEmpty()) teacherHeight else 0.dp) +
+                                            (if (l.room.isNotEmpty()) roomHeight else 0.dp)
                                         NameLabel(
                                             name = if (conflict) "▾ ${l.name}" else l.name,
                                             maxHeight = (PeriodH * span - 11.dp - reserved).coerceAtLeast(16.dp),
+                                            color = ink,
                                         )
                                         if (l.teacher.isNotEmpty()) {
                                             Text(
                                                 l.teacher,
-                                                color = Color.White.copy(alpha = 0.92f),
+                                                color = muted,
                                                 fontSize = 11.sp,
                                                 lineHeight = 13.sp,
                                                 maxLines = 1,
@@ -313,8 +334,7 @@ fun CourseTable(
                                         if (l.room.isNotEmpty()) {
                                             RoomLabel(
                                                 room = l.room,
-                                                color = Color.White.copy(alpha = 0.92f),
-                                                maxLines = if (span >= 2) 2 else 1,
+                                                color = muted,
                                             )
                                         }
                                     }

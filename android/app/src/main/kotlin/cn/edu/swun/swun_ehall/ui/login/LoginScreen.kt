@@ -3,7 +3,7 @@ package cn.edu.swun.swun_ehall.ui.login
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,8 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -99,21 +99,32 @@ fun LoginScreen(session: Session) {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 28.dp, vertical = 12.dp),
     ) {
-        Spacer(Modifier.height(36.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Spacer(
-                Modifier
-                    .width(3.dp)
-                    .height(16.dp)
-                    .background(cs.primary, RoundedCornerShape(2.dp)),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("西南民族大学", color = cs.onSurfaceVariantSummary, fontSize = 13.sp)
+        Spacer(Modifier.height(40.dp))
+        Box(
+            Modifier
+                .size(80.dp)
+                .background(cs.primary, RoundedCornerShape(20.dp))
+                .align(Alignment.CenterHorizontally),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("民", color = cs.onPrimary, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
         }
-        Spacer(Modifier.height(16.dp))
+        Text(
+            "民大助手",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 18.dp),
+        )
+        Text(
+            "西南民族大学",
+            color = cs.onSurfaceVariantSummary,
+            fontSize = 13.sp,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 3.dp),
+        )
+        Spacer(Modifier.height(44.dp))
         Text(
             "登录",
-            fontSize = 32.sp,
+            fontSize = 24.sp,
             fontWeight = FontWeight.SemiBold,
             lineHeight = 36.sp,
             color = cs.onBackground,
@@ -173,7 +184,15 @@ fun LoginScreen(session: Session) {
             modifier = Modifier.fillMaxWidth(),
             enabled = !session.busy,
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(28.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outline))
+        Text(
+            "账号密码仅用于学校统一身份认证，已保存账号只保存在本机。",
+            color = cs.onSurfaceVariantSummary,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            modifier = Modifier.padding(top = 18.dp, bottom = 24.dp),
+        )
     }
     if (pickSaved) {
         WindowDialog(

@@ -3,15 +3,22 @@ package cn.edu.swun.swun_ehall.ui.ykt
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,41 +29,53 @@ import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 internal fun PayMethodPicker(selected: YktPayMethod, onSelected: (YktPayMethod) -> Unit) {
-    val cs = MiuixTheme.colorScheme
     Text("支付方式", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
-    YktPayMethod.entries.forEach { method ->
-        Card(
-            modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
-            onClick = { onSelected(method) },
-        ) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text(method.label, fontWeight = FontWeight.SemiBold)
-                    Text(method.description, color = cs.onSurfaceVariantSummary, fontSize = 12.sp)
-                }
-                Text(if (selected == method) "✓" else "", color = cs.primary, fontSize = 18.sp)
-            }
-        }
-    }
+    TabRow(
+        tabs = YktPayMethod.entries.map { it.label },
+        selectedTabIndex = YktPayMethod.entries.indexOf(selected),
+        onTabSelected = { onSelected(YktPayMethod.entries[it]) },
+        modifier = Modifier.padding(top = 6.dp),
+    )
+    Text(
+        selected.description,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 5.dp),
+    )
 }
 
 @Composable
-internal fun QuickAmounts(values: List<Int>, onPick: (Int) -> Unit) {
+internal fun QuickAmounts(values: List<Int>, selected: String, onPick: (Int) -> Unit) {
+    val cs = MiuixTheme.colorScheme
+    val selectedAmount = selected.toDoubleOrNull()
     Row(
         Modifier.fillMaxWidth().padding(top = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         values.forEach { value ->
-            TextButton(
-                text = "¥$value",
-                onClick = { onPick(value) },
-                modifier = Modifier.weight(1f),
-            )
+            val on = selectedAmount == value.toDouble()
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(if (on) cs.primary else cs.surface)
+                    .border(1.dp, if (on) cs.primary else cs.outline, RoundedCornerShape(9.dp))
+                    .clickable { onPick(value) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "¥ $value",
+                    color = if (on) cs.onPrimary else cs.onBackground,
+                    fontSize = 12.sp,
+                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            }
         }
     }
 }
