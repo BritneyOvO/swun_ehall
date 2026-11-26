@@ -57,6 +57,7 @@ private data class ServiceGroup(
 fun HomeScreen(
     session: Session,
     nav: NavHostController,
+    onLessonTap: (Lesson) -> Unit,
 ) {
     val weekdayName = listOf("", "一", "二", "三", "四", "五", "六", "日")
         .getOrElse(java.util.Calendar.getInstance().let {
@@ -117,7 +118,7 @@ fun HomeScreen(
                     today.isEmpty() -> "今天没有课"
                     else -> "今天的课程已结束"
                 },
-                onLesson = { nav.navigate(session.prepareKtkqSign(lesson = it, week = session.curWeek)) },
+                onLesson = onLessonTap,
             )
             HomeSectionTitle("常用功能")
             QuickActions(quickActions) { nav.navigate(it) }

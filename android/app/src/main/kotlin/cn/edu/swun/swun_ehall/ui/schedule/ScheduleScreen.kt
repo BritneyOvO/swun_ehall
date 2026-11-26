@@ -26,7 +26,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.navigation.NavHostController
 import cn.edu.swun.swun_ehall.data.model.Lesson
 import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
@@ -41,8 +40,10 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+private data class SlotSelection(val week: Int, val lessons: List<Lesson>)
+
 @Composable
-fun ScheduleScreen(session: Session, nav: NavHostController) {
+fun ScheduleScreen(session: Session, onLessonTap: (Lesson, Int) -> Unit) {
     var loading by remember { mutableStateOf(!session.demoMode && session.schedule.isEmpty()) }
     var listMode by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -67,10 +68,7 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
         }
     }
     val week = pager.currentPage + 1
-    var picking by remember { mutableStateOf<List<Lesson>?>(null) }
-    fun openSign(lesson: Lesson) {
-        nav.navigate(session.prepareKtkqSign(lesson = lesson, week = week))
-    }
+    var picking by remember { mutableStateOf<SlotSelection?>(null) }
     Scaffold(
         topBar = {
             SmallTopAppBar(
@@ -147,7 +145,7 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
                                 week = w,
                                 curWeek = cur,
                                 week1Monday = session.week1Monday,
-                                onLessonTap = { openSign(it) },
+                                onLessonTap = { onLessonTap(it, w) },
                             )
                         } else {
                             CourseTable(
@@ -156,15 +154,15 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
                                 curWeek = cur,
                                 week1Monday = session.week1Monday,
                                 choices = session.slotPicks,
-                                onLessonTap = { openSign(it) },
-                                onConflictTap = { picking = it },
+                                onLessonTap = { onLessonTap(it, w) },
+                                onConflictTap = { picking = SlotSelection(w, it) },
                             )
                         }
                     }
                 }
             }
-            picking?.let { group ->
-                val selected = session.slotPicks.chosen(week, group)
+            picking?.let { (slotWeek, group) ->
+                val selected = session.slotPicks.chosen(slotWeek, group)
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -190,8 +188,9 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
                                         .fillMaxWidth()
                                         .padding(top = 8.dp)
                                         .clickable {
-                                            session.pickSlot(week, group, l)
+                                            session.pickSlot(slotWeek, group, l)
                                             picking = null
+                                            if (selected == null) onLessonTap(l, slotWeek)
                                         },
                                 ) {
                                     Column(Modifier.padding(12.dp)) {

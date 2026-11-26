@@ -16,6 +16,8 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -25,11 +27,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import cn.edu.swun.swun_ehall.data.model.Lesson
 import cn.edu.swun.swun_ehall.data.session.Session
 import cn.edu.swun.swun_ehall.ui.grades.GradesScreen
 import cn.edu.swun.swun_ehall.ui.home.HomeScreen
 import cn.edu.swun.swun_ehall.ui.mine.MineScreen
+import cn.edu.swun.swun_ehall.ui.schedule.LessonDetailsSheet
 import cn.edu.swun.swun_ehall.ui.schedule.ScheduleScreen
+import cn.edu.swun.swun_ehall.ui.schedule.mondayOfSchoolWeek
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -45,9 +50,16 @@ private data class MainDestination(
     val icon: ImageVector,
 )
 
+private data class LessonSelection(val lesson: Lesson, val week: Int)
+
 @Composable
 fun MainShell(session: Session, nav: NavHostController) {
     var index by rememberSaveable { mutableIntStateOf(0) }
+    var selection by remember { mutableStateOf<LessonSelection?>(null) }
+    fun showLesson(lesson: Lesson, week: Int) {
+        selection = LessonSelection(lesson, week)
+    }
+
     val items = listOf(
         MainDestination("首页", MiuixIcons.Home),
         MainDestination("课表", MiuixIcons.VerticalSplit),
@@ -58,8 +70,8 @@ fun MainShell(session: Session, nav: NavHostController) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (index) {
-                0 -> HomeScreen(session, nav)
-                1 -> ScheduleScreen(session, nav)
+                0 -> HomeScreen(session, nav, onLessonTap = { showLesson(it, session.curWeek) })
+                1 -> ScheduleScreen(session, onLessonTap = ::showLesson)
                 2 -> GradesScreen(session)
                 else -> MineScreen(session, nav)
             }
@@ -68,6 +80,15 @@ fun MainShell(session: Session, nav: NavHostController) {
             items = items,
             selected = index,
             onSelected = { index = it },
+        )
+    }
+    selection?.let { (lesson, week) ->
+        val monday = mondayOfSchoolWeek(week, session.curWeek, session.week1Monday)
+        LessonDetailsSheet(
+            lesson = lesson,
+            week = week,
+            date = monday.plusDays((lesson.weekday - 1).toLong()),
+            onDismiss = { selection = null },
         )
     }
 }
