@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,10 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
@@ -60,7 +57,6 @@ private data class ServiceGroup(
 fun HomeScreen(
     session: Session,
     nav: NavHostController,
-    onOpenSchedule: () -> Unit,
 ) {
     val weekdayName = listOf("", "一", "二", "三", "四", "五", "六", "日")
         .getOrElse(java.util.Calendar.getInstance().let {
@@ -79,8 +75,7 @@ fun HomeScreen(
     }
 
     val today = session.todayLessons()
-    val remaining = today.filter { !it.ended(nowMinutes) }
-    val next = remaining.firstOrNull()
+    val next = today.firstOrNull { !it.ended(nowMinutes) }
     val quickActions = listOf(
         QuickAction("一卡通", "ykt", MiuixIcons.BankCards),
         QuickAction("课堂考勤", "ktkq", MiuixIcons.Location),
@@ -111,9 +106,8 @@ fun HomeScreen(
                 "周" + weekdayName + " · 第 " + session.curWeek + " 周" + if (session.demoMode) " · 预览" else "",
                 color = cs.onSurfaceVariantSummary,
                 fontSize = 12.sp,
-                modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 12.dp),
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp),
             )
-            NextLessonCard(next, onOpenSchedule)
             HomeSectionTitle("今日课程", if (today.isEmpty()) null else today.size.toString() + " 节")
             TodayLessons(
                 lessons = today,
@@ -150,53 +144,6 @@ fun HomeScreen(
                 }
             }
             Spacer(Modifier.height(20.dp))
-        }
-    }
-}
-
-@Composable
-private fun NextLessonCard(lesson: Lesson?, onSchedule: () -> Unit) {
-    val cs = MiuixTheme.colorScheme
-    Card(modifier = Modifier.fillMaxWidth(), onClick = onSchedule) {
-        Row(Modifier.fillMaxWidth()) {
-            Box(
-                Modifier
-                    .padding(vertical = 12.dp)
-                    .width(4.dp)
-                    .height(112.dp)
-                    .clip(RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp))
-                    .background(cs.primary),
-            )
-            Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (lesson == null) "今日安排" else "下一节课",
-                        color = cs.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    lesson?.let {
-                        Text(periodRange(it), color = cs.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                Text(
-                    lesson?.name ?: "当前没有待上课程",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                Text(
-                    lesson?.let {
-                        listOf(periodRange(it), it.room, it.teacher).filter { value -> value.isNotBlank() }.joinToString(" · ")
-                    } ?: "点击查看本周课表",
-                    color = cs.onSurfaceVariantSummary,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
         }
     }
 }
@@ -323,10 +270,4 @@ private fun ServiceGroups(groups: List<ServiceGroup>, onRoute: (String) -> Unit)
             }
         }
     }
-}
-
-private fun periodRange(lesson: Lesson): String {
-    val start = kPeriodTimes.firstOrNull { it.first == lesson.start }?.second?.first
-    val end = kPeriodTimes.firstOrNull { it.first == lesson.end }?.second?.second
-    return listOfNotNull(start, end).joinToString("—")
 }

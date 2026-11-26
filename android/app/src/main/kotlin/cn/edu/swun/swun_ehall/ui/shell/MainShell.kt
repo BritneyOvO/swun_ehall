@@ -58,7 +58,7 @@ fun MainShell(session: Session, nav: NavHostController) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (index) {
-                0 -> HomeScreen(session, nav, onOpenSchedule = { index = 1 })
+                0 -> HomeScreen(session, nav)
                 1 -> ScheduleScreen(session, nav)
                 2 -> GradesScreen(session)
                 else -> MineScreen(session, nav)
