@@ -194,7 +194,7 @@ def draw_login():
     txt(d, (74, 730), "登录", 44, TEXT, True, "lm")
     txt(d, (74, 790), "使用统一身份认证账号", 26, MUTED, False, "lm")
     y = 860
-    y = field(d, y, "学号", "202430809152") + 18
+    y = field(d, y, "学号", "202430000000") + 18
     y = field(d, y, "密码", "••••••••••", right="显示") + 30
     y = primary_button(d, y, "登录") + 24
     centered(d, (44, y, 1036, y + 78), "先看看界面", 27, RED, True)
@@ -267,8 +267,8 @@ def draw_mine():
     y = 235
     rr(d, (44, y, 1036, y + 180), 20, SURFACE, outline=LINE, width=2)
     badge(d, 128, y + 90, "李", RED, RED_LIGHT, 104)
-    txt(d, (210, y + 62), "李阳", 38, TEXT, True, "lm")
-    txt(d, (210, y + 112), "202430809152 · 网络工程", 24, MUTED, False, "lm")
+    txt(d, (210, y + 62), "李同学", 38, TEXT, True, "lm")
+    txt(d, (210, y + 112), "202430000000 · 网络工程", 24, MUTED, False, "lm")
     b.icon(d, "chev_right", 990, y + 90, 24, FAINT, stroke=4)
     y += 238
     y = section(d, y, "账号")
@@ -578,7 +578,7 @@ def draw_ykt():
     txt(d, (540, y + 88), "自动刷新 · 42 秒后更新", 20, MUTED, False, "mm")
     draw_qr(d, 325, y + 120, 430)
     txt(d, (540, y + 590), "请向收款设备出示", 22, MUTED, False, "mm")
-    txt(d, (540, y + 632), "202430809152", 20, FAINT, False, "mm")
+    txt(d, (540, y + 632), "202430000000", 20, FAINT, False, "mm")
     y += 740
     y = section(d, y, "今日明细", "近 7 天")
     rows = [
@@ -612,7 +612,7 @@ def draw_recharge():
     y = 235
     rr(d, (44, y, 1036, y + 200), 20, SURFACE, outline=LINE, width=2)
     txt(d, (80, y + 48), "一卡通账户", 25, TEXT, True, "lm")
-    txt(d, (80, y + 96), "李阳 · 202430809152", 23, MUTED, False, "lm")
+    txt(d, (80, y + 96), "李同学 · 202430000000", 23, MUTED, False, "lm")
     txt(d, (80, y + 154), "余额 ¥ 18.70", 34, TEXT, True, "lm")
     y += 258
     y = section(d, y, "充值金额")
@@ -655,7 +655,7 @@ def draw_water():
     y = 235
     rr(d, (44, y, 1036, y + 220), 20, SURFACE, outline=LINE, width=2)
     txt(d, (80, y + 48), "热水账户", 25, TEXT, True, "lm")
-    txt(d, (80, y + 96), "李阳 · 202430809152", 23, MUTED, False, "lm")
+    txt(d, (80, y + 96), "李同学 · 202430000000", 23, MUTED, False, "lm")
     txt(d, (80, y + 156), "一卡通余额 ¥ 18.70", 34, TEXT, True, "lm")
     y += 280
     y = section(d, y, "充值金额")
@@ -683,8 +683,8 @@ def draw_leave():
     y += 225
     rr(d, (44, y, 1036, y + 150), 20, SURFACE, outline=LINE, width=2)
     badge(d, 120, y + 75, "李", RED, RED_LIGHT, 72)
-    txt(d, (180, y + 54), "李阳", 30, TEXT, True, "lm")
-    txt(d, (180, y + 100), "202430809152 · 网络工程2024—1班", 22, MUTED, False, "lm")
+    txt(d, (180, y + 54), "李同学", 30, TEXT, True, "lm")
+    txt(d, (180, y + 100), "202430000000 · 网络工程2024—1班", 22, MUTED, False, "lm")
     b.icon(d, "chev_right", 988, y + 75, 22, FAINT, stroke=4)
     y += 184
     y = primary_button(d, y, "申请请假") + 54
@@ -803,8 +803,8 @@ def draw_profile():
     im, d = standard_screen("个人信息", refresh=True)
     y = 235
     rows = [
-        {"title": "姓名", "right": "李阳", "chevron": False, "bold": False},
-        {"title": "学号", "right": "202430809152", "chevron": False, "bold": False},
+        {"title": "姓名", "right": "李同学", "chevron": False, "bold": False},
+        {"title": "学号", "right": "202430000000", "chevron": False, "bold": False},
         {"title": "性别", "right": "男", "chevron": False, "bold": False},
         {"title": "身份", "right": "本科生", "chevron": False, "bold": False},
         {"title": "学院", "right": "计算机科学与工程学院", "chevron": False, "bold": False},
@@ -824,7 +824,7 @@ def draw_accounts():
     y = section(d, y, "已保存账号", "2 个")
     rr(d, (44, y, 1036, y + 340), 20, SURFACE, outline=LINE, width=2)
     accounts = [
-        (y + 84, "李阳", "202430809152 · 当前账号", True),
+        (y + 84, "李同学", "202430000000 · 当前账号", True),
         (y + 246, "预览同学", "202430000000", False),
     ]
     for i, (cy, name, sub, current) in enumerate(accounts):

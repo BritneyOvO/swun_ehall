@@ -143,7 +143,7 @@ def draw_leave():
     # student information as one row
     rr(d,(44,590,1036,750),22,SURFACE,outline=LINE,width=2)
     rr(d,(80,624,160,704),40,RED_LIGHT); txt(d,(120,664),'李',31,RED,True,'mm')
-    txt(d,(194,632),'李阳',32,TEXT,True,'lm'); txt(d,(194,684),'202430809152 · 计算机科学与工程学院',24,MUTED,False,'lm')
+    txt(d,(194,632),'李同学',32,TEXT,True,'lm'); txt(d,(194,684),'202430000000 · 计算机科学与工程学院',24,MUTED,False,'lm')
     b.icon(d,'chev_right',988,670,24,'#A1A1A8',stroke=4)
     rr(d,(44,790,1036,905),20,RED)
     centered(d,(44,790,1036,905),'申请请假',32,'#FFFFFF',True)

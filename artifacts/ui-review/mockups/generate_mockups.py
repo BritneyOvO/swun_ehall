@@ -212,7 +212,7 @@ def draw_home(nav_style='docked', filename='mockup-home.png'):
     # gradient-like overlays
     d.ellipse((650,220,1036,600),fill='#315CA9')
     rr(d,hero,42,None,outline='#3B68BA',width=2)
-    txt(d,(88,275),'下午好，李阳',42,'#FFFFFF',bold=True,anchor='lm')
+    txt(d,(88,275),'下午好，李同学',42,'#FFFFFF',bold=True,anchor='lm')
     rr(d,(755,248,980,310),31,'#5075B9')
     centered(d,(755,248,980,310),'第 13 周 · 周四',27,'#FFFFFF',False)
     txt(d,(88,352),'下一节 · 19:00—20:35',29,'#C9D8F5',anchor='lm')
@@ -399,8 +399,8 @@ def draw_leave():
     rr(d,(44,645,1036,875),34,SURFACE,outline=LINE,width=2)
     rr(d,(82,690,174,782),46,PRIMARY_LIGHT)
     txt(d,(128,736),'李',38,PRIMARY,bold=True,anchor='mm')
-    txt(d,(204,700),'李阳',36,TEXT,bold=True,anchor='lm')
-    txt(d,(204,758),'202430809152  ·  计算机科学与工程学院',26,MUTED,anchor='lm')
+    txt(d,(204,700),'李同学',36,TEXT,bold=True,anchor='lm')
+    txt(d,(204,758),'202430000000  ·  计算机科学与工程学院',26,MUTED,anchor='lm')
     txt(d,(204,810),'宿舍信息未同步',24,'#9A9FA9',anchor='lm')
     # primary action
     rr(d,(44,910,1036,1035),34,PRIMARY)
