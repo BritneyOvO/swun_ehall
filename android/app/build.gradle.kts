@@ -56,8 +56,8 @@ android {
         applicationId = "cn.edu.swun.swun_ehall"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.1.0"
+        versionCode = 13
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AMAP_KEY", "\"$amapKey\"")
         buildConfigField("String", "BUGLY_APP_ID", "\"$buglyAppId\"")

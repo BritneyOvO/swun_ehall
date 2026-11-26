@@ -1,5 +1,23 @@
 # 更新说明 | Changelog
 
+## 1.2.0
+
+### 更新内容
+
+- 首页和常用页面更新布局。底栏可切换首页、课表、成绩和我的。首页移除右上角的个人资料按钮和「下一节课」卡片。
+- 课表支持用图标切换网格和列表。点击课表或首页「今日课程」中的课程，即可在下半屏查看日期、时间、教室和老师。签到入口在「课堂考勤」。
+- 新增校历、校车时刻和请假销假。请假页面可查看记录和审批进度，并提交请假或销假申请。
+- 新增一卡通充值、宿舍电费和热水充值。热水充值支持刷新一卡通余额。
+- 课表支持缓存。修正校历周次、销假时长和课堂签到的坐标转换。
+
+### What's New
+
+- Updated the home screen and frequently used pages. The bottom bar switches between Home, Timetable, Grades, and Profile. The home page has a simpler header and no separate next-class card.
+- Switch between timetable grid and list views with an icon. Tap a course in the timetable or Today's Classes to see its date, time, room, and teacher in a half-screen sheet. Sign in through Classroom Attendance.
+- Added the academic calendar, campus shuttle schedules, and leave requests with approval tracking and cancellation.
+- Added campus card top-ups, dorm electricity payments, and hot water top-ups. The hot water page can refresh your campus card balance.
+- Added timetable caching and corrected academic week numbering, leave cancellation duration, and classroom check-in coordinate conversion.
+
 ## 1.1.0
 
 ### 更新内容
