@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -98,27 +97,8 @@ fun HomeScreen(
         ServiceGroup("校园生活", MiuixIcons.Alarm, listOf("公寓打卡" to "clock", "校车" to "bus")),
     )
     val cs = MiuixTheme.colorScheme
-    val displayName = session.displayName.ifBlank { "同学" }
-
     Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = "民大助手",
-                actions = {
-                    Box(
-                        Modifier
-                            .padding(end = 12.dp)
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(cs.primary.copy(alpha = 0.1f))
-                            .clickable { nav.navigate("profile") },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(displayName.take(1), color = cs.primary, fontWeight = FontWeight.SemiBold)
-                    }
-                },
-            )
-        },
+        topBar = { SmallTopAppBar(title = "民大助手") },
     ) { padding ->
         Column(
             Modifier
