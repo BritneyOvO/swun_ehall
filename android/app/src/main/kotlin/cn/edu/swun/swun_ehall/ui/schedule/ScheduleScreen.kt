@@ -33,11 +33,15 @@ import cn.edu.swun.swun_ehall.ui.common.FeatureInlineNotice
 import kotlinx.coroutines.launch
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.GridView
+import top.yukonga.miuix.kmp.icon.extended.ListView
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private data class SlotSelection(val week: Int, val lessons: List<Lesson>)
@@ -74,10 +78,12 @@ fun ScheduleScreen(session: Session, onLessonTap: (Lesson, Int) -> Unit) {
             SmallTopAppBar(
                 title = "课表",
                 actions = {
-                    TextButton(
-                        text = if (listMode) "网格" else "列表",
-                        onClick = { listMode = !listMode },
-                    )
+                    IconButton(onClick = { listMode = !listMode }) {
+                        Icon(
+                            imageVector = if (listMode) MiuixIcons.GridView else MiuixIcons.ListView,
+                            contentDescription = if (listMode) "切换到网格视图" else "切换到列表视图",
+                        )
+                    }
                     RefreshNav {
                         scope.launch {
                             loading = true
