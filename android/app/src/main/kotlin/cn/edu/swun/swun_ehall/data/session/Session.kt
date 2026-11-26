@@ -1,6 +1,9 @@
 package cn.edu.swun.swun_ehall.data.session
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -22,8 +25,11 @@ import cn.edu.swun.swun_ehall.data.http.jwxtKbList
 import cn.edu.swun.swun_ehall.data.http.KtkqClient
 import cn.edu.swun.swun_ehall.data.http.ktkqTokenExpired
 import cn.edu.swun.swun_ehall.data.http.LantuClient
+import cn.edu.swun.swun_ehall.data.http.LantuSessionExpiredException
 import cn.edu.swun.swun_ehall.data.http.RsGateway
 import cn.edu.swun.swun_ehall.data.http.SwunLog
+import cn.edu.swun.swun_ehall.data.http.StudentClient
+import cn.edu.swun.swun_ehall.data.http.StudentSessionExpiredException
 import cn.edu.swun.swun_ehall.data.http.YktClient
 import cn.edu.swun.swun_ehall.data.locate.Locator
 import cn.edu.swun.swun_ehall.data.http.xkOfficialSxbj
@@ -37,8 +43,18 @@ import cn.edu.swun.swun_ehall.data.model.Exam
 import cn.edu.swun.swun_ehall.data.model.GeoFix
 import cn.edu.swun.swun_ehall.data.model.Grade
 import cn.edu.swun.swun_ehall.data.model.Lesson
+import cn.edu.swun.swun_ehall.data.model.LeaveApplyForm
+import cn.edu.swun.swun_ehall.data.model.LeaveCancelForm
+import cn.edu.swun.swun_ehall.data.model.LeaveCancelPreparation
+import cn.edu.swun.swun_ehall.data.model.LeaveDetail
+import cn.edu.swun.swun_ehall.data.model.LeaveOption
+import cn.edu.swun.swun_ehall.data.model.LeaveRecord
+import cn.edu.swun.swun_ehall.data.model.LeaveRule
+import cn.edu.swun.swun_ehall.data.model.LeaveStudentInfo
+import cn.edu.swun.swun_ehall.data.model.LeaveSummary
 import cn.edu.swun.swun_ehall.data.model.Profile
 import cn.edu.swun.swun_ehall.data.model.SchoolTerm
+import cn.edu.swun.swun_ehall.data.model.SchoolCalendar
 import cn.edu.swun.swun_ehall.data.http.decodeKtkqNav
 import cn.edu.swun.swun_ehall.data.http.encodeKtkqNav
 import cn.edu.swun.swun_ehall.data.http.matchKtkqSlot
@@ -51,7 +67,14 @@ import cn.edu.swun.swun_ehall.data.model.slotKey
 import cn.edu.swun.swun_ehall.data.model.XkCourse
 import cn.edu.swun.swun_ehall.data.model.XkRound
 import cn.edu.swun.swun_ehall.data.model.YktBill
+import cn.edu.swun.swun_ehall.data.model.ElectricSelection
+import cn.edu.swun.swun_ehall.data.model.YktDirectoryOption
+import cn.edu.swun.swun_ehall.data.model.YktPayMethod
+import cn.edu.swun.swun_ehall.data.model.YktPaymentResult
+import cn.edu.swun.swun_ehall.data.model.YktRechargeAccount
+import cn.edu.swun.swun_ehall.data.model.currentSchoolTerm
 import cn.edu.swun.swun_ehall.data.update.UpdateClient
+import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
@@ -65,13 +88,16 @@ import kotlinx.coroutines.withContext
 class Session(app: Application) : AndroidViewModel(app) {
     private val requests = AccountRequests(viewModelScope)
     private val casLock = Any()
+    private val lantuLock = Any()
     private val ktkqLock = Any()
     private val gyLock = Any()
+    private val studentLock = Any()
     private val prefs = app.getSharedPreferences("swun_session", 0)
     private val creds = CredentialStore(app)
     val accounts = AccountStore(app, creds)
     val slotPicks = SlotChoiceStore(prefs)
     private val teachers = TeacherCache(File(app.filesDir, "kb_teachers.json"))
+    private val schedules = ScheduleCache(File(app.filesDir, "schedule_cache"))
     private val locator = Locator(app)
     private val rs = RsGateway(app)
     private val cas = CasClient()
@@ -81,6 +107,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     private val ktkqClient = KtkqClient(rs)
     private val gy = GyClient(rs)
     private val yktClient = YktClient(rs)
+    private val studentClient = StudentClient(rs)
     private val cookieFile = File(app.filesDir, "cookies.json")
 
     var ready by mutableStateOf(true)
@@ -98,8 +125,16 @@ class Session(app: Application) : AndroidViewModel(app) {
     private var lastUpdateCheckAt = 0L
     var lastPunch by mutableStateOf<String?>(null)
     var yktQr by mutableStateOf<String?>(null)
+    var yktQrUpdatedAt by mutableStateOf(0L)
     var yktError by mutableStateOf<String?>(null)
+    var leaveError by mutableStateOf<String?>(null)
+    var leaveSummary by mutableStateOf(LeaveSummary())
+    var leaveStudentInfo by mutableStateOf(LeaveStudentInfo())
+    var leaveRule by mutableStateOf(LeaveRule())
     var loadHint by mutableStateOf<String?>(null)
+    var scheduleError by mutableStateOf<String?>(null)
+    var schoolCalendar by mutableStateOf<SchoolCalendar?>(null)
+    var calendarError by mutableStateOf<String?>(null)
     var clockError by mutableStateOf<String?>(null)
     var ktkqError by mutableStateOf<String?>(null)
     var xkError by mutableStateOf<String?>(null)
@@ -128,6 +163,9 @@ class Session(app: Application) : AndroidViewModel(app) {
     var pendingKtkqSlot by mutableStateOf<SignActivity?>(null)
     val yktBills = mutableStateListOf<YktBill>()
     var yktBalance by mutableStateOf<Double?>(null)
+    val leaveRecords = mutableStateListOf<LeaveRecord>()
+    val leaveTypes = mutableStateListOf<LeaveOption>()
+    val leaveSpecificTypes = mutableStateListOf<LeaveOption>()
     val clockRecords = mutableStateListOf<ClockRecord>()
     val clockFences = mutableStateListOf<ClockFence>()
     val xkRounds = mutableStateListOf<XkRound>()
@@ -196,10 +234,17 @@ class Session(app: Application) : AndroidViewModel(app) {
         schedule.clear(); schedule.addAll(DemoData.schedule)
         grades.clear(); grades.addAll(DemoData.grades)
         exams.clear(); exams.addAll(DemoData.exams)
+        schoolCalendar = DemoData.calendar
         applyKtkqWeek(DemoData.ktkqWeek)
         yktBills.clear(); yktBills.addAll(DemoData.yktBills)
         yktBalance = DemoData.yktBalance
         yktQr = "SWUN-DEMO-YKT-${studentId.ifEmpty { "202430000000" }}"
+        leaveSummary = DemoData.leaveSummary
+        leaveStudentInfo = DemoData.leaveStudentInfo
+        leaveRule = DemoData.leaveRule
+        leaveRecords.clear(); leaveRecords.addAll(DemoData.leaveRecords)
+        leaveTypes.clear(); leaveTypes.addAll(DemoData.leaveTypes)
+        leaveSpecificTypes.clear(); leaveSpecificTypes.addAll(DemoData.leaveSpecificTypes)
         clockRecords.clear(); clockRecords.addAll(DemoData.clockRecords)
         clockFences.clear(); clockFences.addAll(DemoData.clockFences)
         credits = DemoData.credits
@@ -241,6 +286,7 @@ class Session(app: Application) : AndroidViewModel(app) {
                     persistSession(user.trim(), pass)
                 }
                 applyLantu()
+                restoreCachedSchedule()
                 loggedIn = true
             }
             if (requests.isCurrent(owner)) requests.launch("startup") { refreshLiveData() }
@@ -262,19 +308,28 @@ class Session(app: Application) : AndroidViewModel(app) {
     private fun clearAccountData() {
         lastPunch = null
         loadHint = null
+        scheduleError = null
+        schoolCalendar = null
+        calendarError = null
         ktkqError = null
         xkError = null
+        leaveError = null
         displayName = "同学"
         profile = Profile()
         schedule.clear(); grades.clear(); exams.clear(); ktkq.clear(); ktkqCourses.clear()
-        yktBills.clear(); clockRecords.clear(); clockFences.clear(); xkRounds.clear(); xkCourses.clear()
+        yktBills.clear(); leaveRecords.clear(); leaveTypes.clear(); leaveSpecificTypes.clear()
+        clockRecords.clear(); clockFences.clear(); xkRounds.clear(); xkCourses.clear()
         ktkqWeekNum = 1
         ktkqXnxqmc = ""
         pendingKtkqSlot = null
         yktBalance = null
         credits = null
         yktQr = null
+        yktQrUpdatedAt = 0L
         yktError = null
+        leaveSummary = LeaveSummary()
+        leaveStudentInfo = LeaveStudentInfo()
+        leaveRule = LeaveRule()
         clockError = null
         xkPanel = emptyMap()
         xkProfile = emptyMap()
@@ -292,6 +347,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         rs.clearSession()
         ktkqClient.reset()
         gy.reset()
+        studentClient.reset()
         jwxt.reset()
         withContext(Dispatchers.IO) {
             lantu.clear()
@@ -347,6 +403,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         val wasCurrent = id == accounts.currentId || id == studentId
         if (wasCurrent) logout()
         deleteAccountAvatars(id)
+        schedules.remove(id)
         requests.commit { accounts.remove(id) }
         prefs.edit().remove("ktkqToken_" + id).remove("gyToken_" + id)
             .remove("ktkqXnxqdm_" + id).remove("ktkqXnxqmc_" + id).apply()
@@ -437,11 +494,13 @@ class Session(app: Application) : AndroidViewModel(app) {
     suspend fun refreshSchedule() {
         if (demoMode) return
         accountIo("schedule") {
+            withContext(Dispatchers.Main) { scheduleError = null }
+            val account = studentId.ifBlank { accounts.currentId }.ifBlank { creds.username }
             var lantuLessons: List<Lesson> = emptyList()
             try {
                 val started = System.nanoTime()
                 val lantuAt = System.nanoTime()
-                val course = lantu.getCourse()
+                val course = withLantuSession { lantu.getCourse() }
                 lantuLessons = teachers.apply(lantu.mapLessons(course))
                 SwunLog.took(lantuAt, "课表 Lantu ${lantuLessons.size}门")
                 if (lantuLessons.isEmpty()) error("Lantu课表没有返回课程")
@@ -451,13 +510,7 @@ class Session(app: Application) : AndroidViewModel(app) {
                     lantuLessons.maxOfOrNull { it.weeks.length } ?: 16,
                 )
                 SwunLog.took(started, "课表完成 ${lantuLessons.size}门 第${week}周")
-                withContext(Dispatchers.Main) {
-                    schedule.clear()
-                    schedule.addAll(lantuLessons)
-                    curWeek = week.coerceAtLeast(1)
-                    totalWeek = total
-                    loadHint = null
-                }
+                applySchedule(account, lantuLessons, week, total, inferredFirstMonday(week))
 
                 // 教务系统只补教师和日历；课表本身已经由 Lantu 提供。
                 try {
@@ -470,13 +523,13 @@ class Session(app: Application) : AndroidViewModel(app) {
                         teachers.fillFromJwxt(kb)
                         val enriched = teachers.apply(lantuLessons)
                         val cal = jwxtCurrentWeek(page)
-                        withContext(Dispatchers.Main) {
-                            schedule.clear()
-                            schedule.addAll(enriched)
-                            curWeek = cal.week.coerceAtLeast(1)
-                            totalWeek = maxOf(total, cal.total)
-                            week1Monday = cal.week1Monday
-                        }
+                        applySchedule(
+                            account,
+                            enriched,
+                            cal.week,
+                            maxOf(total, cal.total),
+                            cal.week1Monday ?: inferredFirstMonday(cal.week),
+                        )
                     }
                 } catch (e: Exception) {
                     if (e is java.util.concurrent.CancellationException) throw e
@@ -487,6 +540,7 @@ class Session(app: Application) : AndroidViewModel(app) {
                 if (e is java.util.concurrent.CancellationException) throw e
                 RequestCancellation.check()
                 Log.e("swun", "schedule", e)
+                var failure = e
                 if (lantuLessons.isEmpty()) {
                     // Lantu unavailable: retain the existing Jwxt fallback.
                     try {
@@ -501,22 +555,26 @@ class Session(app: Application) : AndroidViewModel(app) {
                         val lessons = teachers.apply(jwxt.lessonsFromKb(kb))
                         if (lessons.isEmpty()) error("课表没有返回课程")
                         val cal = jwxtCurrentWeek(page)
-                        withContext(Dispatchers.Main) {
-                            schedule.clear(); schedule.addAll(lessons)
-                            curWeek = cal.week.coerceAtLeast(1)
-                            totalWeek = maxOf(cal.total, lessons.maxOfOrNull { it.weeks.length } ?: 16)
-                            week1Monday = cal.week1Monday
-                            loadHint = null
-                        }
+                        applySchedule(
+                            account,
+                            lessons,
+                            cal.week,
+                            maxOf(cal.total, lessons.maxOfOrNull { it.weeks.length } ?: 16),
+                            cal.week1Monday ?: inferredFirstMonday(cal.week),
+                        )
                         SwunLog.took(started, "课表教务回退完成 ${lessons.size}门")
                         return@accountIo
                     } catch (fallback: Exception) {
                         if (fallback is java.util.concurrent.CancellationException) throw fallback
                         RequestCancellation.check()
                         Log.e("swun", "schedule fallback", fallback)
+                        failure = fallback
                     }
                 }
-                withContext(Dispatchers.Main) { loadHint = publicError(e) }
+                withContext(Dispatchers.Main) {
+                    scheduleError = if (failure === e) publicError(e) else "${publicError(e)}；${publicError(failure)}"
+                    loadHint = scheduleError
+                }
             }
         }
     }
@@ -542,6 +600,29 @@ class Session(app: Application) : AndroidViewModel(app) {
                 RequestCancellation.check()
                 Log.e("swun", "grades", e)
                 withContext(Dispatchers.Main) { loadHint = publicError(e) }
+            }
+        }
+    }
+
+    suspend fun refreshCalendar() {
+        if (demoMode) return
+        accountIo("calendar") {
+            try {
+                withContext(Dispatchers.Main) { calendarError = null }
+                ensureCas()
+                jwxt.attachCas(cas)
+                jwxt.ensureSession()
+                if (jwxt.portalClosed) error("教务夜间关闭或不在服务时间")
+                val value = jwxt.calendar()
+                if (value.startDate == null && value.endDate == null && value.events.isEmpty()) {
+                    error("校历没有返回有效内容")
+                }
+                withContext(Dispatchers.Main) { schoolCalendar = value }
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
+                Log.e("swun", "calendar", e)
+                withContext(Dispatchers.Main) { calendarError = publicError(e) }
             }
         }
     }
@@ -699,7 +780,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         accountIo("profile") {
             try {
                 if (lantu.isLoggedIn) {
-                    val info = lantu.getUserInfo()
+                    val info = withLantuSession { lantu.getUserInfo() }
                     info.optJSONObject("userBaseInfo")?.let { lantu.userBase = it }
                     info.optJSONObject("userLoginInfo")?.let { lantu.userLogin = it }
                 }
@@ -820,11 +901,12 @@ class Session(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    suspend fun refreshYkt() {
+    suspend fun refreshYkt(date: java.time.LocalDate? = null) {
         if (demoMode) {
             yktBills.clear(); yktBills.addAll(DemoData.yktBills)
             yktBalance = DemoData.yktBalance
             yktQr = "SWUN-DEMO-YKT-$studentId"
+            yktQrUpdatedAt = System.currentTimeMillis()
             yktError = null
             return
         }
@@ -846,12 +928,19 @@ class Session(app: Application) : AndroidViewModel(app) {
                 var menuReady = true
                 try {
                     val qr = yktClient.fetchQr(sid, school)
-                    withContext(Dispatchers.Main) { yktQr = qr }
+                    withContext(Dispatchers.Main) {
+                        yktQr = qr
+                        yktQrUpdatedAt = System.currentTimeMillis()
+                    }
                 } catch (e: Exception) {
                     if (e is java.util.concurrent.CancellationException) throw e
                     RequestCancellation.check()
                     Log.e("swun", "ykt qr", e)
                     lastErr = publicError(e)
+                    withContext(Dispatchers.Main) {
+                        yktQr = null
+                        yktQrUpdatedAt = 0L
+                    }
                     if (e.message?.contains("一卡通页面未就绪") == true ||
                         e.message?.contains("一卡通夜间关闭") == true
                     ) menuReady = false
@@ -866,7 +955,7 @@ class Session(app: Application) : AndroidViewModel(app) {
                         Log.e("swun", "ykt bal", e)
                     }
                     try {
-                        val (bal, bills) = yktClient.fetchLedger(sid, school)
+                        val (bal, bills) = yktClient.fetchLedger(sid, school, date)
                         withContext(Dispatchers.Main) {
                             if (bal != null) yktBalance = bal
                             yktBills.clear()
@@ -891,6 +980,228 @@ class Session(app: Application) : AndroidViewModel(app) {
                     loadHint = yktError
                 }
             }
+        }
+    }
+
+    suspend fun refreshYktQr() {
+        if (demoMode) {
+            yktQr = "SWUN-DEMO-YKT-$studentId-${System.currentTimeMillis() / 60_000}"
+            yktQrUpdatedAt = System.currentTimeMillis()
+            return
+        }
+        accountIo("ykt-qr") {
+            try {
+                ensureCas()
+                val sid = studentId.ifBlank { creds.username }
+                val qr = yktClient.fetchQr(sid, "${lantu.schoolId}")
+                withContext(Dispatchers.Main) {
+                    yktQr = qr
+                    yktQrUpdatedAt = System.currentTimeMillis()
+                    yktError = null
+                }
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
+                Log.e("swun", "ykt qr refresh", e)
+                withContext(Dispatchers.Main) {
+                    yktQr = null
+                    yktQrUpdatedAt = 0L
+                    yktError = publicError(e)
+                }
+            }
+        }
+    }
+
+    suspend fun refreshYktLedger(date: java.time.LocalDate?) {
+        if (demoMode) {
+            yktBills.clear(); yktBills.addAll(DemoData.yktBills)
+            return
+        }
+        accountIo("ykt-ledger:${date ?: "today"}") {
+            try {
+                ensureCas()
+                val sid = studentId.ifBlank { creds.username }
+                val (balance, bills) = yktClient.fetchLedger(sid, "${lantu.schoolId}", date)
+                withContext(Dispatchers.Main) {
+                    if (balance != null) yktBalance = balance
+                    yktBills.clear()
+                    yktBills.addAll(bills)
+                    yktError = null
+                }
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
+                Log.e("swun", "ykt ledger", e)
+                withContext(Dispatchers.Main) { yktError = publicError(e) }
+            }
+        }
+    }
+
+    suspend fun yktRechargeAccount(): YktRechargeAccount {
+        if (demoMode) return YktRechargeAccount(profile.name, studentId, yktBalance)
+        return accountIo {
+            ensureCas()
+            yktClient.fetchRechargeAccount(studentId.ifBlank { creds.username }, "${lantu.schoolId}")
+        }
+    }
+
+    suspend fun createYktRecharge(amountYuan: Double, method: YktPayMethod): YktPaymentResult {
+        if (demoMode) return YktPaymentResult.Success("预览模式：未创建真实支付订单")
+        return accountIo {
+            ensureCas()
+            yktClient.createCardRecharge(
+                studentId.ifBlank { creds.username },
+                amountYuan,
+                method,
+                "${lantu.schoolId}",
+            )
+        }
+    }
+
+    suspend fun waterRechargeAccount(): YktRechargeAccount {
+        if (demoMode) return YktRechargeAccount(profile.name, studentId, yktBalance)
+        return accountIo {
+            ensureCas()
+            yktClient.fetchWaterAccount(studentId.ifBlank { creds.username }, "${lantu.schoolId}")
+        }
+    }
+
+    suspend fun rechargeWater(amountYuan: Double): YktPaymentResult {
+        if (demoMode) return YktPaymentResult.Success("预览模式：未扣除一卡通余额")
+        return accountIo {
+            ensureCas()
+            yktClient.rechargeWater(
+                studentId.ifBlank { creds.username },
+                amountYuan,
+                yktBalance,
+                "${lantu.schoolId}",
+            )
+        }
+    }
+
+    suspend fun electricSchools(): List<YktDirectoryOption> {
+        if (demoMode) return DemoData.electricSchools
+        return accountIo {
+            ensureCas()
+            yktClient.electricSchools(studentId.ifBlank { creds.username }, "${lantu.schoolId}")
+        }
+    }
+
+    suspend fun electricBuildings(school: YktDirectoryOption): List<YktDirectoryOption> {
+        if (demoMode) return DemoData.electricBuildings
+        return accountIo { yktClient.electricBuildings(school) }
+    }
+
+    suspend fun electricFloors(building: YktDirectoryOption): List<YktDirectoryOption> {
+        if (demoMode) return DemoData.electricFloors
+        return accountIo { yktClient.electricFloors(building) }
+    }
+
+    suspend fun electricRooms(floor: YktDirectoryOption): List<YktDirectoryOption> {
+        if (demoMode) return DemoData.electricRooms
+        return accountIo { yktClient.electricRooms(floor) }
+    }
+
+    suspend fun rechargeElectric(
+        selection: ElectricSelection,
+        amountYuan: Double,
+        method: YktPayMethod,
+    ): YktPaymentResult {
+        if (demoMode) return YktPaymentResult.Success("预览模式：未创建真实支付订单")
+        return accountIo {
+            ensureCas()
+            yktClient.createElectricRecharge(
+                studentId.ifBlank { creds.username },
+                selection,
+                amountYuan,
+                method,
+                "${lantu.schoolId}",
+            )
+        }
+    }
+
+    suspend fun refreshLeave() {
+        if (demoMode) {
+            leaveSummary = DemoData.leaveSummary
+            leaveStudentInfo = DemoData.leaveStudentInfo
+            leaveRule = DemoData.leaveRule
+            leaveRecords.clear(); leaveRecords.addAll(DemoData.leaveRecords)
+            leaveTypes.clear(); leaveTypes.addAll(DemoData.leaveTypes)
+            leaveSpecificTypes.clear(); leaveSpecificTypes.addAll(DemoData.leaveSpecificTypes)
+            leaveError = null
+            return
+        }
+        accountIo("leave") {
+            try {
+                val snapshot = withStudentSession { readLeaveSnapshot() }
+                withContext(Dispatchers.Main) { applyLeaveSnapshot(snapshot) }
+            } catch (e: Exception) {
+                if (e is java.util.concurrent.CancellationException) throw e
+                RequestCancellation.check()
+                Log.e("swun", "leave", e)
+                withContext(Dispatchers.Main) { leaveError = publicError(e) }
+            }
+        }
+    }
+
+    suspend fun checkCanApplyLeave() {
+        if (demoMode) return
+        accountIo { withStudentSession { studentClient.checkCanApply() } }
+    }
+
+    suspend fun calculateLeaveDays(startTime: String, endTime: String): Double {
+        if (demoMode) {
+            val start = java.time.LocalDateTime.parse(startTime.replace(" ", "T"))
+            val end = java.time.LocalDateTime.parse(endTime.replace(" ", "T"))
+            return kotlin.math.ceil(java.time.Duration.between(start, end).toMinutes() / 1440.0).coerceAtLeast(1.0)
+        }
+        return accountIo { withStudentSession { studentClient.leaveDays(startTime, endTime) } }
+    }
+
+    suspend fun leaveDetail(leaveNo: String): LeaveDetail {
+        if (demoMode) return DemoData.leaveDetail(leaveNo)
+        return accountIo { withStudentSession { studentClient.leaveDetail(leaveNo) } }
+    }
+
+    suspend fun submitLeave(form: LeaveApplyForm): String {
+        if (demoMode) return "预览模式：未提交请假申请"
+        return accountIo {
+            val message = withStudentSession { studentClient.createLeave(form) }
+            val snapshot = withStudentSession { readLeaveSnapshot() }
+            withContext(Dispatchers.Main) { applyLeaveSnapshot(snapshot) }
+            message
+        }
+    }
+
+    suspend fun prepareLeaveCancel(leaveNo: String): LeaveCancelPreparation {
+        if (demoMode) return DemoData.leaveCancelPreparation(leaveNo)
+        return accountIo { withStudentSession { studentClient.cancelPreparation(leaveNo) } }
+    }
+
+    suspend fun submitLeaveCancel(form: LeaveCancelForm): String {
+        if (demoMode) return "预览模式：未提交销假申请"
+        return accountIo {
+            val message = withStudentSession { studentClient.createCancel(form) }
+            val snapshot = withStudentSession { readLeaveSnapshot() }
+            withContext(Dispatchers.Main) { applyLeaveSnapshot(snapshot) }
+            message
+        }
+    }
+
+    suspend fun leaveLocation(): Pair<String, Boolean> {
+        if (demoMode) return "西南民族大学（预览位置）" to true
+        val fix = withContext(Dispatchers.Main) { locateCampus() }
+        return accountIo {
+            val allowed = withStudentSession { studentClient.locationAllowed(fix.latitude, fix.longitude) }
+            "GCJ-02 ${"%.6f".format(fix.latitude)}, ${"%.6f".format(fix.longitude)}" to allowed
+        }
+    }
+
+    suspend fun uploadLeaveImage(uri: Uri): String {
+        if (demoMode) return "https://example.invalid/demo-proof.jpg"
+        return accountIo {
+            val upload = prepareLeaveImage(uri)
+            withStudentSession { studentClient.uploadImage(upload.bytes, upload.mimeType, upload.fileName) }
         }
     }
 
@@ -1162,6 +1473,7 @@ class Session(app: Application) : AndroidViewModel(app) {
             if (cookieFile.exists()) CampusHttp.importCookies(cookieFile.readText())
             if (!lantu.restoreLocal()) return
             applyLantu()
+            restoreCachedSchedule()
             loggedIn = true
             demoMode = false
             requests.launch("startup") { refreshLiveData() }
@@ -1195,6 +1507,60 @@ class Session(app: Application) : AndroidViewModel(app) {
         slotPicks.load(id)
         teachers.load(id)
         bindAvatars(id)
+    }
+
+    private fun restoreCachedSchedule() {
+        val account = studentId.ifBlank { accounts.currentId }.ifBlank { creds.username }
+        val cached = schedules.load(account, currentSchoolTerm()) ?: return
+        schedule.clear()
+        schedule.addAll(cached.lessons)
+        curWeek = cached.weekOn(java.time.LocalDate.now())
+        totalWeek = cached.totalWeeks
+        week1Monday = cached.firstMonday
+    }
+
+    private suspend fun applySchedule(
+        account: String,
+        lessons: List<Lesson>,
+        week: Int,
+        total: Int,
+        firstMonday: java.time.LocalDate?,
+    ) {
+        val safeTotal = maxOf(total, lessons.maxOfOrNull { it.weeks.length } ?: 1).coerceIn(1, 100)
+        val safeWeek = week.coerceIn(1, safeTotal)
+        withContext(Dispatchers.Main) {
+            schedule.clear()
+            schedule.addAll(lessons)
+            curWeek = safeWeek
+            totalWeek = safeTotal
+            week1Monday = firstMonday
+            loadHint = null
+        }
+        try {
+            requests.commit {
+                schedules.save(
+                    account,
+                    CachedSchedule(
+                        currentSchoolTerm(),
+                        lessons,
+                        safeWeek,
+                        safeTotal,
+                        firstMonday,
+                        System.currentTimeMillis(),
+                    ),
+                )
+            }
+        } catch (e: Exception) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            RequestCancellation.check()
+            Log.w("swun", "课表缓存保存失败", e)
+        }
+    }
+
+    private fun inferredFirstMonday(week: Int): java.time.LocalDate {
+        val today = java.time.LocalDate.now()
+        val thisMonday = today.minusDays((today.dayOfWeek.value - 1).toLong())
+        return thisMonday.minusWeeks((week.coerceAtLeast(1) - 1).toLong())
     }
 
     private suspend fun fetchRemoteAvatar(url: String) {
@@ -1241,6 +1607,21 @@ class Session(app: Application) : AndroidViewModel(app) {
         requests.commit { cookieFile.writeText(CampusHttp.exportCookies()) }
     }
 
+    private fun <T> withLantuSession(block: () -> T): T = synchronized(lantuLock) {
+        RequestCancellation.check()
+        try {
+            block()
+        } catch (_: LantuSessionExpiredException) {
+            RequestCancellation.check()
+            val id = studentId.ifBlank { accounts.currentId }.ifBlank { creds.username }
+            val pwd = accounts.password(id).ifBlank { creds.password }
+            if (id.isBlank() || pwd.isBlank()) throw LantuSessionExpiredException()
+            SwunLog.w("蓝图会话已过期，使用保存账号重新登录")
+            lantu.login(id, pwd)
+            block()
+        }
+    }
+
     private fun ktkqTokenKey() = "ktkqToken_${studentId.ifBlank { accounts.currentId }}"
     private fun ktkqTermKey() = "ktkqXnxqdm_${studentId.ifBlank { accounts.currentId }}"
     private fun ktkqTermNameKey() = "ktkqXnxqmc_${studentId.ifBlank { accounts.currentId }}"
@@ -1275,6 +1656,98 @@ class Session(app: Application) : AndroidViewModel(app) {
             if (saved.length > 8) gy.token = saved
         }
         if (gy.token.isNullOrEmpty()) gy.loginWithCas(cas)
+    }
+
+    private data class LeaveSnapshot(
+        val summary: LeaveSummary,
+        val student: LeaveStudentInfo,
+        val rule: LeaveRule,
+        val records: List<LeaveRecord>,
+        val types: List<LeaveOption>,
+        val specificTypes: List<LeaveOption>,
+    )
+
+    private fun readLeaveSnapshot() = LeaveSnapshot(
+        summary = studentClient.leaveSummary(),
+        student = studentClient.studentInfo(),
+        rule = studentClient.leaveRule(),
+        records = studentClient.leaveRecords(),
+        types = studentClient.leaveTypes(),
+        specificTypes = studentClient.specificLeaveTypes(),
+    )
+
+    private fun applyLeaveSnapshot(value: LeaveSnapshot) {
+        leaveSummary = value.summary
+        leaveStudentInfo = value.student
+        leaveRule = value.rule
+        leaveRecords.clear(); leaveRecords.addAll(value.records)
+        leaveTypes.clear(); leaveTypes.addAll(value.types)
+        leaveSpecificTypes.clear(); leaveSpecificTypes.addAll(value.specificTypes)
+        leaveError = null
+    }
+
+    private fun ensureStudent() = synchronized(studentLock) {
+        RequestCancellation.check()
+        ensureCas()
+        studentClient.attachCas(cas)
+        studentClient.ensureReady()
+    }
+
+    private fun <T> withStudentSession(block: () -> T): T = synchronized(studentLock) {
+        ensureStudent()
+        try {
+            block()
+        } catch (_: StudentSessionExpiredException) {
+            studentClient.reset()
+            ensureStudent()
+            block()
+        }
+    }
+
+    private data class LeaveUpload(
+        val bytes: ByteArray,
+        val mimeType: String,
+        val fileName: String,
+    )
+
+    private fun prepareLeaveImage(uri: Uri): LeaveUpload {
+        val resolver = getApplication<Application>().contentResolver
+        val original = resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("无法读取图片")
+        if (original.size > 10 * 1024 * 1024) error("单张图片不能超过 10 MB")
+        val declared = resolver.getType(uri).orEmpty().lowercase()
+        if (declared.isNotEmpty() && declared !in setOf("image/jpeg", "image/jpg", "image/png")) {
+            error("证明材料仅支持 JPG 或 PNG")
+        }
+        val baseName = uri.lastPathSegment?.substringAfterLast('/')?.takeLast(80)
+            ?.replace(Regex("[^0-9A-Za-z._-]"), "_")
+            ?.takeIf { it.isNotBlank() }
+            ?: "leave_${System.currentTimeMillis()}.jpg"
+        if (original.size <= 900 * 1024) {
+            val mime = declared.ifBlank { "image/jpeg" }
+            return LeaveUpload(original, mime, baseName)
+        }
+        val bitmap = BitmapFactory.decodeByteArray(original, 0, original.size) ?: error("图片解码失败")
+        val maxSide = maxOf(bitmap.width, bitmap.height)
+        val scaled = if (maxSide > 2160) {
+            val ratio = 2160.0 / maxSide
+            Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * ratio).toInt().coerceAtLeast(1),
+                (bitmap.height * ratio).toInt().coerceAtLeast(1),
+                true,
+            )
+        } else bitmap
+        var result = ByteArray(0)
+        for (quality in listOf(88, 80, 72, 64, 56, 48)) {
+            val output = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, quality, output)
+            result = output.toByteArray()
+            if (result.size <= 900 * 1024) break
+        }
+        if (scaled !== bitmap) scaled.recycle()
+        bitmap.recycle()
+        if (result.isEmpty()) error("图片压缩失败")
+        return LeaveUpload(result, "image/jpeg", baseName.substringBeforeLast('.', baseName) + ".jpg")
     }
 
     private fun persistCookieFile() {

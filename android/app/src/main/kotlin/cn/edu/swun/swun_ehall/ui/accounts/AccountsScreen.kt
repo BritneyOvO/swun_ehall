@@ -59,7 +59,9 @@ fun AccountsScreen(session: Session, nav: NavHostController) {
     LaunchedEffect(session.studentId, session.profile.name) {
         val id = session.studentId
         val name = session.profile.name
-        if (id.isNotEmpty() && name.isNotEmpty()) session.accounts.upsert(id, name)
+        if (session.loggedIn && !session.demoMode && id.isNotEmpty() && name.isNotEmpty()) {
+            session.accounts.upsert(id, name)
+        }
     }
     Scaffold(
         topBar = {

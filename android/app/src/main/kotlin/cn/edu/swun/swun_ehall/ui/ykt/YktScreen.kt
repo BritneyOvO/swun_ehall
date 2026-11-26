@@ -2,6 +2,8 @@ package cn.edu.swun.swun_ehall.ui.ykt
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,12 +11,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +39,8 @@ import cn.edu.swun.swun_ehall.ui.common.FeatureColumn
 import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
 import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import cn.edu.swun.swun_ehall.ui.common.RefreshNav
+import java.time.LocalDate
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -46,13 +52,17 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun YktScreen(session: Session, nav: NavHostController) {
     var loading by remember { mutableStateOf(!session.demoMode && session.yktQr == null) }
+    var ledgerLoading by remember { mutableStateOf(false) }
+    var selectedDateText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     val scope = rememberCoroutineScope()
     val notices = rememberFeatureNotices(session.studentId, session.demoMode)
     FeatureNoticeHost(notices)
     suspend fun refresh() {
         loading = true
         try {
-            session.refreshYkt()
+            val date = runCatching { LocalDate.parse(selectedDateText) }.getOrElse { LocalDate.now() }
+            session.refreshYkt(date.takeUnless { it == LocalDate.now() })
             session.yktError?.let { notices.error(it, "一卡通暂不可用") }
         } finally {
             loading = false
@@ -60,8 +70,19 @@ fun YktScreen(session: Session, nav: NavHostController) {
     }
     LaunchedEffect(session.loggedIn, session.demoMode) {
         refresh()
+        var lastQrAttempt = System.currentTimeMillis()
+        while (true) {
+            delay(1_000)
+            nowMs = System.currentTimeMillis()
+            if ((nowMs - session.yktQrUpdatedAt) >= 50_000L && nowMs - lastQrAttempt >= 30_000L) {
+                lastQrAttempt = nowMs
+                session.refreshYktQr()
+            }
+        }
     }
-    val qr = session.yktQr
+    val selectedDate = runCatching { LocalDate.parse(selectedDateText) }.getOrElse { LocalDate.now() }
+    val qrAge = nowMs - session.yktQrUpdatedAt
+    val qr = session.yktQr?.takeIf { session.yktQrUpdatedAt > 0 && qrAge < 75_000L }
     val bmp = remember(qr) { qr?.takeIf { it.isNotBlank() }?.let { Qr.bitmap(it, 512) } }
     val cs = MiuixTheme.colorScheme
     Scaffold(
@@ -97,6 +118,15 @@ fun YktScreen(session: Session, nav: NavHostController) {
                 )
             }
             Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth()) {
+                    YktServiceEntry("一卡通充值", "通过学校系统创建官方充值订单") { nav.navigate("ykt/recharge") }
+                    HorizontalDivider()
+                    YktServiceEntry("宿舍电费充值", "选择校区、楼栋、楼层和房间") { nav.navigate("electric") }
+                    HorizontalDivider()
+                    YktServiceEntry("热水充值", "从一卡通余额直接扣款") { nav.navigate("water") }
+                }
+            }
+            Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -104,6 +134,14 @@ fun YktScreen(session: Session, nav: NavHostController) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text("付款码", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                            if (session.yktQrUpdatedAt > 0) {
+                                Text(
+                                    if (qr != null) "自动刷新 · ${((60_000L - qrAge).coerceAtLeast(0L) / 1000L)} 秒后更新" else "付款码已过期，正在更新",
+                                    color = cs.onSurfaceVariantSummary,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(top = 3.dp),
+                                )
+                            }
                     Spacer(Modifier.height(16.dp))
                     when {
                         bmp != null -> {
@@ -135,10 +173,36 @@ fun YktScreen(session: Session, nav: NavHostController) {
             }
             Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
                 Column(Modifier.padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 8.dp)) {
-                    Text("今日余额使用明细", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(
+                        if (selectedDate == LocalDate.now()) "今日余额使用明细" else "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日至今明细",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 7.dp),
+                    ) {
+                        (0L..6L).forEach { ago ->
+                            val date = LocalDate.now().minusDays(ago)
+                            val selected = date == selectedDate
+                            top.yukonga.miuix.kmp.basic.TextButton(
+                                text = (if (selected) "✓ " else "") + if (ago == 0L) "今天" else "${date.monthValue}-${date.dayOfMonth}",
+                                onClick = {
+                                    selectedDateText = date.toString()
+                                    scope.launch {
+                                        ledgerLoading = true
+                                        try {
+                                            session.refreshYktLedger(date.takeUnless { it == LocalDate.now() })
+                                        } finally {
+                                            ledgerLoading = false
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
                     when {
-                        loading && session.yktBills.isEmpty() -> FeatureLoading(card = false)
+                        (loading || ledgerLoading) && session.yktBills.isEmpty() -> FeatureLoading(card = false)
                         session.yktBills.isEmpty() -> Text(
                             "暂无明细",
                             color = cs.onSurfaceVariantSummary,
@@ -186,5 +250,20 @@ fun YktScreen(session: Session, nav: NavHostController) {
             )
             FeatureBottomSpace()
         }
+    }
+}
+
+@Composable
+private fun YktServiceEntry(title: String, summary: String, onClick: () -> Unit) {
+    val cs = MiuixTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(summary, color = cs.onSurfaceVariantSummary, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+        }
+        Text("›", color = cs.onSurfaceVariantSummary, fontSize = 18.sp)
     }
 }

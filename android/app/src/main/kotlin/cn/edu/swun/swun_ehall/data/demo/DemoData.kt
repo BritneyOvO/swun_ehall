@@ -19,6 +19,20 @@ import cn.edu.swun.swun_ehall.data.model.SignActivity
 import cn.edu.swun.swun_ehall.data.model.XkCourse
 import cn.edu.swun.swun_ehall.data.model.XkRound
 import cn.edu.swun.swun_ehall.data.model.YktBill
+import cn.edu.swun.swun_ehall.data.model.YktDirectoryOption
+import cn.edu.swun.swun_ehall.data.model.LeaveApprovalStep
+import cn.edu.swun.swun_ehall.data.model.LeaveCancelPreparation
+import cn.edu.swun.swun_ehall.data.model.LeaveDetail
+import cn.edu.swun.swun_ehall.data.model.LeaveEntry
+import cn.edu.swun.swun_ehall.data.model.LeaveOption
+import cn.edu.swun.swun_ehall.data.model.LeaveRecord
+import cn.edu.swun.swun_ehall.data.model.LeaveRule
+import cn.edu.swun.swun_ehall.data.model.LeaveStudentInfo
+import cn.edu.swun.swun_ehall.data.model.LeaveSummary
+import cn.edu.swun.swun_ehall.data.model.CalendarEvent
+import cn.edu.swun.swun_ehall.data.model.SchoolCalendar
+import java.time.DayOfWeek
+import java.time.LocalDate
 
 object DemoData {
     val profile = Profile(
@@ -55,6 +69,25 @@ object DemoData {
         Exam("数字通信原理及协议", "第16周 周三 14:00-16:00", "BW-106", "12"),
         Exam("计算机组成原理", "第17周 周一 09:00-11:00", "BW-107", "08"),
     )
+
+    val calendar: SchoolCalendar by lazy {
+        val start = LocalDate.of(2026, 8, 31)
+        val end = LocalDate.of(2027, 1, 17)
+        val days = generateSequence(start) { it.plusDays(1) }
+            .takeWhile { !it.isAfter(end) }
+            .filter { it.dayOfWeek !in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY) }
+            .toList()
+        SchoolCalendar(
+            startDate = start,
+            endDate = end,
+            events = listOf(
+                CalendarEvent(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 7), "国庆节"),
+                CalendarEvent(LocalDate.of(2027, 1, 11), end, "期末考试周"),
+            ),
+            classDays = days,
+            termTitle = "2026-2027学年第一学期校历",
+        )
+    }
 
     val credits = CreditProgress(
         taken = 15.0,
@@ -259,6 +292,114 @@ object DemoData {
     )
 
     const val yktBalance = 18.7
+
+    val electricSchools = listOf(YktDirectoryOption("12", "航空港校区7-30栋照明"))
+    val electricBuildings = listOf(YktDirectoryOption("003010001", "10号楼1单元"))
+    val electricFloors = listOf(YktDirectoryOption("003010001", "1层"))
+    val electricRooms = listOf(
+        YktDirectoryOption("demo-room-101", "101"),
+        YktDirectoryOption("demo-room-102", "102"),
+    )
+
+    val leaveSummary = LeaveSummary(count = 2, days = 5.0, pendingCancel = 1)
+    val leaveStudentInfo = LeaveStudentInfo(
+        name = profile.name,
+        studentId = profile.studentId,
+        college = profile.college,
+        klass = profile.klass,
+        mobile = "13800000000",
+        dorm = "航空港校区 10栋 101",
+    )
+    val leaveRule = LeaveRule(
+        allowRenew = true,
+        maxRenewCount = 2,
+        requireLocation = false,
+        requireSelfie = true,
+        requireAddress = true,
+        hourCount = 6,
+    )
+    val leaveTypes = listOf(LeaveOption("1", "事假"), LeaveOption("2", "病假"))
+    val leaveSpecificTypes = listOf(
+        LeaveOption("1", "请假离校在蓉"),
+        LeaveOption("2", "请假离蓉回家"),
+        LeaveOption("3", "请假离蓉未回家"),
+        LeaveOption("4", "请假晚归"),
+        LeaveOption("5", "请假实习"),
+    )
+    val leaveRecords = listOf(
+        LeaveRecord(
+            id = "demo-leave-1",
+            leaveNo = "demo-no-1",
+            approvalNo = "demo-appr-1",
+            leaveCode = 1,
+            leaveName = "请假申请",
+            leaveTypeCode = 1,
+            leaveTypeName = "事假",
+            specificTypeCode = 2,
+            specificTypeName = "请假离蓉回家",
+            startTime = "2026-12-05 08:00:00",
+            endTime = "2026-12-07 20:00:00",
+            days = 3.0,
+            totalDays = 3.0,
+            reason = "参加家庭活动",
+            statusCode = 1,
+            statusName = "已通过",
+            canWithdraw = false,
+            canEdit = false,
+            canRenew = true,
+            canCancel = true,
+        ),
+        LeaveRecord(
+            id = "demo-leave-2",
+            leaveNo = "demo-no-2",
+            approvalNo = "demo-appr-2",
+            leaveCode = 3,
+            leaveName = "销假申请",
+            leaveTypeCode = 1,
+            leaveTypeName = "事假",
+            specificTypeCode = 1,
+            specificTypeName = "请假离校在蓉",
+            startTime = "2026-10-10 08:00:00",
+            endTime = "2026-10-11 18:00:00",
+            days = 2.0,
+            totalDays = 2.0,
+            reason = "已按时返校",
+            statusCode = 1,
+            statusName = "已完成",
+            canWithdraw = false,
+            canEdit = false,
+            canRenew = false,
+            canCancel = false,
+        ),
+    )
+
+    fun leaveDetail(leaveNo: String): LeaveDetail {
+        val record = leaveRecords.firstOrNull { it.leaveNo == leaveNo } ?: leaveRecords.first()
+        return LeaveDetail(
+            entries = listOf(
+                LeaveEntry(
+                    leaveCode = record.leaveCode,
+                    leaveTypeName = record.leaveTypeName,
+                    specificTypeName = record.specificTypeName,
+                    startTime = record.startTime,
+                    endTime = record.endTime,
+                    days = record.days,
+                    reason = record.reason,
+                    statusName = record.statusName,
+                    address = "四川省 成都市 双流区",
+                ),
+            ),
+            approvals = listOf(
+                LeaveApprovalStep("辅导员审批", "已通过", "辅导员", "示例老师", "2026-12-01 10:30:00", "同意", true),
+                LeaveApprovalStep("学生返校", "待销假", "学生", "", "", "", false),
+            ),
+        )
+    }
+
+    fun leaveCancelPreparation(leaveNo: String): LeaveCancelPreparation {
+        val record = leaveRecords.firstOrNull { it.leaveNo == leaveNo } ?: leaveRecords.first()
+        return LeaveCancelPreparation(record.leaveNo, record.startTime, record.endTime, record.days)
+    }
 
     val clockRecords = listOf(
         ClockRecord("昨天 22:01", "武侯校区", "正常"),

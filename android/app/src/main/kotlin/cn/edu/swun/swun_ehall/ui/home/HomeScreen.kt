@@ -71,6 +71,12 @@ fun HomeScreen(session: Session, nav: NavHostController) {
         Triple("课堂考勤", "ktkq", MiuixIcons.Location),
         Triple("公寓打卡", "clock", MiuixIcons.Alarm),
         Triple("选课", "selection", MiuixIcons.Edit),
+        Triple("校历", "calendar", MiuixIcons.Notes),
+        Triple("校车", "bus", MiuixIcons.Location),
+        Triple("一卡通充值", "ykt/recharge", MiuixIcons.BankCards),
+        Triple("宿舍电费", "electric", MiuixIcons.Alarm),
+        Triple("热水充值", "water", MiuixIcons.Location),
+        Triple("请假销假", "leave", MiuixIcons.Edit),
     )
     Scaffold(topBar = { SmallTopAppBar(title = "首页") }) { padding ->
         Column(
@@ -143,7 +149,11 @@ fun HomeScreen(session: Session, nav: NavHostController) {
                     }
                     if (left.isEmpty()) {
                         Text(
-                            if (today.isEmpty()) "今天没有课" else "今天的课上完了",
+                            when {
+                                session.scheduleError != null && session.schedule.isEmpty() -> "课表加载失败，请到课表页重试"
+                                today.isEmpty() -> "今天没有课"
+                                else -> "今天的课上完了"
+                            },
                             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )

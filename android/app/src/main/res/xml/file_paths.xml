@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="update" path="update/" />
+    <cache-path name="leave" path="leave/" />
     <files-path name="files_update" path="update/" />
 </paths>

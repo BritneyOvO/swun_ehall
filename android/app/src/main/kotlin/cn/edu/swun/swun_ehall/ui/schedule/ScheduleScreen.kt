@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Undo
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -44,6 +46,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun ScheduleScreen(session: Session, nav: NavHostController) {
     var loading by remember { mutableStateOf(!session.demoMode && session.schedule.isEmpty()) }
+    var listMode by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(session.loggedIn, session.demoMode) {
         if (!session.demoMode && session.schedule.isEmpty()) {
@@ -75,6 +78,10 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
             SmallTopAppBar(
                 title = "课表",
                 actions = {
+                    TextButton(
+                        text = if (listMode) "网格" else "列表",
+                        onClick = { listMode = !listMode },
+                    )
                     RefreshNav {
                         scope.launch {
                             loading = true
@@ -95,6 +102,15 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            if (session.schedule.isNotEmpty()) {
+                session.scheduleError?.let { message ->
+                    Text(
+                        "课表更新失败：$message",
+                        color = MiuixTheme.colorScheme.error,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
             WeekBar(
                 week = week,
                 maxWeek = maxW,
@@ -119,7 +135,7 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
             when {
                 session.schedule.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("本学期暂无课表")
+                        Text(session.scheduleError ?: "本学期暂无课表", modifier = Modifier.padding(24.dp))
                     }
                 }
                 else -> {
@@ -128,15 +144,26 @@ fun ScheduleScreen(session: Session, nav: NavHostController) {
                         modifier = Modifier.fillMaxSize(),
                     ) { page ->
                         val w = page + 1
-                        CourseTable(
-                            lessons = session.weekLessons(w),
-                            week = w,
-                            curWeek = cur,
-                            week1Monday = session.week1Monday,
-                            choices = session.slotPicks,
-                            onLessonTap = { openSign(it) },
-                            onConflictTap = { picking = it },
-                        )
+                        val lessons = session.weekLessons(w)
+                        if (listMode) {
+                            ScheduleList(
+                                lessons = lessons,
+                                week = w,
+                                curWeek = cur,
+                                week1Monday = session.week1Monday,
+                                onLessonTap = { openSign(it) },
+                            )
+                        } else {
+                            CourseTable(
+                                lessons = lessons,
+                                week = w,
+                                curWeek = cur,
+                                week1Monday = session.week1Monday,
+                                choices = session.slotPicks,
+                                onLessonTap = { openSign(it) },
+                                onConflictTap = { picking = it },
+                            )
+                        }
                     }
                 }
             }

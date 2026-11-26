@@ -1,7 +1,16 @@
 package cn.edu.swun.swun_ehall.data.http
 
 import android.util.Log
+import cn.edu.swun.swun_ehall.data.model.ElectricSelection
 import cn.edu.swun.swun_ehall.data.model.YktBill
+import cn.edu.swun.swun_ehall.data.model.YktDirectoryOption
+import cn.edu.swun.swun_ehall.data.model.YktPayMethod
+import cn.edu.swun.swun_ehall.data.model.YktPayOrder
+import cn.edu.swun.swun_ehall.data.model.YktPaymentResult
+import cn.edu.swun.swun_ehall.data.model.YktRechargeAccount
+import java.math.BigDecimal
+import java.net.URLEncoder
+import java.time.LocalDate
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -9,6 +18,13 @@ const val K_YKT = "https://ykth5.swun.edu.cn"
 private const val K_YKT_MENU = "$K_YKT/menu/menu.do?menu=qrcode"
 private const val K_YKT_QR = "$K_YKT/qrcode/queryCardInfo.do"
 private const val K_YKT_BILL = "$K_YKT/bill/fun_bill.do"
+private const val K_YKT_CARD_RECHARGE = "$K_YKT/app/poscardcircle.do"
+private const val K_YKT_WATER_RECHARGE = "$K_YKT/water/watertransferpay.do"
+private const val K_YKT_ELECTRIC_SCHOOL = "$K_YKT/app/electric_school.do"
+private const val K_YKT_ELECTRIC_BUILDING = "$K_YKT/app/electric_building.do"
+private const val K_YKT_ELECTRIC_FLOOR = "$K_YKT/app/electric_floor.do"
+private const val K_YKT_ELECTRIC_ROOM = "$K_YKT/app/electric_room.do"
+private const val K_YKT_ELECTRIC_PAY = "$K_YKT/app/poscardpay.do"
 
 class YktClient(private val rs: RsGateway) {
     fun fetchQr(studentId: String, schoolId: String = "187"): String {
@@ -28,14 +44,14 @@ class YktClient(private val rs: RsGateway) {
         return payloadOf(hit.body) ?: error("用户无卡片，无法生成二维码")
     }
 
-    fun fetchLedger(studentId: String, schoolId: String = "187"): Pair<Double?, List<YktBill>> {
+    fun fetchLedger(studentId: String, schoolId: String = "187", date: LocalDate? = null): Pair<Double?, List<YktBill>> {
         if (studentId.isBlank()) error("没有学号，无法打开一卡通")
         val fn = openFunction(studentId, schoolId, "bill")
         val hit = rs.call(
             "POST",
             K_YKT_BILL,
             headers = xhrHeaders(fn),
-            body = "date=null",
+            body = yktLedgerBody(date),
             inPage = true,
         )
         Log.d("swun", "[ykt] bill HTTP ${hit.status} ${hit.body.length}b ${hit.body.take(400)}")
@@ -70,6 +86,163 @@ class YktClient(private val rs: RsGateway) {
         )
         Log.d("swun", "[ykt] balance raw=$raw")
         return parseYktYuan(raw)
+    }
+
+    fun fetchRechargeAccount(studentId: String, schoolId: String = "187"): YktRechargeAccount {
+        openFunction(studentId, schoolId, "transfer")
+        return currentRechargeAccount(studentId)
+    }
+
+    fun createCardRecharge(
+        studentId: String,
+        amountYuan: Double,
+        method: YktPayMethod,
+        schoolId: String = "187",
+    ): YktPaymentResult {
+        requireYuan(amountYuan, 200.0, "圈存金额")
+        val referer = openFunction(studentId, schoolId, "transfer")
+        val body = formBody(
+            "payMethod" to method.code,
+            "payMoney" to amountYuan.payText(),
+        )
+        return paymentCall(K_YKT_CARD_RECHARGE, referer, body, PaymentKind.Card)
+    }
+
+    fun fetchWaterAccount(studentId: String, schoolId: String = "187"): YktRechargeAccount {
+        openFunction(studentId, schoolId, "watertransfer")
+        return currentRechargeAccount(studentId)
+    }
+
+    fun rechargeWater(
+        studentId: String,
+        amountYuan: Double,
+        cardBalanceYuan: Double?,
+        schoolId: String = "187",
+    ): YktPaymentResult {
+        requireYuan(amountYuan, 20.0, "热水充值金额")
+        if (cardBalanceYuan != null && amountYuan > cardBalanceYuan + 0.0001) {
+            error("一卡通余额不足")
+        }
+        val referer = openFunction(studentId, schoolId, "watertransfer")
+        val money = amountYuan.payText()
+        val body = formBody(
+            "payMethod" to "poscardpay",
+            "payMoney" to money,
+            "money" to money,
+        )
+        return paymentCall(K_YKT_WATER_RECHARGE, referer, body, PaymentKind.Water)
+    }
+
+    fun electricSchools(studentId: String, schoolId: String = "187"): List<YktDirectoryOption> {
+        prepareElectric(studentId, schoolId)
+        val page = "$K_YKT/app/school.do"
+        rs.open(page, RsWait.Ready, RsSites.YKT)
+        return electricOptions(K_YKT_ELECTRIC_SCHOOL, page, "")
+    }
+
+    fun electricBuildings(school: YktDirectoryOption): List<YktDirectoryOption> {
+        val page = "$K_YKT/app/building.do?dormid=${enc(school.id)}&dormname=${enc(school.name)}"
+        rs.open(page, RsWait.Ready, RsSites.YKT)
+        return electricOptions(K_YKT_ELECTRIC_BUILDING, page, formBody("dormid" to school.id))
+    }
+
+    fun electricFloors(building: YktDirectoryOption): List<YktDirectoryOption> {
+        val page = "$K_YKT/app/floor.do?buildingid=${enc(building.id)}&buildingname=${enc(building.name)}"
+        rs.open(page, RsWait.Ready, RsSites.YKT)
+        return electricOptions(K_YKT_ELECTRIC_FLOOR, page, formBody("buildingid" to building.id))
+    }
+
+    fun electricRooms(floor: YktDirectoryOption): List<YktDirectoryOption> {
+        val page = "$K_YKT/app/room.do?floorid=${enc(floor.id)}&floorname=${enc(floor.name)}"
+        rs.open(page, RsWait.Ready, RsSites.YKT)
+        return electricOptions(K_YKT_ELECTRIC_ROOM, page, formBody("floorid" to floor.id))
+    }
+
+    fun createElectricRecharge(
+        studentId: String,
+        selection: ElectricSelection,
+        amountYuan: Double,
+        method: YktPayMethod,
+        schoolId: String = "187",
+    ): YktPaymentResult {
+        requireYuan(amountYuan, 200.0, "电费充值金额")
+        // The old server stores each selected directory level in the HTTP session.
+        // Replaying the official pages immediately before ordering prevents a stale room order.
+        prepareElectric(studentId, schoolId)
+        rs.open("$K_YKT/app/school.do", RsWait.Ready, RsSites.YKT)
+        rs.open(
+            "$K_YKT/app/building.do?dormid=${enc(selection.school.id)}&dormname=${enc(selection.school.name)}",
+            RsWait.Ready,
+            RsSites.YKT,
+        )
+        rs.open(
+            "$K_YKT/app/floor.do?buildingid=${enc(selection.building.id)}&buildingname=${enc(selection.building.name)}",
+            RsWait.Ready,
+            RsSites.YKT,
+        )
+        rs.open(
+            "$K_YKT/app/room.do?floorid=${enc(selection.floor.id)}&floorname=${enc(selection.floor.name)}",
+            RsWait.Ready,
+            RsSites.YKT,
+        )
+        val referer = "$K_YKT/app/electric.do?roomid=${enc(selection.room.id)}&roomname=${enc(selection.room.name)}"
+        rs.open(referer, RsWait.Ready, RsSites.YKT)
+        val body = formBody(
+            "payMethod" to method.code,
+            "orderid" to "",
+            "payMinAmount" to "",
+            "payMaxAmount" to "",
+            "payType" to "",
+            "payWay" to "",
+            "timeout" to "",
+            "money" to amountYuan.payText(),
+            method.code to method.code,
+        )
+        return paymentCall(K_YKT_ELECTRIC_PAY, referer, body, PaymentKind.Electric)
+    }
+
+    private fun prepareElectric(studentId: String, schoolId: String) {
+        // Any valid function page establishes the account-bound ykt session. The electric
+        // function endpoint itself currently returns an empty page, so use the stable data page.
+        openFunction(studentId, schoolId, "data")
+        rs.open("$K_YKT/app/electric.do?studentId=${enc(studentId)}", RsWait.Ready, RsSites.YKT)
+    }
+
+    private fun currentRechargeAccount(studentId: String): YktRechargeAccount {
+        val raw = rs.evalJs(
+            "ykth5.swun.edu.cn",
+            """
+            try {
+              var text = document.body ? (document.body.innerText || '') : '';
+              return JSON.stringify({text: text});
+            } catch (e) { return '{}'; }
+            """.trimIndent(),
+        )
+        return parseYktRechargeAccount(raw, studentId)
+    }
+
+    private fun electricOptions(url: String, referer: String, body: String): List<YktDirectoryOption> {
+        val hit = rs.call(
+            "POST",
+            url,
+            headers = xhrHeaders(referer),
+            body = body,
+            inPage = true,
+        )
+        throwYktResponseIssue(hit, "电费目录")
+        return parseElectricOptions(hit.body)
+    }
+
+    private fun paymentCall(url: String, referer: String, body: String, kind: PaymentKind): YktPaymentResult {
+        val hit = rs.call(
+            "POST",
+            url,
+            headers = xhrHeaders(referer),
+            body = body,
+            inPage = true,
+        )
+        throwYktResponseIssue(hit, "充值")
+        return parseYktPaymentResponse(hit.body, kind)
     }
 
     private fun xhrHeaders(referer: String) = mapOf(
@@ -150,6 +323,79 @@ class YktClient(private val rs: RsGateway) {
         return ""
     }
 }
+
+private enum class PaymentKind { Card, Water, Electric }
+
+internal fun requireYuan(amount: Double, max: Double, label: String) {
+    if (!amount.isFinite() || amount <= 0.0) error("请输入有效的$label")
+    if (amount > max + 0.0001) error("${label}不能超过 ${max.payText()} 元")
+    if (BigDecimal.valueOf(amount).scale() > 2) error("金额最多保留两位小数")
+}
+
+private fun Double.payText(): String = BigDecimal.valueOf(this).stripTrailingZeros().toPlainString()
+
+private fun enc(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+
+private fun formBody(vararg values: Pair<String, String>): String = values.joinToString("&") {
+    "${enc(it.first)}=${enc(it.second)}"
+}
+
+fun parseYktRechargeAccount(raw: String, fallbackStudentId: String = ""): YktRechargeAccount {
+    val text = runCatching { JSONObject(raw).optString("text") }.getOrDefault(raw)
+    fun field(label: String): String = Regex("""$label[：:]\s*([^\n]+)""")
+        .find(text)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+    val id = field("用户编号").replace(Regex("""\s+"""), "").ifBlank { fallbackStudentId }
+    val name = field("用户姓名").substringBefore(" ").trim()
+    val balance = parseYktYuan(field("用户余额"))
+    return YktRechargeAccount(name, id, balance)
+}
+
+fun parseElectricOptions(raw: String): List<YktDirectoryOption> {
+    val root = runCatching { JSONObject(raw) }.getOrNull() ?: return emptyList()
+    val rows = root.optJSONArray("room") ?: return emptyList()
+    return buildList {
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            val id = row.optString("elecid").trim()
+            val name = row.optString("elecname").trim()
+            if (id.isNotEmpty() && name.isNotEmpty()) add(YktDirectoryOption(id, name))
+        }
+    }
+}
+
+private fun parseYktPaymentResponse(raw: String, kind: PaymentKind): YktPaymentResult {
+    val text = raw.trim().trim('"')
+    if (text.startsWith("{")) {
+        val json = runCatching { JSONObject(text) }.getOrNull()
+        val orderInfo = json?.optString("orderInfo").orEmpty()
+        if (orderInfo.isNotBlank()) {
+            return YktPaymentResult.OrderCreated(
+                YktPayOrder(json?.optString("payType").orEmpty(), orderInfo),
+            )
+        }
+    }
+    if (text == "true") {
+        val message = when (kind) {
+            PaymentKind.Card -> "圈存成功"
+            PaymentKind.Water -> "热水充值成功"
+            PaymentKind.Electric -> "电费充值成功"
+        }
+        return YktPaymentResult.Success(message)
+    }
+    val message = when (text) {
+        "studentfalse" -> "一卡通账户状态异常，无法充值"
+        "cardfalse" -> "用户卡片状态异常，无法充值"
+        "timeout" -> "当前时间不允许充值"
+        "webapifalse" -> "连接控水前置机失败，无法充值"
+        "checkuseridfalse" -> "热水预下单失败，无法充值"
+        "payqrcodepayfalse" -> "订单通知失败，请到官方系统核对"
+        "false", "" -> "充值失败，请稍后再试"
+        else -> "充值失败：$text"
+    }
+    return YktPaymentResult.Failure(message)
+}
+
+internal fun yktLedgerBody(date: LocalDate?): String = "date=${date?.toString() ?: "null"}"
 
 private fun throwYktResponseIssue(hit: RsHit, action: String) {
     when (CampusHttp.classifyResponse(hit.status, hit.body)) {

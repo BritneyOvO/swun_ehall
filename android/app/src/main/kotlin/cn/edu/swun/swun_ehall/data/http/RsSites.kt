@@ -52,11 +52,19 @@ object RsSites {
         label = "一卡通",
         tokenKey = "token",
     )
+    val STUDENT = RsSite(
+        host = "zxtjfx.swun.edu.cn",
+        home = "https://zxtjfx.swun.edu.cn/swun-stu-manage-platform-mobile/",
+        label = "学生管理平台",
+        tokenKey = "zbpToken",
+        storeKeys = listOf("zbpToken"),
+    )
 
     fun ofHost(host: String): RsSite? = when (host) {
         KTKQ.host -> KTKQ
         GY.host -> GY
         YKT.host -> YKT
+        STUDENT.host -> STUDENT
         else -> null
     }
 }

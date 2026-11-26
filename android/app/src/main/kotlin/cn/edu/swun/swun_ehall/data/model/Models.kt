@@ -287,11 +287,34 @@ data class AppRelease(
     val apkName: String = "",
 )
 
-fun currentSchoolTerm(): SchoolTerm {
-    val now = java.util.Calendar.getInstance()
-    val y = now.get(java.util.Calendar.YEAR)
-    val m = now.get(java.util.Calendar.MONTH) + 1
-    return if (m >= 8 || m <= 1) SchoolTerm("$y", "3") else SchoolTerm("${y - 1}", "12")
+data class CalendarEvent(
+    val startDate: java.time.LocalDate?,
+    val endDate: java.time.LocalDate?,
+    val title: String,
+)
+
+data class SchoolCalendar(
+    val startDate: java.time.LocalDate?,
+    val endDate: java.time.LocalDate?,
+    val events: List<CalendarEvent>,
+    val classDays: List<java.time.LocalDate>,
+    val termTitle: String,
+) {
+    fun weekOf(date: java.time.LocalDate): Int? {
+        val start = startDate ?: return null
+        if (date.isBefore(start)) return null
+        return (java.time.temporal.ChronoUnit.DAYS.between(start, date) / 7).toInt() + 1
+    }
+}
+
+fun currentSchoolTerm(today: java.time.LocalDate = java.time.LocalDate.now()): SchoolTerm {
+    val y = today.year
+    val m = today.monthValue
+    return when {
+        m >= 8 -> SchoolTerm("$y", "3")
+        m == 1 -> SchoolTerm("${y - 1}", "3")
+        else -> SchoolTerm("${y - 1}", "12")
+    }
 }
 
 fun buildGradeTerms(studentId: String, grade: String): List<SchoolTerm> {

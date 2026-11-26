@@ -32,10 +32,16 @@ import cn.edu.swun.swun_ehall.data.update.UpdateClient
 import cn.edu.swun.swun_ehall.data.update.UpdateDownload
 import cn.edu.swun.swun_ehall.ui.common.UpdatePrompt
 import cn.edu.swun.swun_ehall.ui.clock.ClockScreen
+import cn.edu.swun.swun_ehall.ui.bus.BusScreen
+import cn.edu.swun.swun_ehall.ui.calendar.CalendarScreen
 import cn.edu.swun.swun_ehall.ui.credits.CreditsScreen
 import cn.edu.swun.swun_ehall.ui.exams.ExamsScreen
 import cn.edu.swun.swun_ehall.ui.ktkq.KtkqScreen
 import cn.edu.swun.swun_ehall.ui.ktkq.KtkqSignScreen
+import cn.edu.swun.swun_ehall.ui.leave.LeaveApplyScreen
+import cn.edu.swun.swun_ehall.ui.leave.LeaveCancelScreen
+import cn.edu.swun.swun_ehall.ui.leave.LeaveDetailScreen
+import cn.edu.swun.swun_ehall.ui.leave.LeaveScreen
 import cn.edu.swun.swun_ehall.ui.login.LoginScreen
 import cn.edu.swun.swun_ehall.ui.mine.AvatarCropScreen
 import cn.edu.swun.swun_ehall.ui.selection.SelectionScreen
@@ -48,6 +54,9 @@ import cn.edu.swun.swun_ehall.ui.settings.ThemeScreen
 import cn.edu.swun.swun_ehall.ui.shell.MainShell
 import cn.edu.swun.swun_ehall.ui.theme.SwunTheme
 import cn.edu.swun.swun_ehall.ui.theme.ThemeSettings
+import cn.edu.swun.swun_ehall.ui.ykt.ElectricScreen
+import cn.edu.swun.swun_ehall.ui.ykt.RechargeScreen
+import cn.edu.swun.swun_ehall.ui.ykt.WaterScreen
 import cn.edu.swun.swun_ehall.ui.ykt.YktScreen
 
 @Composable
@@ -138,7 +147,26 @@ fun SwunApp(
                     KtkqSignScreen(session, nav, entry.arguments?.getString("id").orEmpty())
                 }
                 composable("ykt") { YktScreen(session, nav) }
+                composable("ykt/recharge") { RechargeScreen(session, nav) }
+                composable("electric") { ElectricScreen(session, nav) }
+                composable("water") { WaterScreen(session, nav) }
+                composable("leave") { LeaveScreen(session, nav) }
+                composable("leave/apply") { LeaveApplyScreen(session, nav) }
+                composable(
+                    "leave/detail/{leaveNo}",
+                    arguments = listOf(navArgument("leaveNo") { type = NavType.StringType }),
+                ) { detailEntry ->
+                    LeaveDetailScreen(session, nav, detailEntry.arguments?.getString("leaveNo").orEmpty())
+                }
+                composable(
+                    "leave/cancel/{leaveNo}",
+                    arguments = listOf(navArgument("leaveNo") { type = NavType.StringType }),
+                ) { cancelEntry ->
+                    LeaveCancelScreen(session, nav, cancelEntry.arguments?.getString("leaveNo").orEmpty())
+                }
                 composable("clock") { ClockScreen(session, nav) }
+                composable("bus") { BusScreen(nav) }
+                composable("calendar") { CalendarScreen(session, nav) }
                 composable("credits") { CreditsScreen(session, nav) }
                 composable("exams") { ExamsScreen(session, nav) }
                 composable("selection") { SelectionScreen(session, nav) }

@@ -6,8 +6,11 @@ import cn.edu.swun.swun_ehall.data.model.Exam
 import cn.edu.swun.swun_ehall.data.model.Grade
 import cn.edu.swun.swun_ehall.data.model.Lesson
 import cn.edu.swun.swun_ehall.data.model.PlanCourse
+import cn.edu.swun.swun_ehall.data.model.CalendarEvent
+import cn.edu.swun.swun_ehall.data.model.SchoolCalendar
 import cn.edu.swun.swun_ehall.data.model.XkCourse
 import cn.edu.swun.swun_ehall.data.model.XkRound
+import cn.edu.swun.swun_ehall.data.model.currentSchoolTerm
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -145,6 +148,10 @@ class JwxtClient {
 
     fun scheduleKb(xnm: String = "", xqm: String = ""): JSONArray = jwxtKbList(schedulePage(xnm, xqm))
 
+    fun calendar(): SchoolCalendar = parseSchoolCalendar(
+        getHtml("/jwglxt/pkgl/xlglMobile_cxXlIndexForxs.html?gnmkdm=Y210501"),
+    )
+
     fun lessonsFromKb(kb: org.json.JSONArray): List<Lesson> = lessonsFromJwxtKb(kb)
 
     fun grades(xnm: String = "", xqm: String = ""): List<Grade> {
@@ -250,6 +257,32 @@ class JwxtClient {
             val result = JSONObject(text.ifBlank { "{}" })
             sessionLease.confirm()
             return result
+        }
+        error("教务请求失败")
+    }
+
+    private fun getHtml(pathAndQuery: String): String {
+        var relogged = false
+        repeat(3) {
+            val url = "$K_JWXT$pathAndQuery"
+            val r = CampusHttp.get(url, mapOf("Referer" to MENU_REF, "Accept" to "text/html, */*"))
+            val loc = CampusHttp.location(r)
+            val text = CampusHttp.text(r)
+            if (jwxtPortalClosed(r.code, text)) {
+                portalClosed = true
+                error("教务夜间关闭或不在服务时间")
+            }
+            if (looksLoggedOut(text, loc) || CampusHttp.isRedirect(r)) {
+                if (!relogged) {
+                    relogged = true
+                    ensureSession(force = true)
+                    return@repeat
+                }
+                error("教务登录已过期，请重新登录")
+            }
+            if (r.code != 200) error("教务 HTTP ${r.code}")
+            sessionLease.confirm()
+            return text
         }
         error("教务请求失败")
     }
@@ -445,11 +478,56 @@ class JwxtClient {
     }
 }
 
+fun parseSchoolCalendar(html: String): SchoolCalendar {
+    fun hidden(id: String): String? {
+        val tag = Regex("""<input\b[^>]*\bid\s*=\s*["']$id["'][^>]*>""", RegexOption.IGNORE_CASE)
+            .find(html)?.value ?: return null
+        return Regex("""\bvalue\s*=\s*["']([^"']*)["']""", RegexOption.IGNORE_CASE)
+            .find(tag)?.groupValues?.get(1)
+    }
+    fun date(raw: String?): java.time.LocalDate? = raw?.let {
+        runCatching { java.time.LocalDate.parse(it.trim()) }.getOrNull()
+    }
+    fun quoted(block: String, key: String): String? {
+        val found = Regex("""\b$key\s*:\s*(["'])(.*?)\1""").find(block) ?: return null
+        return found.groupValues[2].replace("&amp;", "&").replace("&nbsp;", " ").trim()
+    }
+
+    val events = mutableListOf<CalendarEvent>()
+    var cursor = 0
+    while (true) {
+        val start = html.indexOf("rc.push(", cursor)
+        if (start < 0) break
+        val end = html.indexOf(')', start)
+        if (end < 0) break
+        val block = html.substring(start, end)
+        val title = quoted(block, "title")
+        if (!title.isNullOrBlank()) {
+            events += CalendarEvent(date(quoted(block, "bgdate")), date(quoted(block, "eddate")), title)
+        }
+        cursor = end + 1
+    }
+
+    val classDays = Regex("""skrq\.push\(\s*["'](\d{4}-\d{2}-\d{2})["']\s*\)""")
+        .findAll(html)
+        .mapNotNull { date(it.groupValues[1]) }
+        .distinct()
+        .sorted()
+        .toList()
+    val title = Regex("""<title[^>]*>(.*?)</title>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        .find(html)?.groupValues?.get(1)?.replace(Regex("<[^>]+>"), "")?.trim().orEmpty()
+    return SchoolCalendar(
+        startDate = date(hidden("ksrq")),
+        endDate = date(hidden("jsrq")),
+        events = events,
+        classDays = classDays,
+        termTitle = title,
+    )
+}
+
 fun currentJwxtTerm(): Pair<Int, String> {
-    val now = java.util.Calendar.getInstance()
-    val y = now.get(java.util.Calendar.YEAR)
-    val m = now.get(java.util.Calendar.MONTH) + 1
-    return if (m >= 8 || m <= 1) y to "3" else (y - 1) to "12"
+    val term = currentSchoolTerm()
+    return (term.xnm.toIntOrNull() ?: java.time.LocalDate.now().year) to term.xqm
 }
 
 fun jwxtKbList(json: JSONObject): JSONArray {

@@ -590,5 +590,7 @@ class CampusParseTest {
         assertEquals(-8.0, bills[0].amountYuan, 0.001)
         assertEquals("abc", payloadOf("\"abc\""))
         assertEquals("xyz", payloadOf("""{"data":{"qrcode":"xyz"}}"""))
+        assertEquals("date=null", yktLedgerBody(null))
+        assertEquals("date=2026-11-25", yktLedgerBody(java.time.LocalDate.of(2026, 11, 25)))
     }
 }

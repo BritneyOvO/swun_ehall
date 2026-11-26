@@ -19,6 +19,28 @@ private const val INFO = "https://app.swun.edu.cn/infoCampus/"
 private const val UA =
     "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/107.0.0.0 Mobile Safari/537.36 lantuMobilecampus lantuMC"
 
+internal class LantuSessionExpiredException : IllegalStateException("蓝图登录已过期，请重新登录")
+
+internal fun parseLantuResponse(status: Int, body: String, authenticated: Boolean): JSONObject {
+    // Expired course sessions return HTTP 200 with no body; other APIs report invalid token.
+    if (authenticated && (status == 401 || (status == 200 && body.isBlank()))) {
+        throw LantuSessionExpiredException()
+    }
+    if (status !in 200..299) error("蓝图请求失败 HTTP $status")
+    if (body.isBlank()) error("蓝图返回了空响应，请重试")
+    val result = JSONObject(body)
+    val message = listOf(result.optString("msg"), result.optString("msgContent")).joinToString(" ")
+    if (authenticated && (message.contains("invalid token", ignoreCase = true) ||
+            message.contains("token expired", ignoreCase = true))) {
+        throw LantuSessionExpiredException()
+    }
+    val state = result.opt("msgState")
+    if (state != null && state.toString().toIntOrNull() != 1) {
+        error(result.optString("msg").ifBlank { "蓝图请求失败" })
+    }
+    return result
+}
+
 class LantuClient(private val persistFile: File? = null) {
     var token: String = ""
     var uuid: String = "web" + System.currentTimeMillis().toString(16)
@@ -29,6 +51,7 @@ class LantuClient(private val persistFile: File? = null) {
     val isLoggedIn get() = token.isNotEmpty()
 
     fun login(username: String, password: String) {
+        token = ""
         ensureRsa()
         val r = post(
             "${BASE}login/login.do",
@@ -44,16 +67,18 @@ class LantuClient(private val persistFile: File? = null) {
         save()
     }
 
-    fun getCourse(): JSONObject = post("${JW}course/getCourse.do", JSONObject().apply {
-        put("curTime", System.currentTimeMillis())
-    }).also { course ->
-        val first = course.optJSONArray("courseList")?.optJSONObject(0)
-        android.util.Log.d("swun", "[lantu] course keys=${course.keys().asSequence().toList()} count=${course.optJSONArray("courseList")?.length() ?: 0} teacher=${first?.optString("jgmc").orEmpty()}")
+    fun getCourse(): JSONObject = post(
+        "${JW}course/getCourse.do",
+        JSONObject().put("curTime", System.currentTimeMillis()),
+        authenticated = true,
+    ).also { course ->
+        val list = course.optJSONArray("courseList") ?: error("蓝图课表响应缺少课程数据，请重试")
+        SwunLog.w("蓝图课表 ${list.length()} 条课程记录")
     }
 
-    fun getUserInfo(): JSONObject = post("${BASE}user/getUserInfo.do", JSONObject())
+    fun getUserInfo(): JSONObject = post("${BASE}user/getUserInfo.do", JSONObject(), authenticated = true)
 
-    fun getCardBrief(): JSONObject = post("${INFO}playCampus/getCardBreifInfo.do", JSONObject())
+    fun getCardBrief(): JSONObject = post("${INFO}playCampus/getCardBreifInfo.do", JSONObject(), authenticated = true)
 
     fun profile(): Profile {
         val b = userBase
@@ -206,7 +231,8 @@ class LantuClient(private val persistFile: File? = null) {
         val tok = r.opt("token")
         token = if (tok is JSONArray) {
             (0 until tok.length()).joinToString("_") { tok.optString(it) }
-        } else tok?.toString().orEmpty()
+        } else tok?.toString().orEmpty().takeUnless { it == "null" }.orEmpty()
+        if (token.isBlank()) error("蓝图登录没有返回有效会话，请重试")
         userBase = r.optJSONObject("userBaseInfo") ?: JSONObject()
         userLogin = r.optJSONObject("userLoginInfo") ?: JSONObject()
         schoolId = userLogin.optString("schoolId").toIntOrNull() ?: schoolId
@@ -218,7 +244,12 @@ class LantuClient(private val persistFile: File? = null) {
         publicKey = r.optString("publicKey").ifBlank { error("未拿到登录公钥") }
     }
 
-    private fun post(url: String, data: JSONObject, secure: Boolean = false): JSONObject {
+    private fun post(
+        url: String,
+        data: JSONObject,
+        secure: Boolean = false,
+        authenticated: Boolean = false,
+    ): JSONObject {
         data.put("campusType", 1)
         data.put("wxCode", JSONObject.NULL)
         data.put("mcClient", JSONObject.NULL)
@@ -242,12 +273,7 @@ class LantuClient(private val persistFile: File? = null) {
                 put("token", token)
             },
         )
-        val result = JSONObject(CampusHttp.text(r).ifBlank { "{}" })
-        val state = result.opt("msgState")
-        if (state != null && state.toString().toIntOrNull() != 1) {
-            error(result.optString("msg").ifBlank { "请求失败" })
-        }
-        return result
+        return parseLantuResponse(r.code, CampusHttp.text(r), authenticated)
     }
 
     private fun rsaEncrypt(plain: String): String {

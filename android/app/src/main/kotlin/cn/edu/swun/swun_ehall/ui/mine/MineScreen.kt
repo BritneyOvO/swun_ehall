@@ -77,6 +77,7 @@ fun MineScreen(session: Session, nav: NavHostController) {
         path?.let { BitmapFactory.decodeFile(it) }
     }
     var avatarMenu by remember { mutableStateOf(false) }
+    var showLogout by remember { mutableStateOf(false) }
     val customAvatar = session.localAvatarPath != null
     val title = session.displayName.ifBlank { "同学" }
     Box(Modifier.fillMaxSize()) {
@@ -187,6 +188,13 @@ fun MineScreen(session: Session, nav: NavHostController) {
                 summary = "版本与检查更新",
                 icon = MiuixIcons.Info,
             ) { nav.navigate("about") }
+            Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+                TextButton(
+                    text = "退出登录",
+                    onClick = { showLogout = true },
+                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                )
+            }
             Spacer(Modifier.height(96.dp))
         }
     }
@@ -214,6 +222,28 @@ fun MineScreen(session: Session, nav: NavHostController) {
                         avatarMenu = false
                         SwunApplication.markPickingMedia(context.applicationContext as Application, true)
                         picker.launch("image/*")
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
+    if (showLogout) {
+        WindowDialog(
+            show = true,
+            title = "退出登录",
+            summary = "退出当前账号？已保存的账号会保留。",
+            onDismissRequest = { showLogout = false },
+        ) {
+            Row(Modifier.fillMaxWidth()) {
+                TextButton("取消", { showLogout = false }, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(12.dp))
+                TextButton(
+                    text = "退出",
+                    onClick = {
+                        showLogout = false
+                        session.logout()
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.textButtonColorsPrimary(),

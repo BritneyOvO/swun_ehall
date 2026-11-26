@@ -334,7 +334,7 @@ class RsGateway(private val app: Context) {
 
     fun prepareSites() {
         main.post {
-            listOf(RsSites.KTKQ, RsSites.GY, RsSites.YKT).forEach { ensureView(it.host) }
+            listOf(RsSites.KTKQ, RsSites.GY, RsSites.YKT, RsSites.STUDENT).forEach { ensureView(it.host) }
         }
     }
 
@@ -557,6 +557,28 @@ class RsGateway(private val app: Context) {
             RequestCancellation.check()
             ""
         }
+    }
+
+    /** Executes a Promise in the site's WebView and returns its resolved string value. */
+    fun evalJsAsync(host: String, functionBody: String, timeoutMs: Long = 30_000): String {
+        val s = ensureView(host)
+        if (s.view == null) return ""
+        val script = """
+            (function(){
+              try {
+                Promise.resolve((function(){ $functionBody })())
+                  .then(function(v) {
+                    try { SwunRs.result(v == null ? '' : String(v)); } catch (e) {}
+                  })
+                  .catch(function(e) {
+                    try { SwunRs.result(JSON.stringify({__swunError: String(e && (e.message || e))})); } catch (_) {}
+                  });
+              } catch (e) {
+                try { SwunRs.result(JSON.stringify({__swunError: String(e && (e.message || e))})); } catch (_) {}
+              }
+            })();
+        """.trimIndent()
+        return jsCall(s, script, timeoutMs)
     }
 
     fun writeLocalStorage(key: String, value: String, host: String) {
