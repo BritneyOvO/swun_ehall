@@ -78,7 +78,7 @@ https://zxtjfx.swun.edu.cn/warnvisit-api/authority/noToken/casLogin/swun-stu-man
 | 申请详情 | `GET /warnvisit-api/askLeave/getAskLeaveDetail?leaveNo=...` |
 | 审批轨迹 | `GET /warnvisit-api/askLeave/getApprovalDetail?leaveNo=...` |
 | 销假时间范围 | `GET /warnvisit-api/askLeave/getRenewStartEnd?leaveNo=...` |
-| 销假总时长 | `GET /warnvisit-api/common/getTotalLeaveDays` |
+| 销假时长 | `GET /warnvisit-api/common/getAskLeaveDays`，传入销假时间范围返回的开始与结束时间 |
 | 定位校验 | `GET /warnvisit-api/common/getCorrectAddress?latitude=...&longitude=...` |
 
 请假提交使用 `POST /warnvisit-api/askLeave/createTakeLeave`，JSON 字段固定为：

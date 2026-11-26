@@ -30,6 +30,7 @@ import cn.edu.swun.swun_ehall.ui.common.FeatureLoadingPage
 import cn.edu.swun.swun_ehall.ui.common.FeatureMutedPanel
 import cn.edu.swun.swun_ehall.ui.common.FeatureNoticeHost
 import cn.edu.swun.swun_ehall.ui.common.FeatureSection
+import cn.edu.swun.swun_ehall.ui.common.RefreshNav
 import cn.edu.swun.swun_ehall.ui.common.rememberFeatureNotices
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -56,8 +57,9 @@ fun WaterScreen(session: Session, nav: NavHostController) {
     val notices = rememberFeatureNotices(session.studentId, session.demoMode)
     FeatureNoticeHost(notices)
 
-    LaunchedEffect(session.studentId, session.demoMode) {
+    suspend fun refreshAccount() {
         loading = true
+        account = null
         try {
             account = session.waterRechargeAccount()
         } catch (e: Exception) {
@@ -68,8 +70,20 @@ fun WaterScreen(session: Session, nav: NavHostController) {
         }
     }
 
+    LaunchedEffect(session.studentId, session.demoMode) { refreshAccount() }
+    val balance = account?.balanceYuan
     Scaffold(
-        topBar = { SmallTopAppBar(title = "淋浴 / 热水充值", navigationIcon = { BackNav { nav.popBackStack() } }) },
+        topBar = {
+            SmallTopAppBar(
+                title = "淋浴 / 热水充值",
+                navigationIcon = { BackNav { nav.popBackStack() } },
+                actions = {
+                    RefreshNav {
+                        if (!loading && !submitting) scope.launch { refreshAccount() }
+                    }
+                },
+            )
+        },
     ) { padding ->
         if (loading && account == null) {
             FeatureLoadingPage(padding)
@@ -81,13 +95,14 @@ fun WaterScreen(session: Session, nav: NavHostController) {
                 Column(Modifier.padding(16.dp)) {
                     Text("从一卡通余额转入热水账户", fontWeight = FontWeight.SemiBold)
                     Text(
-                        account?.balanceYuan?.let { "当前一卡通余额 ¥ ${"%.2f".format(it)}" } ?: "当前一卡通余额 —",
+                        balance?.let { "当前一卡通余额 ¥ ${"%.2f".format(it)}" } ?: "当前一卡通余额 —",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(top = 10.dp),
                     )
                     Text(
-                        "提交后会立即扣除一卡通余额，单次最高 20 元。",
+                        if (balance == null) "余额暂未加载，请点右上角重试。"
+                        else "提交后会立即扣除一卡通余额，单次最高 20 元。",
                         color = cs.onSurfaceVariantSummary,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 5.dp),
@@ -116,11 +131,12 @@ fun WaterScreen(session: Session, nav: NavHostController) {
                     when {
                         money == null || money <= 0 -> notices.error("请输入有效的充值金额")
                         money > 20 -> notices.error("热水充值金额不能超过 20 元")
-                        account?.balanceYuan != null && money > account!!.balanceYuan!! -> notices.error("一卡通余额不足")
+                        balance == null -> notices.error("未能读取一卡通余额")
+                        money > balance -> notices.error("一卡通余额不足")
                         else -> confirmAmount = money
                     }
                 },
-                enabled = !submitting,
+                enabled = !submitting && balance != null,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) { Text(if (submitting) "充值中…" else "确认充值") }
@@ -142,15 +158,16 @@ fun WaterScreen(session: Session, nav: NavHostController) {
                 TextButton(
                     text = "确认扣款",
                     onClick = {
+                        val confirmedBalance = balance ?: return@TextButton
                         confirmAmount = null
                         scope.launch {
                             submitting = true
                             try {
-                                result = session.rechargeWater(money)
+                                result = session.rechargeWater(money, confirmedBalance)
                                 when (val got = result) {
                                     is YktPaymentResult.Success -> {
                                         notices.message(got.message)
-                                        account = session.waterRechargeAccount()
+                                        refreshAccount()
                                     }
                                     is YktPaymentResult.Failure -> notices.error(got.message)
                                     else -> Unit

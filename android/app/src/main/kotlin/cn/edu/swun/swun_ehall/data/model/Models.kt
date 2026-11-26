@@ -301,9 +301,10 @@ data class SchoolCalendar(
     val termTitle: String,
 ) {
     fun weekOf(date: java.time.LocalDate): Int? {
-        val start = startDate ?: return null
-        if (date.isBefore(start)) return null
-        return (java.time.temporal.ChronoUnit.DAYS.between(start, date) / 7).toInt() + 1
+        val firstClass = classDays.minOrNull() ?: startDate ?: return null
+        val firstMonday = firstClass.minusDays((firstClass.dayOfWeek.value - 1).toLong())
+        if (date < firstMonday || (endDate != null && date > endDate)) return null
+        return java.time.temporal.ChronoUnit.WEEKS.between(firstMonday, date).toInt() + 1
     }
 }
 

@@ -110,7 +110,10 @@ class YktClient(private val rs: RsGateway) {
 
     fun fetchWaterAccount(studentId: String, schoolId: String = "187"): YktRechargeAccount {
         openFunction(studentId, schoolId, "watertransfer")
-        return currentRechargeAccount(studentId)
+        val account = currentRechargeAccount(studentId)
+        val balance = account.balanceYuan ?: fetchBalance(studentId, schoolId)
+            ?: error("未能读取一卡通余额")
+        return account.copy(balanceYuan = balance)
     }
 
     fun rechargeWater(

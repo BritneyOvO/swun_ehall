@@ -1066,14 +1066,14 @@ class Session(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    suspend fun rechargeWater(amountYuan: Double): YktPaymentResult {
+    suspend fun rechargeWater(amountYuan: Double, cardBalanceYuan: Double): YktPaymentResult {
         if (demoMode) return YktPaymentResult.Success("预览模式：未扣除一卡通余额")
         return accountIo {
             ensureCas()
             yktClient.rechargeWater(
                 studentId.ifBlank { creds.username },
                 amountYuan,
-                yktBalance,
+                cardBalanceYuan,
                 "${lantu.schoolId}",
             )
         }

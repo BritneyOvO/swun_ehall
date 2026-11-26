@@ -28,4 +28,20 @@ class SchoolCalendarParseTest {
         assertEquals(7, calendar.weekOf(LocalDate.of(2026, 10, 12)))
         assertNull(calendar.weekOf(LocalDate.of(2026, 8, 30)))
     }
+
+    @Test fun teachingWeekExcludesTheRegistrationWeek() {
+        val calendar = parseSchoolCalendar(
+            """
+            <input id="ksrq" value="2026-08-24">
+            <input id="jsrq" value="2027-01-17">
+            <script>skrq.push('2026-09-01'); skrq.push('2026-08-31');</script>
+            """.trimIndent(),
+        )
+
+        assertEquals(LocalDate.of(2026, 8, 24), calendar.startDate)
+        assertNull(calendar.weekOf(LocalDate.of(2026, 8, 29)))
+        assertEquals(1, calendar.weekOf(LocalDate.of(2026, 8, 31)))
+        assertEquals(13, calendar.weekOf(LocalDate.of(2026, 11, 26)))
+        assertNull(calendar.weekOf(LocalDate.of(2027, 1, 18)))
+    }
 }

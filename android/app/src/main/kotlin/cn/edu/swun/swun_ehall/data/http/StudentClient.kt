@@ -111,14 +111,8 @@ class StudentClient(private val rs: RsGateway) {
         ) as? JSONObject ?: JSONObject()
         val start = range.optCleanString("takeLeaveStartTime")
         val end = range.optCleanString("previousEndTime")
-        val days = jsonDouble(
-            api(
-                "GET",
-                "/warnvisit-api/common/getTotalLeaveDays",
-                JSONObject().put("leaveStartTime", start).put("leaveEndTime", end),
-            ),
-        )
-        return LeaveCancelPreparation(leaveNo, start, end, days)
+        check(start.isNotBlank() && end.isNotBlank()) { "学校未返回有效的销假时间范围" }
+        return LeaveCancelPreparation(leaveNo, start, end, leaveDays(start, end))
     }
 
     fun createCancel(form: LeaveCancelForm): String {
